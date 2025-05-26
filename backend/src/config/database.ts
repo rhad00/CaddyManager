@@ -8,7 +8,7 @@ let sequelizeConfig: SequelizeOptions = {
   dialect: 'sqlite' as Dialect,
   storage: '/app/data/database.sqlite',
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
-  models: ['/app/models'],
+  models: ['/app/dist/models'],
 };
 
 // Switch to PostgreSQL if explicitly configured
