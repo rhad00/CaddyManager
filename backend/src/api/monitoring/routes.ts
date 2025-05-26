@@ -1,8 +1,15 @@
-import { Router, RequestHandler } from 'express';
+import { Router, RequestHandler, NextFunction, Request, Response } from 'express';
 import { WebSocket } from 'ws';
 import MonitoringService from '../../services/monitoringService';
+import { AlertThreshold } from '../../models/alerts/AlertThreshold';
+import { AlertInstance } from '../../models/alerts/AlertInstance';
 import { authenticate } from '../../middleware/authMiddleware';
 import { IMonitoringOptions } from '../../types/monitoring';
+
+// Helper function to wrap authentication middleware
+const auth = (req: Request, res: Response, next: NextFunction): void => {
+  void Promise.resolve(authenticate(req, res, next)).catch(next);
+};
 
 const monitoringRouter = Router();
 const monitoringService = MonitoringService.getInstance();
@@ -47,21 +54,45 @@ const updateOptions: RequestHandler = (req, res) => {
 };
 
 // Register routes
-monitoringRouter.get(
-  '/options',
-  (req, res, next) => {
-    Promise.resolve(authenticate(req, res, next)).catch(next);
-  },
-  getOptions,
-);
+monitoringRouter.get('/options', auth, getOptions);
 
-monitoringRouter.put(
-  '/options',
-  (req, res, next) => {
-    Promise.resolve(authenticate(req, res, next)).catch(next);
-  },
-  updateOptions,
-);
+// Get all active alerts
+const getAlertsHandler: RequestHandler = (_req, res, next) => {
+  AlertInstance.findAll({
+    where: { resolved: false },
+    include: [AlertThreshold],
+    order: [['createdAt', 'DESC']],
+  })
+    .then(alerts => {
+      res.json({
+        success: true,
+        data: alerts,
+      });
+    })
+    .catch(error => {
+      next(error);
+    });
+};
+
+const getThresholdsHandler: RequestHandler = (_req, res, next) => {
+  AlertThreshold.findAll({
+    order: [['createdAt', 'DESC']],
+  })
+    .then(thresholds => {
+      res.json({
+        success: true,
+        data: thresholds,
+      });
+    })
+    .catch(error => {
+      next(error);
+    });
+};
+
+monitoringRouter.get('/alerts', auth, getAlertsHandler);
+monitoringRouter.get('/alerts/thresholds', auth, getThresholdsHandler);
+
+monitoringRouter.put('/options', auth, updateOptions);
 
 // WebSocket connection handler
 export function handleWebSocketConnection(ws: WebSocket): void {

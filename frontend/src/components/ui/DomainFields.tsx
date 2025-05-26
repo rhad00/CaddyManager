@@ -1,5 +1,5 @@
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
-import { FormInput, FormSelect } from './Form';
+import { FormInput, FormSelect, FormField } from './Form';
 import { Download, Plus, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { DomainConfig } from '../../validations/proxySchema';
@@ -11,9 +11,9 @@ interface DomainFieldsProps {
 }
 
 const SSL_OPTIONS = [
-  { value: 'acme', label: "ACME (Let's Encrypt)" },
-  { value: 'custom', label: 'Custom Certificate' },
-  { value: 'none', label: 'No SSL' },
+  { value: 'acme', label: "ACME (Let's Encrypt)", description: "Automatically obtain and manage SSL certificates" },
+  { value: 'custom', label: 'Custom Certificate', description: "Use your own SSL certificate and private key" },
+  { value: 'none', label: 'No SSL', description: "Serve traffic over HTTP only (not recommended for production)" },
 ] as const;
 
 export default function DomainFields({ name, onError }: DomainFieldsProps) {
@@ -181,38 +181,58 @@ export default function DomainFields({ name, onError }: DomainFieldsProps) {
             <div className="flex-1 space-y-4">
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <FormInput
+                  <FormField
                     name={`${name}.${index}.name`}
                     label="Domain Name"
-                    placeholder="example.com"
-                    aria-label={`Domain ${index + 1} name`}
-                  />
+                    helperText="Enter a hostname (e.g., api.example.com) or wildcard domain (e.g., *.example.com)"
+                  >
+                    <FormInput
+                      name={`${name}.${index}.name`}
+                      placeholder="example.com"
+                      aria-label={`Domain ${index + 1} name`}
+                    />
+                  </FormField>
                 </div>
                 <div className="w-48">
-                  <FormSelect
+                  <FormField
                     name={`${name}.${index}.ssl_type`}
                     label="SSL Type"
-                    options={SSL_OPTIONS}
-                    aria-label={`SSL type for domain ${index + 1}`}
-                  />
+                    helperText={SSL_OPTIONS.find(opt => opt.value === sslTypes?.[index])?.description}
+                  >
+                    <FormSelect
+                      name={`${name}.${index}.ssl_type`}
+                      options={SSL_OPTIONS}
+                      aria-label={`SSL type for domain ${index + 1}`}
+                    />
+                  </FormField>
                 </div>
               </div>
 
               {sslTypes?.[index] === 'custom' && (
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <FormInput
+                    <FormField
                       name={`${name}.${index}.custom_cert_path`}
                       label="Certificate Path"
-                      placeholder="/path/to/cert.pem"
-                    />
+                      helperText="Path to your SSL certificate file (.pem or .crt)"
+                    >
+                      <FormInput
+                        name={`${name}.${index}.custom_cert_path`}
+                        placeholder="/path/to/cert.pem"
+                      />
+                    </FormField>
                   </div>
                   <div className="flex-1">
-                    <FormInput
+                    <FormField
                       name={`${name}.${index}.custom_key_path`}
                       label="Private Key Path"
-                      placeholder="/path/to/key.pem"
-                    />
+                      helperText="Path to your SSL private key file (.pem or .key)"
+                    >
+                      <FormInput
+                        name={`${name}.${index}.custom_key_path`}
+                        placeholder="/path/to/key.pem"
+                      />
+                    </FormField>
                   </div>
                 </div>
               )}

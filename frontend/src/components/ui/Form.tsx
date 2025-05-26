@@ -40,6 +40,7 @@ interface FormFieldProps<T extends FieldValues>
   extends Omit<ComponentPropsWithoutRef<'div'>, 'defaultValue'> {
   name: Path<T>;
   label: string;
+  helperText?: string;
 }
 
 export function FormField<T extends FieldValues>({
@@ -65,6 +66,9 @@ export function FormField<T extends FieldValues>({
         {label}
       </label>
       {children}
+      {props.helperText && (
+        <p className="text-sm text-muted-foreground">{props.helperText}</p>
+      )}
       {error?.message && (
         <p id={errorId} className="text-sm text-destructive" role="alert" aria-live="polite">
           {error.message as string}

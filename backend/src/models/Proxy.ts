@@ -129,32 +129,62 @@ export class Proxy extends Model {
     allowNull: false,
     unique: true,
   })
-  name!: string;
+  get name(): string {
+    return this.getDataValue('name') as string;
+  }
+
+  set name(value: string) {
+    this.setDataValue('name', value);
+  }
 
   @Column({
     type: DataType.JSONB,
     allowNull: false,
   })
-  config!: IProxyConfig;
+  get config(): IProxyConfig {
+    return this.getDataValue('config') as IProxyConfig;
+  }
+
+  set config(value: IProxyConfig) {
+    this.setDataValue('config', value);
+  }
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: true,
   })
-  isActive!: boolean;
+  get isActive(): boolean {
+    return this.getDataValue('isActive') as boolean;
+  }
+
+  set isActive(value: boolean) {
+    this.setDataValue('isActive', value);
+  }
 
   @Column({
     type: DataType.STRING,
     allowNull: true,
   })
-  status?: string;
+  get status(): string | null {
+    return this.getDataValue('status') as string | null;
+  }
+
+  set status(value: string | null) {
+    this.setDataValue('status', value);
+  }
 
   @ForeignKey(() => User)
   @Column({
     type: DataType.UUID,
     allowNull: false,
   })
-  createdById!: string;
+  get createdById(): string {
+    return this.getDataValue('createdById') as string;
+  }
+
+  set createdById(value: string) {
+    this.setDataValue('createdById', value);
+  }
 
   @BelongsTo(() => User, 'createdById')
   createdBy!: User;
@@ -199,11 +229,23 @@ export class Proxy extends Model {
         throw new Error('At least one domain is required');
       }
 
-      // Check for duplicate domains
+      // Validate domain format and check for duplicates
       const domainNames = instance.config.domains.map(d => d.name.toLowerCase());
       const duplicates = domainNames.filter((name, index) => domainNames.indexOf(name) !== index);
       if (duplicates.length) {
         throw new Error(`Duplicate domains found: ${duplicates.join(', ')}`);
+      }
+
+      // Validate domain format - must be either hostname (xxx.domain.yyy) or wildcard (*.domain.yyy)
+      const domainRegex =
+        /^(?:\*\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+      for (const domain of instance.config.domains) {
+        if (!domainRegex.test(domain.name)) {
+          throw new Error(
+            `Invalid domain format: ${domain.name}. Must be either a hostname (e.g., sub.domain.com) or wildcard domain (e.g., *.domain.com)`,
+          );
+        }
       }
 
       // Validate custom SSL configurations

@@ -6,8 +6,8 @@ export const domainConfigSchema = z
       .string()
       .min(1, 'Domain name is required')
       .regex(
-        /^(?!:\/\/)(?:[a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}$/,
-        'Invalid domain format',
+        /^(?:\*\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+        'Invalid domain format. Must be either a hostname (e.g., sub.domain.com) or wildcard domain (e.g., *.domain.com)',
       )
       .refine(domain => !domain.startsWith('www.'), "Do not include 'www.' prefix"),
     ssl_type: z.enum(['acme', 'custom', 'none'], {
