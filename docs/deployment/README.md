@@ -118,36 +118,51 @@ JWT_EXPIRES_IN=1d
 METRICS_COLLECTION_INTERVAL=30000
 ```
 
-### SQLite Deployment
+### Database Setup
 
-For simpler deployments, you can use SQLite instead of PostgreSQL:
+The application supports both SQLite (default) and PostgreSQL databases.
 
-1. Update backend/.env:
-```env
-DB_DIALECT=sqlite
-DB_STORAGE=./data/database.sqlite
-```
+#### Local Development
 
-2. Create the data directory:
+For local development with SQLite:
+
+1. Create the data directory:
 ```bash
 mkdir -p backend/data
 ```
 
-3. Run migrations:
+2. Run migrations:
 ```bash
 cd backend
-npm run migrate:sqlite
+npm run migrate
 ```
 
-If you get a "command not found" error, you can run the migration directly:
+#### Docker Deployment
+
+When using Docker, the database migrations are handled slightly differently:
+
+1. For SQLite (default):
 ```bash
-cd backend
-NODE_ENV=production npx sequelize-cli db:migrate --env production
+# Run migrations inside the backend container
+docker compose -f docker/docker-compose.yml exec backend npm run migrate
 ```
 
-4. The SQLite database file will be created at `backend/data/database.sqlite`
+2. For PostgreSQL:
+```bash
+# Set PostgreSQL environment variables
+docker compose -f docker/docker-compose.yml exec backend sh -c "
+export POSTGRES_DB=true && \
+export POSTGRES_URL=postgres://username:password@hostname:5432/dbname && \
+npm run migrate"
+```
 
-Note: SQLite is great for small to medium deployments. For larger installations with high concurrent loads, PostgreSQL is recommended.
+The migration process will:
+- Use the configuration from src/config/sequelize.js (automatically copied to the container)
+- Create and initialize the database
+- Run all pending migrations
+- Store migration state in a special table (SequelizeMeta)
+
+Note: SQLite is suitable for small to medium deployments. For larger installations with high concurrent loads, PostgreSQL is recommended.
 
 ### Frontend Configuration (.env)
 

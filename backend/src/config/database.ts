@@ -6,7 +6,9 @@ import path from 'path';
 const sqliteDataDir = process.env.SQLITE_DATA_DIR || 'data';
 
 // Default to SQLite configuration
-let sequelizeConfig: any = {
+import { SequelizeOptions } from 'sequelize-typescript';
+
+let sequelizeConfig: SequelizeOptions = {
   dialect: 'sqlite' as Dialect,
   storage: path.join(__dirname, `../../${sqliteDataDir}/database.sqlite`),
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -37,7 +39,7 @@ if (process.env.POSTGRES_DB === 'true' && process.env.POSTGRES_URL) {
 
 export const sequelize = new Sequelize(sequelizeConfig);
 
-export const initDatabase = async () => {
+export const initDatabase = async (): Promise<void> => {
   try {
     await sequelize.authenticate();
     console.log(`Database connection established successfully using ${sequelizeConfig.dialect}.`);

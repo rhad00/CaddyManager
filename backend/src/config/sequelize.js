@@ -23,12 +23,17 @@ function getPostgresConfig() {
       port: Number(postgresUrl.port),
       database: postgresUrl.pathname.substring(1),
       username: postgresUrl.username,
-      password: postgresUrl.password
+      password: postgresUrl.password,
+      seederStorage: 'sequelize',
+      seederStorageTableName: 'SequelizeData',
+      migrationStorage: 'sequelize',
+      migrationStorageTableName: 'SequelizeMeta'
     };
   }
   return null;
 }
 
+// Export configurations for different environments
 module.exports = {
   development: {
     ...defaultConfig,

@@ -17,12 +17,17 @@ WORKDIR /app
 # Only copy necessary runtime files
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/src/migrations ./migrations
+COPY --from=builder /app/src/config ./config
+COPY --from=builder /app/.sequelizerc ./.sequelizerc
 RUN npm ci --omit=dev  # Install only production dependencies
 COPY --from=builder /app/dist ./dist
+
+# Ensure data directory exists
+RUN mkdir -p data
 
 # If you use any runtime files like Prisma schema or views, copy them too:
 # COPY --from=builder /app/prisma ./prisma
 
 ENV NODE_ENV=production
 EXPOSE 3020
-CMD ["node", "dist/app.js"]  
+CMD ["node", "dist/app.js"]
