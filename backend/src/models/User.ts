@@ -77,7 +77,7 @@ export class User extends Model {
   // Password hashing before save
   @BeforeCreate
   @BeforeUpdate
-  static async hashPassword(instance: User) {
+  static async hashPassword(instance: User): Promise<void> {
     if (instance.changed('password')) {
       instance.password = await argon2.hash(instance.password);
     }
