@@ -25,14 +25,6 @@ services:
     build:
       context: ../frontend
       dockerfile: ../docker/Dockerfile.frontend
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://backend:3020/api}
-        VITE_WS_URL: ${VITE_WS_URL:-ws://backend:3020}
-        VITE_ENABLE_WEBSOCKET: ${VITE_ENABLE_WEBSOCKET:-true}
-        VITE_JWT_STORAGE_KEY: ${VITE_JWT_STORAGE_KEY}
-        VITE_ENABLE_DARK_MODE: ${VITE_ENABLE_DARK_MODE:-true}
-        VITE_METRICS_REFRESH_INTERVAL: ${VITE_METRICS_REFRESH_INTERVAL:-30000}
-        VITE_HEALTH_CHECK_INTERVAL: ${VITE_HEALTH_CHECK_INTERVAL:-60000}
     ports:
       - "5173:5173"
     depends_on:

@@ -6,24 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Create env file from build args
+# Copy source code and env file
 COPY . .
-ARG VITE_API_URL
-ARG VITE_WS_URL
-ARG VITE_ENABLE_WEBSOCKET
-ARG VITE_JWT_STORAGE_KEY
-ARG VITE_ENABLE_DARK_MODE
-ARG VITE_METRICS_REFRESH_INTERVAL
-ARG VITE_HEALTH_CHECK_INTERVAL
-
-# Create .env file with build args
-RUN echo "VITE_API_URL=$VITE_API_URL" > .env && \
-    echo "VITE_WS_URL=$VITE_WS_URL" >> .env && \
-    echo "VITE_ENABLE_WEBSOCKET=$VITE_ENABLE_WEBSOCKET" >> .env && \
-    echo "VITE_JWT_STORAGE_KEY=$VITE_JWT_STORAGE_KEY" >> .env && \
-    echo "VITE_ENABLE_DARK_MODE=$VITE_ENABLE_DARK_MODE" >> .env && \
-    echo "VITE_METRICS_REFRESH_INTERVAL=$VITE_METRICS_REFRESH_INTERVAL" >> .env && \
-    echo "VITE_HEALTH_CHECK_INTERVAL=$VITE_HEALTH_CHECK_INTERVAL" >> .env
 
 RUN npm run build
 
