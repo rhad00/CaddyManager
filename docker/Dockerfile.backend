@@ -21,6 +21,7 @@ COPY --from=builder /app/src/models ./models
 COPY --from=builder /app/src/seeders ./seeders
 COPY --from=builder /app/src/config ./config
 COPY --from=builder /app/.sequelizerc ./.sequelizerc
+COPY --from=builder /app/scripts ./scripts
 RUN npm ci --omit=dev  # Install only production dependencies
 COPY --from=builder /app/dist ./dist
 

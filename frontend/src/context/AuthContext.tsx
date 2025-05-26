@@ -4,7 +4,7 @@ import { authService } from '../services/authService';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -18,8 +18,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(authService.isAuthenticated());
   }, []);
 
-  const login = async (username: string, password: string) => {
-    await authService.login({ username, password });
+  const login = async (email: string, password: string) => {
+    await authService.login({ email, password });
     setIsAuthenticated(true);
     navigate('/');
   };

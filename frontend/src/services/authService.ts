@@ -1,5 +1,7 @@
+import { api } from './api';
+
 interface LoginCredentials {
-  username: string;
+  email: string;
   password: string;
 }
 
@@ -7,7 +9,7 @@ interface LoginResponse {
   token: string;
   user: {
     id: number;
-    username: string;
+    email: string;
   };
 }
 
@@ -15,19 +17,8 @@ class AuthService {
   private tokenKey = 'token';
 
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(credentials),
-    });
-
-    if (!response.ok) {
-      throw new Error('Invalid credentials');
-    }
-
-    const data = await response.json();
+    const response = await api.post('/auth/login', credentials);
+    const data = response.data;
     this.setToken(data.token);
     return data;
   }
