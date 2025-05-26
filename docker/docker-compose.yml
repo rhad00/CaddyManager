@@ -6,19 +6,9 @@ services:
       context: ../backend
       dockerfile: ../docker/Dockerfile.backend
     volumes:
-      - ../backend:/app
-      - /app/node_modules
       - sqlite_data:/app/data  # Mount SQLite data directory
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=development
-      - POSTGRES_DB=false  # Default to SQLite
-      - SQLITE_DATA_DIR=data
-      - JWT_SECRET=development_secret
-      - CADDY_API_URL=http://caddy:2019
-      # PostgreSQL URL available but not used by default
-      - POSTGRES_URL=postgresql://postgres:postgres@db:5432/caddymanager
+      - "3020:3020"
     depends_on:
       - caddy
 
@@ -26,13 +16,8 @@ services:
     build:
       context: ../frontend
       dockerfile: ../docker/Dockerfile.frontend
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
     ports:
       - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:3000
     depends_on:
       - backend
 

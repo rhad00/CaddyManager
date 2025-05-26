@@ -1,17 +1,28 @@
+# Stage 1: Build TypeScript
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# Stage 2: Run the built app
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first (better layer caching)
-COPY package*.json ./
-RUN npm ci
+# Only copy necessary runtime files
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/migrations ./migrations
+RUN npm ci --omit=dev  # Install only production dependencies
+COPY --from=builder /app/dist ./dist
 
-# Copy source
-COPY . .
+# If you use any runtime files like Prisma schema or views, copy them too:
+# COPY --from=builder /app/prisma ./prisma
 
-# Build TypeScript
-RUN npm run build
-
-EXPOSE 3000
-
-CMD ["npm", "run", "dev"]
+ENV NODE_ENV=production
+EXPOSE 3020
+CMD ["node", "dist/index.js"]  # Replace with actual entrypoint
