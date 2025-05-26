@@ -68,6 +68,12 @@ export const LiveUpdates: React.FC<LiveUpdatesProps> = ({
           time: timestamp,
         };
       }
+      default:
+        return {
+          title: "System Update",
+          message: `Unknown update type: ${update.type}`,
+          time: timestamp,
+        };
     }
   };
 

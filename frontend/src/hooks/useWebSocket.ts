@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-interface WebSocketHookOptions {
+interface WebSocketHookOptions<T> {
   url: string;
-  onMessage?: (data: any) => void;
+  onMessage?: (data: T) => void;
   reconnectInterval?: number;
 }
 
-export const useWebSocket = ({ url, onMessage, reconnectInterval = 3000 }: WebSocketHookOptions) => {
+export const useWebSocket = <T>({ url, onMessage, reconnectInterval = 3000 }: WebSocketHookOptions<T>) => {
   const [isConnected, setIsConnected] = useState(false);
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
@@ -35,8 +35,12 @@ export const useWebSocket = ({ url, onMessage, reconnectInterval = 3000 }: WebSo
 
       ws.current.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          onMessage?.(data);
+          const data = JSON.parse(event.data) as T;
+          if (data && typeof data === 'object') {
+            onMessage?.(data);
+          } else {
+            console.error('Invalid message format received:', data);
+          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }

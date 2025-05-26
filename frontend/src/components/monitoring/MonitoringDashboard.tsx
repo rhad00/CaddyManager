@@ -50,17 +50,31 @@ export const MonitoringDashboard: React.FC = () => {
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback((message: MonitoringUpdate) => {
-    switch (message.type) {
-      case "health": {
-        const healthData = message.data as HealthCheck;
+    try {
+      if (!message.data) {
+        console.error('Message data is missing:', message);
+        return;
+      }
+
+      switch (message.type) {
+        case "health": {
+          const healthData = message.data as HealthCheck;
+          if (!healthData.proxyId || !healthData.status) {
+            console.error('Invalid health data received:', healthData);
+            return;
+          }
         setProxyHealth((prev) => ({
           ...prev,
           [healthData.proxyId]: healthData,
         }));
         break;
       }
-      case "metric": {
-        const metricData = message.data as Metric;
+        case "metric": {
+          const metricData = message.data as Metric;
+          if (!metricData.proxyId || !metricData.metricType || typeof metricData.value !== 'number') {
+            console.error('Invalid metric data received:', metricData);
+            return;
+          }
         setProxyMetrics((prev) => {
           const proxyMetrics = prev[metricData.proxyId] || {};
           const metricHistory = proxyMetrics[metricData.metricType] || {
@@ -85,8 +99,12 @@ export const MonitoringDashboard: React.FC = () => {
         });
         break;
       }
-      case "ssl": {
-        const certData = message.data as SSLCertificate;
+        case "ssl": {
+          const certData = message.data as SSLCertificate;
+          if (!certData.proxyId || !certData.domain || !certData.status) {
+            console.error('Invalid certificate data received:', certData);
+            return;
+          }
         setCertificates((prev) => {
           const proxyCerts = [...(prev[certData.proxyId] || [])];
           const certIndex = proxyCerts.findIndex((c) => c.id === certData.id);
@@ -104,16 +122,25 @@ export const MonitoringDashboard: React.FC = () => {
         });
         break;
       }
-    }
+      }
 
-    // Add to updates list
-    setUpdates((prev) => [...prev.slice(-99), message]);
+      // Add to updates list only if we successfully processed the message
+      setUpdates((prev) => [...prev.slice(-99), message]);
+    } catch (error) {
+      console.error('Error processing monitoring update:', error);
+    }
   }, []);
 
   // Connect to WebSocket
-  const { isConnected } = useWebSocket({
+  const { isConnected } = useWebSocket<MonitoringUpdate>({
     url: `${import.meta.env.VITE_WS_URL}/api/v1/monitoring/ws`,
-    onMessage: handleMessage,
+    onMessage: (message) => {
+      if (!message || !message.type || !message.data) {
+        console.error('Invalid monitoring update received:', message);
+        return;
+      }
+      handleMessage(message);
+    },
   });
 
   return (
