@@ -1,6 +1,6 @@
 import { useProxies, useToggleProxy, useDeleteProxy, Proxy } from '../../services/proxyService';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import Spinner from '../../components/ui/Spinner';
 import AlertDialog from '../../components/ui/AlertDialog';

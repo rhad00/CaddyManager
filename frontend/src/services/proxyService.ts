@@ -95,7 +95,7 @@ export const useUpdateProxy = (id: string) => {
       const { data } = await api.put(`/proxies/${id}`, updates);
       return data;
     },
-    onSuccess: data => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: keys.detail(id) });
       queryClient.invalidateQueries({ queryKey: keys.lists() });
     },
