@@ -16,7 +16,7 @@ WORKDIR /app
 
 # Only copy necessary runtime files
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/src/migrations ./migrations
 RUN npm ci --omit=dev  # Install only production dependencies
 COPY --from=builder /app/dist ./dist
 
