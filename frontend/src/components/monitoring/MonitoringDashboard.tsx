@@ -5,6 +5,7 @@ import { MetricsChart } from "./MetricsChart";
 import { SSLCertificates } from "./SSLCertificates";
 import { LiveUpdates } from "./LiveUpdates";
 import { AlertsPanel } from "./AlertsPanel";
+import { api } from "@/services/api";
 import {
   MonitoringUpdate,
   ProxyHealth,
@@ -33,12 +34,12 @@ export const MonitoringDashboard: React.FC = () => {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const response = await fetch('/api/monitoring/alerts');
-        if (response.ok) {
-          const data = await response.json();
-          setAlerts(data.alerts);
-          setThresholds(data.thresholds);
-        }
+        const [alertsRes, thresholdsRes] = await Promise.all([
+          api.get('/monitoring/alerts'),
+          api.get('/monitoring/alerts/thresholds')
+        ]);
+        setAlerts(alertsRes.data.data);
+        setThresholds(thresholdsRes.data.data);
       } catch (error) {
         console.error('Failed to fetch alerts:', error);
       }
@@ -111,7 +112,7 @@ export const MonitoringDashboard: React.FC = () => {
 
   // Connect to WebSocket
   const { isConnected } = useWebSocket({
-    url: `${import.meta.env.VITE_WS_URL}/api/monitoring/ws`,
+    url: `${import.meta.env.VITE_WS_URL}/api/v1/monitoring/ws`,
     onMessage: handleMessage,
   });
 

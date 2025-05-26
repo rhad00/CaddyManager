@@ -27,6 +27,16 @@ interface ICaddyRouteMatch {
   host: string[];
 }
 
+interface ICaddyTLSHandler {
+  handler: 'tls';
+  certificate: {
+    load_files: {
+      certificate: string;
+      key: string;
+    };
+  };
+}
+
 interface ICaddyReverseProxyHandler {
   handler: 'reverse_proxy';
   upstreams: {
@@ -49,7 +59,7 @@ interface ICaddyEncodeHandler {
 
 interface ICaddyRoute {
   match: ICaddyRouteMatch[];
-  handle: (ICaddyReverseProxyHandler | ICaddyEncodeHandler)[];
+  handle: (ICaddyReverseProxyHandler | ICaddyEncodeHandler | ICaddyTLSHandler)[];
 }
 
 interface ICaddyServer {
@@ -57,23 +67,6 @@ interface ICaddyServer {
   routes: ICaddyRoute[];
   automatic_https?: {
     disable?: boolean;
-  };
-  tls_connection_policies?: {
-    certificate_selection: {
-      any_tag: string[];
-    };
-  }[];
-  tls?: {
-    certificates?: {
-      load_files: {
-        certificate: string;
-        key: string;
-        tags: string[];
-      }[];
-    };
-    issuer?: {
-      module: string;
-    };
   };
 }
 
@@ -357,7 +350,17 @@ export class Proxy extends Model {
       }
 
       // Configure SSL
-      const sslConfig = this.getSSLConfig(domain);
+      if (domain.ssl_type === 'custom' && domain.custom_cert_path && domain.custom_key_path) {
+        route.handle.unshift({
+          handler: 'tls',
+          certificate: {
+            load_files: {
+              certificate: domain.custom_cert_path,
+              key: domain.custom_key_path,
+            },
+          },
+        });
+      }
 
       config.apps.http.servers[serverName] = {
         listen: [':80', ':443'],
@@ -365,55 +368,9 @@ export class Proxy extends Model {
         automatic_https: {
           disable: domain.ssl_type === 'none',
         },
-        ...sslConfig,
       };
     });
 
     return config as ICaddyConfig;
-  }
-
-  // Helper method to generate SSL configuration
-  private getSSLConfig(domain: IDomainConfig): Partial<ICaddyServer> {
-    if (domain.ssl_type === 'none') {
-      return {};
-    }
-
-    if (domain.ssl_type === 'custom') {
-      if (!domain.custom_cert_path || !domain.custom_key_path) {
-        throw new Error(
-          `Custom SSL certificate and key paths are required for domain: ${domain.name}`,
-        );
-      }
-
-      return {
-        tls_connection_policies: [
-          {
-            certificate_selection: {
-              any_tag: ['cert_' + domain.name],
-            },
-          },
-        ],
-        tls: {
-          certificates: {
-            load_files: [
-              {
-                certificate: domain.custom_cert_path,
-                key: domain.custom_key_path,
-                tags: ['cert_' + domain.name],
-              },
-            ],
-          },
-        },
-      };
-    }
-
-    // For ACME (Let's Encrypt), Caddy handles it automatically
-    return {
-      tls: {
-        issuer: {
-          module: 'acme',
-        },
-      },
-    };
   }
 }

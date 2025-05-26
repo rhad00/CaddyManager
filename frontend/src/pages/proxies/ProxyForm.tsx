@@ -99,7 +99,9 @@ export default function ProxyForm({ proxy }: ProxyFormProps) {
   };
 
   const onSubmit = async (formData: FormData) => {
+    console.log('Form submission attempt with data:', formData);
     const data = transformFormData(formData);
+    console.log('Transformed data:', data);
     try {
       if (proxy) {
         await updateProxy.mutateAsync(data);
@@ -114,6 +116,7 @@ export default function ProxyForm({ proxy }: ProxyFormProps) {
       );
       navigate('/proxies');
     } catch (error) {
+      console.error('Form submission error:', error);
       toast(
         `Failed to ${proxy ? 'update' : 'create'} proxy: ${
           error instanceof Error ? error.message : 'Unknown error occurred'
@@ -158,12 +161,15 @@ export default function ProxyForm({ proxy }: ProxyFormProps) {
               >
                 <select
                   className="w-full p-2 border rounded"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const template = e.target.value;
                     if (template === 'custom') {
+                      // Clear headers when switching to custom
+                      form.setValue('config.upstream.headers', {}, { shouldDirty: true });
                       return;
                     }
                     
+                    // Reset headers before applying new template
                     const headers: HeadersFormData = {};
                     // Common web app / auth platform headers
                     const addGenericHeaders = () => {
@@ -273,7 +279,9 @@ export default function ProxyForm({ proxy }: ProxyFormProps) {
                         headers['header2'] = { name: 'X-Real-IP', value: '{http.request.remote.host}' };
                         break;
                     }
-                    form.setValue('config.upstream.headers', headers);
+                    // Apply new template headers
+                    form.setValue('config.upstream.headers', headers, { shouldDirty: true });
+                    await form.trigger('config.upstream.headers');
                   }}
                   defaultValue="custom"
                 >

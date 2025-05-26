@@ -39,7 +39,7 @@ export class HealthCheck extends Model {
     type: DataType.UUID,
     allowNull: false,
   })
-  proxyId!: string;
+  declare proxyId: string;
 
   @Column({
     type: DataType.STRING,
@@ -48,25 +48,25 @@ export class HealthCheck extends Model {
       isIn: [Object.values(HealthStatus)],
     },
   })
-  status!: HealthStatus;
+  declare status: HealthStatus;
 
   @Column({
     type: DataType.DATE,
     allowNull: false,
   })
-  lastCheck!: Date;
+  declare lastCheck: Date;
 
   @Column({
     type: DataType.INTEGER,
     allowNull: true,
   })
-  responseTime?: number;
+  declare responseTime: number | null;
 
   @Column({
     type: DataType.TEXT,
     allowNull: true,
   })
-  errorMessage?: string;
+  declare errorMessage: string | null;
 
   @BelongsTo(() => Proxy)
   proxy!: Proxy;

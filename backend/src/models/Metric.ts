@@ -42,13 +42,13 @@ export class Metric extends Model {
     type: DataType.UUID,
     allowNull: false,
   })
-  proxyId!: string;
+  declare proxyId: string;
 
   @Column({
     type: DataType.DATE,
     allowNull: false,
   })
-  timestamp!: Date;
+  declare timestamp: Date;
 
   @Column({
     type: DataType.STRING,
@@ -57,19 +57,19 @@ export class Metric extends Model {
       isIn: [Object.values(MetricType)],
     },
   })
-  metricType!: MetricType;
+  declare metricType: MetricType;
 
   @Column({
     type: DataType.FLOAT,
     allowNull: false,
   })
-  value!: number;
+  declare value: number;
 
   @Column({
     type: DataType.JSONB,
     allowNull: true,
   })
-  tags?: Record<string, string>;
+  declare tags: Record<string, string> | null;
 
   @BelongsTo(() => Proxy)
   proxy!: Proxy;

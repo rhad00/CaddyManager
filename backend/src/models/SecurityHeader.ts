@@ -130,7 +130,7 @@ export class SecurityHeader extends Model {
 
   @BeforeCreate
   @BeforeUpdate
-  static async validateSecurityHeader(instance: SecurityHeader) {
+  static validateSecurityHeader(instance: SecurityHeader): void {
     // Validate CSP policy if enabled
     if (instance.cspEnabled && (!instance.cspPolicy || instance.cspPolicy.trim().length === 0)) {
       throw new Error('CSP policy is required when CSP is enabled');

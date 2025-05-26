@@ -100,7 +100,7 @@ export class RateLimit extends Model {
 
   @BeforeCreate
   @BeforeUpdate
-  static async validateRateLimit(instance: RateLimit) {
+  static validateRateLimit(instance: RateLimit): void {
     if (instance.enabled) {
       // At least one rate limit must be specified
       if (!instance.requestsPerMinute && !instance.requestsPerHour && !instance.requestsPerDay) {

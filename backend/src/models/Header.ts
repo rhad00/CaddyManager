@@ -71,7 +71,7 @@ export class Header extends Model {
 
   @BeforeCreate
   @BeforeUpdate
-  static async validateHeader(instance: Header) {
+  static validateHeader(instance: Header): void {
     // Validate header name
     if (!instance.name || instance.name.trim().length === 0) {
       throw new Error('Header name is required');

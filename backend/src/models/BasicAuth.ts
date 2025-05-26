@@ -75,7 +75,7 @@ export class BasicAuth extends Model {
 
   @BeforeCreate
   @BeforeUpdate
-  static async validateBasicAuth(instance: BasicAuth) {
+  static validateBasicAuth(instance: BasicAuth): void {
     if (instance.enabled) {
       // Username is required when enabled
       if (!instance.username || instance.username.trim().length === 0) {
@@ -131,7 +131,7 @@ export class BasicAuth extends Model {
     const hasNumbers = /\d/.test(password);
     const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
-    if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
       throw new Error(
         'Password must contain at least one uppercase letter, one lowercase letter, and one number',
       );
@@ -150,12 +150,12 @@ export class BasicAuth extends Model {
   }
 
   // Generate basic auth configuration for Caddy
-  toCaddyBasicAuth(): any {
+  toCaddyBasicAuth(): object | null {
     if (!this.enabled || !this.username || !this.passwordHash) {
       return null;
     }
 
-    const config: any = {
+    const config = {
       handler: 'authentication',
       providers: {
         http_basic: {

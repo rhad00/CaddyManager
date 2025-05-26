@@ -88,7 +88,7 @@ export class PathRule extends Model {
 
   @BeforeCreate
   @BeforeUpdate
-  static async validatePathRule(instance: PathRule) {
+  static validatePathRule(instance: PathRule): void {
     // Validate path pattern
     if (!instance.pathPattern || instance.pathPattern.trim().length === 0) {
       throw new Error('Path pattern is required');
