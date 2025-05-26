@@ -1,6 +1,6 @@
 import { DataTypes, QueryInterface } from 'sequelize';
 
-export async function up(queryInterface: QueryInterface) {
+export async function up(queryInterface: QueryInterface): Promise<void> {
   // Create alert_thresholds table
   await queryInterface.createTable('alert_thresholds', {
     id: {
@@ -129,7 +129,7 @@ export async function up(queryInterface: QueryInterface) {
   await queryInterface.addIndex('alert_instances', ['acknowledgedAt']);
 }
 
-export async function down(queryInterface: QueryInterface) {
+export async function down(queryInterface: QueryInterface): Promise<void> {
   await queryInterface.dropTable('alert_instances');
   await queryInterface.dropTable('alert_thresholds');
 }

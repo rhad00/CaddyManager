@@ -67,12 +67,74 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 \`\`\`
 
-3. Start the application:
+3. Configure your environment files:
+
+Backend (.env):
+\`\`\`env
+# Server
+PORT=3000
+NODE_ENV=production
+
+# Database (PostgreSQL container)
+DB_HOST=postgres          # Use the service name from docker-compose.yml
+DB_PORT=5432
+DB_NAME=caddymanager
+DB_USER=postgres
+DB_PASSWORD=your_password
+
+# CORS (for Docker Compose)
+FRONTEND_URL=http://frontend:80  # Use the frontend service name
+\`\`\`
+
+Frontend (.env):
+\`\`\`env
+# API URLs (use backend service name)
+VITE_API_URL=http://backend:3000/api
+VITE_WS_URL=ws://backend:3000
+VITE_JWT_STORAGE_KEY=caddy_manager_token
+VITE_ENABLE_WEBSOCKET=true
+\`\`\`
+
+4. Initialize the database and start the application:
 \`\`\`bash
+# Start PostgreSQL first
+docker compose -f docker/docker-compose.yml up -d postgres
+
+# Run migrations (using the migrate script in backend container)
+docker compose -f docker/docker-compose.yml exec backend npm run migrate
+
+# Start remaining services
 docker compose -f docker/docker-compose.yml up -d
 \`\`\`
 
 For detailed installation instructions, including manual deployment and configuration options, see our [Deployment Guide](docs/deployment/README.md).
+
+### Docker Build Notes
+
+The Docker Compose setup uses build contexts for each service:
+```yaml
+backend:
+  build:
+    context: ../backend      # Root of backend source
+    dockerfile: ../docker/Dockerfile.backend
+
+frontend:
+  build:
+    context: ../frontend     # Root of frontend source
+    dockerfile: ../docker/Dockerfile.frontend
+```
+
+All docker compose commands should be run from the project root:
+```bash
+# Build images
+docker compose -f docker/docker-compose.yml build
+
+# Start services (uses SQLite by default)
+docker compose -f docker/docker-compose.yml up -d
+
+# To use PostgreSQL instead:
+docker compose -f docker/docker-compose.yml --profile with-postgres up -d
+```
 
 ## Usage
 
@@ -166,26 +228,81 @@ npm run dev
 ## Configuration
 
 ### Backend (.env)
-\`\`\`env
+```env
+# Server
 PORT=3000
 NODE_ENV=production
-DB_HOST=localhost
+
+# Database
+DB_HOST=postgres    # Use the service name from docker-compose.yml
 DB_PORT=5432
 DB_NAME=caddymanager
 DB_USER=postgres
 DB_PASSWORD=your_password
+
+# JWT
 JWT_SECRET=your_secure_secret
 JWT_EXPIRES_IN=1d
-\`\`\`
+
+# CORS (for Docker Compose setup)
+FRONTEND_URL=http://frontend:80  # Use the frontend service name from docker-compose.yml
+
+# For local development, use:
+# FRONTEND_URL=http://localhost:5173
+```
 
 ### Frontend (.env)
 \`\`\`env
-VITE_API_URL=http://your-api-domain/api
-VITE_WS_URL=ws://your-api-domain
+# Docker Compose setup (use backend service name)
+VITE_API_URL=http://backend:3000/api    # Backend container service name
+VITE_WS_URL=ws://backend:3000           # WebSocket connection to backend
 VITE_JWT_STORAGE_KEY=caddy_manager_token
 VITE_ENABLE_WEBSOCKET=true
 VITE_ENABLE_DARK_MODE=true
+
+# For local development, use:
+# VITE_API_URL=http://localhost:3000/api
+# VITE_WS_URL=ws://localhost:3000
 \`\`\`
+
+### Database Setup and Migrations
+
+The application supports both PostgreSQL and SQLite databases. Database migrations are required for both options to set up the schema.
+
+#### PostgreSQL (Default)
+
+1. Start the PostgreSQL container:
+```bash
+# Start PostgreSQL container first
+docker compose -f docker/docker-compose.yml up -d postgres
+
+# Wait for PostgreSQL to be ready
+docker compose -f docker/docker-compose.yml exec postgres pg_isready
+
+# Run migrations
+docker compose -f docker/docker-compose.yml exec backend npm run migrate
+```
+
+#### SQLite
+
+SQLite doesn't require a separate container, but still needs migrations:
+
+1. Configure backend/.env for SQLite:
+```env
+DB_DIALECT=sqlite
+DB_STORAGE=./data/database.sqlite
+```
+
+2. Create the data directory and run migrations:
+```bash
+# Create data directory (inside backend container)
+docker compose -f docker/docker-compose.yml exec backend mkdir -p data
+
+# Run SQLite migrations
+docker compose -f docker/docker-compose.yml exec backend npm run migrate
+```
+
+Note: Migrations are required for both database options to create the necessary tables and schema.
 
 ## Support
 

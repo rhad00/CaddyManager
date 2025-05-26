@@ -3,11 +3,11 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install dependencies first (better layer caching)
-COPY ../frontend/package*.json ./
+COPY package*.json ./
 RUN npm ci
 
 # Copy source
-COPY ../frontend .
+COPY . .
 
 EXPOSE 5173
 

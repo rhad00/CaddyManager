@@ -39,7 +39,7 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 if (process.env.NODE_ENV !== 'test') {
-  const startServer = async () => {
+  const startServer = async (): Promise<void> => {
     try {
       // Initialize database connection
       await initDatabase();
@@ -50,7 +50,7 @@ if (process.env.NODE_ENV !== 'test') {
       });
 
       // Graceful shutdown handling
-      const shutdown = () => {
+      const shutdown = (): void => {
         console.log('Shutting down server...');
 
         // Stop monitoring service
