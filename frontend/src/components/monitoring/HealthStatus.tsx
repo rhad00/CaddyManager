@@ -26,17 +26,58 @@ export const HealthStatus: React.FC<HealthStatusProps> = ({ proxyHealth }) => {
     return `${time}ms`;
   };
 
+  const getStatusStats = () => {
+    const stats = {
+      total: Object.keys(proxyHealth).length,
+      healthy: 0,
+      degraded: 0,
+      unhealthy: 0
+    };
+
+    Object.values(proxyHealth).forEach(health => {
+      switch (health.status) {
+        case HealthStatusType.HEALTHY:
+          stats.healthy++;
+          break;
+        case HealthStatusType.DEGRADED:
+          stats.degraded++;
+          break;
+        case HealthStatusType.UNHEALTHY:
+          stats.unhealthy++;
+          break;
+      }
+    });
+
+    return stats;
+  };
+
+  const stats = getStatusStats();
+
   return (
     <Card className="w-full">
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           Health Status
           <Badge variant="outline" className="ml-2">
-            {Object.keys(proxyHealth).length} Proxies
+            {stats.total} Proxies
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="text-center p-4 bg-green-500/10 rounded-lg">
+            <div className="text-2xl font-bold text-green-500">{stats.healthy}</div>
+            <div className="text-sm text-muted-foreground">Healthy</div>
+          </div>
+          <div className="text-center p-4 bg-yellow-500/10 rounded-lg">
+            <div className="text-2xl font-bold text-yellow-500">{stats.degraded}</div>
+            <div className="text-sm text-muted-foreground">Degraded</div>
+          </div>
+          <div className="text-center p-4 bg-red-500/10 rounded-lg">
+            <div className="text-2xl font-bold text-red-500">{stats.unhealthy}</div>
+            <div className="text-sm text-muted-foreground">Unhealthy</div>
+          </div>
+        </div>
         <div className="space-y-4">
           {Object.entries(proxyHealth).map(([proxyId, health]) => (
             <div

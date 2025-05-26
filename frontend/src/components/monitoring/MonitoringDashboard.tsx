@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { HealthStatus } from "./HealthStatus";
 import { MetricsChart } from "./MetricsChart";
 import { SSLCertificates } from "./SSLCertificates";
 import { LiveUpdates } from "./LiveUpdates";
+import { AlertsPanel } from "./AlertsPanel";
 import {
   MonitoringUpdate,
   ProxyHealth,
@@ -14,6 +15,7 @@ import {
   HealthCheck,
   SSLCertificate,
 } from "@/types/monitoring";
+import { AlertInstance, AlertThreshold } from "@/types/alerts";
 
 export const MonitoringDashboard: React.FC = () => {
   // State for each monitoring aspect
@@ -24,6 +26,26 @@ export const MonitoringDashboard: React.FC = () => {
   const [selectedMetricType, setSelectedMetricType] = useState<MetricType>(
     MetricType.REQUEST_TIME
   );
+  const [alerts, setAlerts] = useState<AlertInstance[]>([]);
+  const [thresholds, setThresholds] = useState<AlertThreshold[]>([]);
+
+  // Fetch alerts and thresholds on mount
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const response = await fetch('/api/monitoring/alerts');
+        if (response.ok) {
+          const data = await response.json();
+          setAlerts(data.alerts);
+          setThresholds(data.thresholds);
+        }
+      } catch (error) {
+        console.error('Failed to fetch alerts:', error);
+      }
+    };
+    
+    fetchAlerts();
+  }, []);
 
   // Handle incoming WebSocket messages
   const handleMessage = useCallback((message: MonitoringUpdate) => {
@@ -128,8 +150,9 @@ export const MonitoringDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <LiveUpdates updates={updates} />
+        <AlertsPanel alerts={alerts} thresholds={thresholds} />
       </div>
 
       {!isConnected && (

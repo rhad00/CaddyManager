@@ -3,19 +3,31 @@ import Layout from './components/layout/Layout';
 import ProxyListPage from './pages/proxies/ProxyListPage';
 import ProxyForm from './pages/proxies/ProxyForm';
 import EditProxyPage from './pages/proxies/EditProxyPage';
+import LoginPage from './pages/auth/LoginPage';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
+import { SettingsPage } from './pages/settings/SettingsPage';
+import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard';
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<div>Dashboard</div>} />
-        <Route path="proxies" element={<ProxyListPage />} />
-        <Route path="proxies/new" element={<ProxyForm />} />
-        <Route path="proxies/:id" element={<EditProxyPage />} />
-        <Route path="settings" element={<div>Settings</div>} />
-        <Route path="*" element={<div>404 Not Found</div>} />
-      </Route>
-    </Routes>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Protected Routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<Layout />}>
+            <Route index element={<MonitoringDashboard />} />
+            <Route path="proxies" element={<ProxyListPage />} />
+            <Route path="proxies/new" element={<ProxyForm />} />
+            <Route path="proxies/:id" element={<EditProxyPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<div>404 Not Found</div>} />
+          </Route>
+        </Route>
+      </Routes>
+    </AuthProvider>
   );
 }
 
