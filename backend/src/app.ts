@@ -16,7 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: true, // Allow all origins in development
     credentials: true,
   }),
 );
