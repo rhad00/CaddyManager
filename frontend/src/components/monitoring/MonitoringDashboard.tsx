@@ -132,14 +132,28 @@ export const MonitoringDashboard: React.FC = () => {
   }, []);
 
   // Connect to WebSocket
-  const { isConnected } = useWebSocket<MonitoringUpdate>({
+  const { isConnected } = useWebSocket<any>({
     url: `${import.meta.env.VITE_WS_URL}/api/v1/monitoring/ws`,
     onMessage: (message) => {
-      if (!message || !message.type || !message.data) {
+      if (!message?.event || !message?.data) {
         console.error('Invalid monitoring update received:', message);
         return;
       }
-      handleMessage(message);
+
+      // Transform backend event names to frontend types
+      const eventTypeMap: Record<string, "metric" | "health" | "ssl"> = {
+        'metrics-update': 'metric',
+        'health-check': 'health',
+        'ssl-alert': 'ssl'
+      };
+
+      const type = eventTypeMap[message.event];
+      if (!type) {
+        console.error('Unknown event type:', message.event);
+        return;
+      }
+
+      handleMessage({ type, data: message.data });
     },
   });
 
