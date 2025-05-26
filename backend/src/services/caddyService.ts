@@ -1,11 +1,11 @@
 import axios from 'axios';
 import { Proxy } from '../models/Proxy';
 
-interface CaddyRouteMatch {
+interface ICaddyRouteMatch {
   host: string[];
 }
 
-interface CaddyReverseProxyHandler {
+interface ICaddyReverseProxyHandler {
   handler: 'reverse_proxy';
   upstreams: {
     dial: string;
@@ -17,7 +17,7 @@ interface CaddyReverseProxyHandler {
   };
 }
 
-interface CaddyEncodeHandler {
+interface ICaddyEncodeHandler {
   handler: 'encode';
   encodings: {
     gzip: Record<string, never>;
@@ -25,14 +25,18 @@ interface CaddyEncodeHandler {
   };
 }
 
-interface CaddyRoute {
-  match: CaddyRouteMatch[];
-  handle: (CaddyReverseProxyHandler | CaddyEncodeHandler)[];
+interface ICaddyTLSHandler {
+  handler: 'tls';
 }
 
-interface CaddyServer {
+interface ICaddyRoute {
+  match: ICaddyRouteMatch[];
+  handle: (ICaddyReverseProxyHandler | ICaddyEncodeHandler | ICaddyTLSHandler)[];
+}
+
+interface ICaddyServer {
   listen: string[];
-  routes: CaddyRoute[];
+  routes: ICaddyRoute[];
   automatic_https?: {
     disable?: boolean;
   };
@@ -55,14 +59,14 @@ interface CaddyServer {
   };
 }
 
-interface CaddyConfig {
+interface ICaddyConfig {
   admin: {
     listen: string;
   };
   apps: {
     http: {
       servers: {
-        [key: string]: CaddyServer;
+        [key: string]: ICaddyServer;
       };
     };
   };
@@ -74,12 +78,41 @@ export class CaddyService {
   /**
    * Get the current Caddy configuration
    */
-  static async getConfig(): Promise<CaddyConfig> {
+  static async getConfig(): Promise<ICaddyConfig> {
     try {
-      const response = await axios.get(`${this.apiUrl}/config/`);
+      const response = await axios.get<ICaddyConfig>(`${this.apiUrl}/config/`);
       return response.data;
     } catch (error) {
       console.error('Failed to get Caddy config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Save current configuration to ensure persistence
+   */
+  static async saveConfig(): Promise<void> {
+    try {
+      const config = await this.getConfig();
+      await axios.post(`${this.apiUrl}/config/`, config);
+      // Use Caddy's config endpoint to persist the configuration
+      await axios.post(`${this.apiUrl}/config/apps/persist`, {});
+    } catch (error) {
+      console.error('Failed to save Caddy config:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load saved configuration
+   */
+  static async loadConfig(): Promise<void> {
+    try {
+      // Get the saved configuration and apply it
+      const config = await this.getConfig();
+      await axios.post(`${this.apiUrl}/load`, config);
+    } catch (error) {
+      console.error('Failed to load Caddy config:', error);
       throw error;
     }
   }
@@ -97,6 +130,9 @@ export class CaddyService {
 
       // Apply new config
       await axios.post(`${this.apiUrl}/load`, config);
+
+      // Save config to ensure persistence
+      await this.saveConfig();
 
       // Update proxy status
       await proxy.update({ status: 'active' });
@@ -121,6 +157,9 @@ export class CaddyService {
       // Apply new config
       await axios.post(`${this.apiUrl}/load`, config);
 
+      // Save config to ensure persistence
+      await this.saveConfig();
+
       // Update proxy status
       await proxy.update({ status: 'removed' });
     } catch (error) {
@@ -132,9 +171,17 @@ export class CaddyService {
   /**
    * Update Caddy config object with proxy settings
    */
-  private static updateConfigWithProxy(config: CaddyConfig, proxy: Proxy): CaddyConfig {
+  private static updateConfigWithProxy(config: ICaddyConfig, proxy: Proxy): ICaddyConfig {
     // Get proxy-specific configuration
-    const proxyConfig = proxy.toCaddyConfig();
+    const proxyConfig = proxy.toCaddyConfig() as {
+      apps: {
+        http: {
+          servers: {
+            [key: string]: ICaddyServer;
+          };
+        };
+      };
+    };
 
     // Ensure http server exists
     if (!config.apps.http.servers) {
@@ -153,7 +200,7 @@ export class CaddyService {
   /**
    * Remove proxy routes from Caddy config
    */
-  private static removeProxyFromConfig(config: CaddyConfig, proxy: Proxy): CaddyConfig {
+  private static removeProxyFromConfig(config: ICaddyConfig, proxy: Proxy): ICaddyConfig {
     const { domains } = proxy.config;
 
     domains.forEach(domain => {
