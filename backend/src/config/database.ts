@@ -1,18 +1,14 @@
 import { Sequelize } from 'sequelize-typescript';
 import { Dialect } from 'sequelize';
-import path from 'path';
-
-// Get SQLite data directory from env or use default
-const sqliteDataDir = process.env.SQLITE_DATA_DIR || 'data';
 
 // Default to SQLite configuration
 import { SequelizeOptions } from 'sequelize-typescript';
 
 let sequelizeConfig: SequelizeOptions = {
   dialect: 'sqlite' as Dialect,
-  storage: path.join(__dirname, `../../${sqliteDataDir}/database.sqlite`),
+  storage: '/app/data/database.sqlite',
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
-  models: [__dirname + '/../models'],
+  models: ['/app/models'],
 };
 
 // Switch to PostgreSQL if explicitly configured

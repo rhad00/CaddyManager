@@ -1,12 +1,6 @@
-const path = require('path');
-
-// Get SQLite data directory from env or use default
-const sqliteDataDir = process.env.SQLITE_DATA_DIR || 'data';
-
-// Default SQLite configuration
 const defaultConfig = {
   dialect: 'sqlite',
-  storage: path.join(__dirname, `${sqliteDataDir}/database.sqlite`),
+  storage: '/app/data/database.sqlite',
   seederStorage: 'sequelize',
   seederStorageTableName: 'SequelizeData',
   migrationStorage: 'sequelize',
@@ -37,19 +31,19 @@ function getPostgresConfig() {
 module.exports = {
   development: {
     ...defaultConfig,
-    storage: path.join(__dirname, `${sqliteDataDir}/database.sqlite`),
+    storage: '/app/data/database.sqlite',
     logging: console.log,
     ...(getPostgresConfig() || {})
   },
   test: {
     ...defaultConfig,
-    storage: path.join(__dirname, `${sqliteDataDir}/database.test.sqlite`),
+    storage: '/app/data/database.test.sqlite',
     logging: false,
     ...(getPostgresConfig() || {})
   },
   production: {
     ...defaultConfig,
-    storage: path.join(__dirname, `${sqliteDataDir}/database.sqlite`),
+    storage: '/app/data/database.sqlite',
     logging: false,
     pool: {
       max: 5,
