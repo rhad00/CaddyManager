@@ -1,0 +1,12 @@
+{
+    # Enable admin API
+    admin 0.0.0.0:2019
+
+    # Set default log level
+    debug
+}
+
+# Default site - will be managed by CaddyManager
+:80 {
+    respond "CaddyManager is starting up..." 200
+}

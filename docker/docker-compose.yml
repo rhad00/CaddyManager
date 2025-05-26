@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    volumes:
+      - ../backend:/app
+      - /app/node_modules
+      - sqlite_data:/app/data  # Mount SQLite data directory
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - POSTGRES_DB=false  # Default to SQLite
+      - SQLITE_DATA_DIR=data
+      - JWT_SECRET=development_secret
+      - CADDY_API_URL=http://caddy:2019
+      # PostgreSQL URL available but not used by default
+      - POSTGRES_URL=postgresql://postgres:postgres@db:5432/caddymanager
+    depends_on:
+      - caddy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    depends_on:
+      - backend
+
+  db:
+    profiles:
+      - "with-postgres"  # Only start when explicitly enabled
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=caddymanager
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:  # Named volume for SQLite database files
+  postgres_data:
+  caddy_data:
+  caddy_config:
