@@ -25,4 +25,4 @@ COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production
 EXPOSE 3020
-CMD ["node", "dist/index.js"]  # Replace with actual entrypoint
+CMD ["node", "dist/app.js"]  
