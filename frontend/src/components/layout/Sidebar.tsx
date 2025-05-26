@@ -10,7 +10,7 @@ const navigation = [
 
 export default function Sidebar() {
   return (
-    <div className="hidden border-r bg-background lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
+    <div className="hidden border-r bg-background lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col z-50">
       <div className="space-y-4 py-4">
         <div className="px-3 py-2">
           <div className="space-y-1">

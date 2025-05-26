@@ -11,11 +11,14 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
+  const [isInitialized, setIsInitialized] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Initialize auth state from localStorage
     setIsAuthenticated(authService.isAuthenticated());
+    setIsInitialized(true);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -32,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
-      {children}
+      {isInitialized ? children : null}
     </AuthContext.Provider>
   );
 }

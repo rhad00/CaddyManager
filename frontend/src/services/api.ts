@@ -11,9 +11,11 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+import { authService } from './authService';
+
 // Add auth token to requests if available
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token');
+  const token = authService.getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -25,9 +27,7 @@ api.interceptors.response.use(
   response => response,
   async error => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      // Redirect to login if unauthorized
-      window.location.href = '/login';
+      authService.logout();
     }
     return Promise.reject(error);
   },
