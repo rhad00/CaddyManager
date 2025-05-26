@@ -111,7 +111,7 @@ export const MonitoringDashboard: React.FC = () => {
 
   // Connect to WebSocket
   const { isConnected } = useWebSocket({
-    url: "ws://localhost:3000/api/monitoring/ws",
+    url: `${import.meta.env.VITE_WS_URL}/api/monitoring/ws`,
     onMessage: handleMessage,
   });
 

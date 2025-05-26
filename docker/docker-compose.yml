@@ -25,18 +25,18 @@ services:
     build:
       context: ../frontend
       dockerfile: ../docker/Dockerfile.frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://backend:3020/api}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://backend:3020}
+        VITE_ENABLE_WEBSOCKET: ${VITE_ENABLE_WEBSOCKET:-true}
+        VITE_JWT_STORAGE_KEY: ${VITE_JWT_STORAGE_KEY}
+        VITE_ENABLE_DARK_MODE: ${VITE_ENABLE_DARK_MODE:-true}
+        VITE_METRICS_REFRESH_INTERVAL: ${VITE_METRICS_REFRESH_INTERVAL:-30000}
+        VITE_HEALTH_CHECK_INTERVAL: ${VITE_HEALTH_CHECK_INTERVAL:-60000}
     ports:
       - "5173:5173"
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://backend:3020/api
-      - VITE_WS_URL=ws://backend:3020
-      - VITE_JWT_STORAGE_KEY=e765138ba75733a1587312eba010f5a825f68512f18d8be4d403bb46a7ddf493b34e86526861eafb9f67b148b7972a0d24e938b4c1e75af50c8de3b0f185e9cf7944abb73324e1ad7bd1e776446ab7bc41dc4ff4d34f48b6cfe2567860243ffa63596148c9a8daac6478c4819e0b83f95cf00a9794b65748be602160c36e02c1fdac8794f30654645758e642588aa3a4f3feaa9fc0fe61ef6c5d525e3795342c4e2e69221050054d45b393c58e2596584935a9c86af8423c947a4b924b27245739f49c35d301d08d3ff6ae44f3e7fa6636e40a0392706567c23833bb3dc0a131b9f998c5dc929b7e17f0c531ee7f2b330b352ca6670c83fc9617e918affae751
-      - VITE_ENABLE_WEBSOCKET=true
-      - VITE_ENABLE_DARK_MODE=true
-      - VITE_METRICS_REFRESH_INTERVAL=30000
-      - VITE_HEALTH_CHECK_INTERVAL=60000
   db:
     profiles:
       - "with-postgres"  # Only start when explicitly enabled
