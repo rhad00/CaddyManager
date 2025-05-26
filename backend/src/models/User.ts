@@ -34,37 +34,37 @@ export class User extends Model {
     type: DataType.STRING,
     allowNull: false,
   })
-  email!: string;
+  declare email: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  password!: string;
+  declare password: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
   })
-  role!: 'admin' | 'user';
+  declare role: 'admin' | 'user';
 
   @Column({
     type: DataType.DATE,
     allowNull: true,
   })
-  lastLogin!: Date;
+  declare lastLogin: Date;
 
   @Column({
     type: DataType.BOOLEAN,
     defaultValue: true,
   })
-  isActive!: boolean;
+  declare isActive: boolean;
 
   @Column({
     type: DataType.INTEGER,
     defaultValue: 0,
   })
-  failedLoginAttempts!: number;
+  declare failedLoginAttempts: number;
 
   @CreatedAt
   @Column

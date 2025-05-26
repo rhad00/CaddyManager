@@ -16,13 +16,13 @@ WORKDIR /app
 
 # Only copy necessary runtime files
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/src/migrations ./migrations
-COPY --from=builder /app/src/seeders ./seeders
+COPY --from=builder /app/src/migrations/20*.ts ./migrations/
+COPY --from=builder /app/src/seeders/20*.js ./seeders/
 COPY --from=builder /app/src/config ./config
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/.sequelizerc ./.sequelizerc
 COPY --from=builder /app/scripts ./scripts
-RUN npm ci --omit=dev  # Install only production dependencies
+RUN npm ci  # Need TypeScript for migrations/seeders
 
 
 # Ensure data directory exists
