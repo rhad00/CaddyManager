@@ -25,6 +25,10 @@ class AuthService {
 
   logout(): void {
     localStorage.removeItem(this.tokenKey);
+    // Dispatch custom auth change event
+    window.dispatchEvent(new CustomEvent('auth-token-changed', {
+      detail: { key: this.tokenKey, oldValue: null, newValue: null }
+    }));
   }
 
   getToken(): string | null {
@@ -32,7 +36,12 @@ class AuthService {
   }
 
   private setToken(token: string): void {
+    const oldToken = localStorage.getItem(this.tokenKey);
     localStorage.setItem(this.tokenKey, token);
+    // Dispatch custom auth change event
+    window.dispatchEvent(new CustomEvent('auth-token-changed', {
+      detail: { key: this.tokenKey, oldValue: oldToken, newValue: token }
+    }));
   }
 
   isAuthenticated(): boolean {

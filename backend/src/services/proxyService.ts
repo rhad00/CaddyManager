@@ -1,29 +1,51 @@
 import { Proxy } from '../models/Proxy';
-import { User } from '../models/User';
 import { CaddyService } from './caddyService';
 import { createError } from '../middleware/errorHandler';
+
+interface IProxyConfig {
+  domains: Array<{
+    name: string;
+    ssl_type: 'acme' | 'custom' | 'none';
+    custom_cert_id?: string;
+  }>;
+  upstream: {
+    url: string;
+    headers?: Record<string, string>;
+  };
+  http_to_https: boolean;
+  compression: boolean;
+  cache_enabled: boolean;
+  cache_duration?: string;
+  custom_headers?: Record<string, string>;
+}
 
 export class ProxyService {
   static async createProxy(data: {
     name: string;
-    config: any;
+    config: IProxyConfig;
     createdById: string;
   }): Promise<Proxy> {
     try {
-      // Create proxy record
-      const proxy = await Proxy.create({
+      // First create a temporary proxy object to validate with Caddy
+      const tempProxy = Proxy.build({
         name: data.name,
         config: data.config,
         createdById: data.createdById,
         status: 'pending',
       });
 
-      // Apply configuration to Caddy
-      await CaddyService.applyProxy(proxy);
+      // Try to apply configuration to Caddy first
+      await CaddyService.applyProxy(tempProxy);
 
+      // If Caddy accepts the config, save to database
+      const proxy = await tempProxy.save();
       return proxy;
-    } catch (error: any) {
-      if (error?.name === 'SequelizeUniqueConstraintError') {
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'name' in error &&
+        error.name === 'SequelizeUniqueConstraintError'
+      ) {
         throw createError(`Proxy with name "${data.name}" already exists`, 400);
       }
       throw error;
@@ -34,7 +56,7 @@ export class ProxyService {
     id: string,
     data: {
       name?: string;
-      config?: any;
+      config?: IProxyConfig;
       isActive?: boolean;
     },
   ): Promise<Proxy> {
@@ -88,7 +110,10 @@ export class ProxyService {
   ): Promise<{ rows: Proxy[]; count: number }> {
     const { userId, isActive, limit = 10, offset = 0 } = options;
 
-    const where: any = {};
+    const where: {
+      createdById?: string;
+      isActive?: boolean;
+    } = {};
     if (userId) where.createdById = userId;
     if (typeof isActive === 'boolean') where.isActive = isActive;
 
@@ -120,7 +145,7 @@ export class ProxyService {
     return proxy;
   }
 
-  static async validateProxyConfig(config: any): Promise<void> {
+  static validateProxyConfig(config: IProxyConfig): void {
     // Validate domains
     if (!config.domains || !Array.isArray(config.domains) || config.domains.length === 0) {
       throw createError('At least one domain is required', 400);

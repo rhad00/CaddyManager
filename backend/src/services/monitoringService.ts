@@ -3,6 +3,12 @@ import { Metric, MetricType } from '../models/Metric';
 import { HealthCheck, HealthStatus } from '../models/HealthCheck';
 import { SSLCertificate, CertificateStatus } from '../models/SSLCertificate';
 import { WebSocket } from 'ws';
+
+interface IMonitoringWebSocket extends WebSocket {
+  pingInterval?: NodeJS.Timeout;
+  stateInterval?: NodeJS.Timeout;
+  userId?: string;
+}
 import axios from 'axios';
 import https from 'https';
 import tls from 'tls';
@@ -15,7 +21,8 @@ interface IMonitoringOptions {
 
 class MonitoringService {
   private static instance: MonitoringService;
-  private webSocketClients: Set<WebSocket>;
+  private webSocketClients: Set<IMonitoringWebSocket>;
+  private userConnections: Map<string, Set<IMonitoringWebSocket>>;
   private options: IMonitoringOptions;
   private healthCheckTimer?: NodeJS.Timeout;
   private metricCollectionTimer?: NodeJS.Timeout;
@@ -23,6 +30,7 @@ class MonitoringService {
 
   private constructor() {
     this.webSocketClients = new Set();
+    this.userConnections = new Map();
     this.options = {
       healthCheckInterval: 60000, // 1 minute
       metricCollectionInterval: 10000, // 10 seconds
@@ -35,6 +43,92 @@ class MonitoringService {
       MonitoringService.instance = new MonitoringService();
     }
     return MonitoringService.instance;
+  }
+
+  private async sendInitialState(ws: IMonitoringWebSocket): Promise<void> {
+    try {
+      const proxies = await Proxy.findAll({ where: { isActive: true } });
+
+      if (proxies.length === 0) {
+        this.sendEmptyState(ws);
+        return;
+      }
+
+      // Send current state for each proxy
+      for (const proxy of proxies) {
+        // Send latest health check
+        const healthCheck = await HealthCheck.findOne({
+          where: { proxyId: proxy.id },
+          order: [['lastCheck', 'DESC']],
+        });
+        if (healthCheck) {
+          ws.send(
+            JSON.stringify({
+              event: 'health-check',
+              data: {
+                proxyId: proxy.id,
+                status: healthCheck.status,
+                timestamp: healthCheck.lastCheck,
+              },
+            }),
+          );
+        }
+
+        // Send latest metrics
+        const metrics = await Metric.findAll({
+          where: { proxyId: proxy.id },
+          order: [['timestamp', 'DESC']],
+          limit: 1,
+        });
+        if (metrics.length > 0) {
+          ws.send(
+            JSON.stringify({
+              event: 'metrics-update',
+              data: {
+                proxyId: proxy.id,
+                metrics: metrics[0],
+                timestamp: metrics[0].timestamp,
+              },
+            }),
+          );
+        }
+
+        // Send SSL certificate status
+        const cert = await SSLCertificate.findOne({
+          where: { proxyId: proxy.id },
+        });
+        if (cert?.needsRenewal()) {
+          ws.send(
+            JSON.stringify({
+              event: 'ssl-alert',
+              data: {
+                proxyId: proxy.id,
+                domain: cert.domain,
+                status: cert.status,
+                daysUntilExpiration: cert.getDaysUntilExpiration(),
+              },
+            }),
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error sending initial state:', error);
+    }
+  }
+
+  private sendEmptyState(ws: IMonitoringWebSocket): void {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(
+        JSON.stringify({
+          event: 'system-status',
+          data: {
+            status: 'no_proxies',
+            message: 'No active proxies configured',
+            timestamp: new Date(),
+          },
+        }),
+      );
+    }
   }
 
   // Start all monitoring activities
@@ -56,6 +150,14 @@ class MonitoringService {
   private async runHealthChecks(): Promise<void> {
     try {
       const proxies = await Proxy.findAll({ where: { isActive: true } });
+      if (proxies.length === 0) {
+        this.notifyClients('system-status', {
+          status: 'no_proxies',
+          message: 'No active proxies configured',
+          timestamp: new Date(),
+        });
+        return;
+      }
       await Promise.all(proxies.map(proxy => this.performHealthCheck(proxy)));
     } catch (error) {
       console.error('Error running health checks:', error);
@@ -141,6 +243,14 @@ class MonitoringService {
   private async runMetricCollection(): Promise<void> {
     try {
       const proxies = await Proxy.findAll({ where: { isActive: true } });
+      if (proxies.length === 0) {
+        this.notifyClients('system-status', {
+          status: 'no_proxies',
+          message: 'No active proxies configured',
+          timestamp: new Date(),
+        });
+        return;
+      }
       await Promise.all(proxies.map(proxy => this.collectMetrics(proxy)));
     } catch (error) {
       console.error('Error collecting metrics:', error);
@@ -201,6 +311,14 @@ class MonitoringService {
   private async runSSLMonitoring(): Promise<void> {
     try {
       const proxies = await Proxy.findAll({ where: { isActive: true } });
+      if (proxies.length === 0) {
+        this.notifyClients('system-status', {
+          status: 'no_proxies',
+          message: 'No active proxies configured',
+          timestamp: new Date(),
+        });
+        return;
+      }
       await Promise.all(proxies.map(proxy => this.checkSSLCertificates(proxy)));
     } catch (error) {
       console.error('Error monitoring SSL certificates:', error);
@@ -288,16 +406,130 @@ class MonitoringService {
   }
 
   // WebSocket Management Methods
-  addWebSocketClient(ws: WebSocket): void {
-    this.webSocketClients.add(ws);
-    ws.on('close', () => this.webSocketClients.delete(ws));
+  addWebSocketClient(ws: IMonitoringWebSocket): void {
+    try {
+      // Ensure we have user ID
+      if (!ws.userId) {
+        console.error('No user ID provided for WebSocket client');
+        ws.close(1002, 'No user ID provided');
+        return;
+      }
+
+      // Set up event handlers first
+      ws.on('error', error => {
+        console.error('WebSocket client error:', error);
+        this.removeWebSocketClient(ws);
+      });
+
+      ws.on('close', () => {
+        console.log('WebSocket client disconnected');
+        this.removeWebSocketClient(ws);
+      });
+
+      // Check if user already has an active connection
+      const userSockets = this.userConnections.get(ws.userId);
+      if (userSockets?.size || 0 >= 1) {
+        console.log('User already has an active connection:', ws.userId);
+        ws.send(
+          JSON.stringify({
+            event: 'system-status',
+            data: {
+              status: 'error',
+              message: 'Another monitoring session is already active',
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        );
+        ws.close(1013, 'Too many connections');
+        return;
+      }
+
+      // Initialize user's connection set if needed
+      if (!this.userConnections.has(ws.userId)) {
+        this.userConnections.set(ws.userId, new Set());
+      }
+
+      // Add to both global and user-specific sets
+      this.webSocketClients.add(ws);
+      this.userConnections.get(ws.userId)?.add(ws);
+
+      // Set up ping/pong to detect stale connections
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === ws.OPEN) {
+          ws.ping();
+        }
+      }, 30000);
+      ws.pingInterval = pingInterval;
+
+      // Set up periodic state updates
+      const stateInterval = setInterval(() => {
+        if (ws.readyState === ws.OPEN) {
+          void Proxy.findAll({ where: { isActive: true } }).then(proxies => {
+            if (proxies.length === 0) {
+              this.sendEmptyState(ws);
+            }
+          });
+        }
+      }, this.options.metricCollectionInterval);
+      ws.stateInterval = stateInterval;
+
+      // Send initial connection status
+      ws.send(
+        JSON.stringify({
+          event: 'connection',
+          data: {
+            status: 'connected',
+            timestamp: new Date().toISOString(),
+          },
+        }),
+      );
+
+      // Send initial state after all setup is complete
+      void this.sendInitialState(ws);
+    } catch (error) {
+      console.error('Error adding WebSocket client:', error);
+      this.removeWebSocketClient(ws);
+    }
+  }
+
+  private removeWebSocketClient(ws: IMonitoringWebSocket): void {
+    if (ws.pingInterval) {
+      clearInterval(ws.pingInterval);
+    }
+    if (ws.stateInterval) {
+      clearInterval(ws.stateInterval);
+    }
+
+    // Remove from both global and user-specific sets
+    this.webSocketClients.delete(ws);
+    if (ws.userId) {
+      const userSockets = this.userConnections.get(ws.userId);
+      if (userSockets) {
+        userSockets.delete(ws);
+        if (userSockets.size === 0) {
+          this.userConnections.delete(ws.userId);
+        }
+      }
+    }
+
+    if (ws.readyState === ws.OPEN) {
+      ws.close();
+    }
   }
 
   private notifyClients(event: string, data: unknown): void {
     const message = JSON.stringify({ event, data });
     this.webSocketClients.forEach(ws => {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(message);
+      try {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(message);
+        } else {
+          // Remove stale connections
+          this.removeWebSocketClient(ws);
+        }
+      } catch (error) {
+        console.error('Error sending message to client:', error);
+        this.removeWebSocketClient(ws);
       }
     });
   }

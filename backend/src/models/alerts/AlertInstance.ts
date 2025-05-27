@@ -87,6 +87,13 @@ export class AlertInstance extends Model implements IAlertInstance {
   timestamp!: Date;
 
   @Column({
+    type: DataType.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  })
+  resolved!: boolean;
+
+  @Column({
     type: DataType.DATE,
     allowNull: true,
   })

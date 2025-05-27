@@ -51,9 +51,15 @@ export interface SSLCertificate {
   status: CertificateStatus;
 }
 
+export interface SystemStatus {
+  status: "no_proxies" | "error";
+  message: string;
+  timestamp: string;
+}
+
 export interface MonitoringUpdate {
-  type: "metric" | "health" | "ssl";
-  data: Metric | HealthCheck | SSLCertificate;
+  type: "metric" | "health" | "ssl" | "system";
+  data: Metric | HealthCheck | SSLCertificate | SystemStatus;
 }
 
 export interface ProxyMetrics {

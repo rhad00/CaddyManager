@@ -131,18 +131,31 @@ export default function ProxyListPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        proxy.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {proxy.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="flex gap-2 items-center">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          proxy.isActive
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
+                        {proxy.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                      {proxy.status === 'error' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          Error
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
+                      <Link 
+                        to={`/proxies/${proxy.id}`}
+                        className="text-sm text-primary hover:underline"
+                      >
+                        Edit
+                      </Link>
                       <button
                         onClick={() => handleToggle(proxy)}
                         className="text-sm text-primary hover:underline"

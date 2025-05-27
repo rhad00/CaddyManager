@@ -1,5 +1,6 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { Proxy } from '../models/Proxy';
+import { createError } from '../middleware/errorHandler';
 
 interface ICaddyRouteMatch {
   host: string[];
@@ -73,7 +74,7 @@ interface ICaddyConfig {
 }
 
 export class CaddyService {
-  private static apiUrl = process.env.CADDY_API_URL || 'http://caddy:2019';
+  private static apiUrl = process.env.CADDY_API_URL || 'http://193.37.138.47:2019';
 
   /**
    * Get the current Caddy configuration
@@ -121,10 +122,10 @@ export class CaddyService {
    * Update Caddy configuration with a proxy
    */
   static async applyProxy(proxy: Proxy): Promise<void> {
-    try {
-      // Get current config
-      let config = await this.getConfig();
+    // Get current config
+    let config = await this.getConfig();
 
+    try {
       // Create or update server config
       config = this.updateConfigWithProxy(config, proxy);
 
@@ -134,12 +135,17 @@ export class CaddyService {
       // Save config to ensure persistence
       await this.saveConfig();
 
-      // Update proxy status
-      await proxy.update({ status: 'active' });
+      // Only if all Caddy operations succeed, mark as active
+      if ('id' in proxy && proxy.id) {
+        await proxy.update({ status: 'active' });
+      } else {
+        proxy.status = 'active';
+      }
     } catch (error) {
       console.error('Failed to apply proxy config:', error);
-      await proxy.update({ status: 'error' });
-      throw error;
+      const axiosError = error as AxiosError<{ error: string }>;
+      const message = axiosError.response?.data?.error || axiosError.message || 'Unknown error';
+      throw createError(`Failed to configure Caddy: ${message}`, 400);
     }
   }
 

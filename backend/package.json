@@ -13,10 +13,10 @@
     "migrate": "node scripts/migrate.js db:migrate",
     "migrate:undo": "node scripts/migrate.js db:migrate:undo",
     "migrate:undo:all": "node scripts/migrate.js db:migrate:undo:all",
-    "seed": "sequelize-cli db:seed:all",
-    "seed:undo": "sequelize-cli db:seed:undo",
-    "seed:undo:all": "sequelize-cli db:seed:undo:all",
-    "db:reset": "sequelize-cli db:migrate:undo:all && sequelize-cli db:migrate && sequelize-cli db:seed:all"
+    "seed": "node scripts/seed.js db:seed:all",
+    "seed:undo": "node scripts/seed.js db:seed:undo",
+    "seed:undo:all": "node scripts/seed.js db:seed:undo:all",
+    "db:reset": "node scripts/migrate.js db:migrate:undo:all && node scripts/migrate.js db:migrate && node scripts/seed.js db:seed:all"
   },
   "dependencies": {
     "@types/bcrypt": "^5.0.2",

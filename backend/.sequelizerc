@@ -1,8 +1,8 @@
 require('ts-node/register');
 
 module.exports = {
-  'config': '/app/config/sequelize.js',
-  'models-path': '/app/dist/models',
-  'seeders-path': '/app/seeders',
-  'migrations-path': '/app/migrations'
+  'config': 'src/config/sequelize.js',
+  'models-path': 'src/models',
+  'seeders-path': 'src/seeders',
+  'migrations-path': 'src/migrations'
 }

@@ -1,6 +1,6 @@
 const defaultConfig = {
   dialect: 'sqlite',
-  storage: '/app/data/database.sqlite',
+  storage: 'data/database.sqlite',
   seederStorage: 'sequelize',
   seederStorageTableName: 'SequelizeData',
   migrationStorage: 'sequelize',
@@ -31,19 +31,19 @@ function getPostgresConfig() {
 module.exports = {
   development: {
     ...defaultConfig,
-    storage: '/app/data/database.sqlite',
+    storage: 'data/database.sqlite',
     logging: console.log,
     ...(getPostgresConfig() || {})
   },
   test: {
     ...defaultConfig,
-    storage: '/app/data/database.test.sqlite',
+    storage: 'data/database.test.sqlite',
     logging: false,
     ...(getPostgresConfig() || {})
   },
   production: {
     ...defaultConfig,
-    storage: '/app/data/database.sqlite',
+    storage: 'data/database.sqlite',
     logging: false,
     pool: {
       max: 5,

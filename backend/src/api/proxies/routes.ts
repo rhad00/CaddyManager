@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ProxyService } from '../../services/proxyService';
 import { validateBody } from '../../middleware/validation';
-import { authenticate, requireAdmin } from '../../middleware/authMiddleware';
+import { authenticate } from '../../middleware/authMiddleware';
 import { createError } from '../../middleware/errorHandler';
 
 const router = Router();
@@ -50,7 +50,7 @@ router.get('/', async (req, res, next) => {
     const options = {
       limit: Number(limit) || 10,
       offset: Number(offset) || 0,
-      isActive: isActive === 'true',
+      isActive: isActive ? isActive === 'true' : undefined,
       userId: req.user?.role === 'admin' ? undefined : req.user?.id,
     };
 

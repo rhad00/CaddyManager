@@ -68,6 +68,7 @@ export interface IAlertInstance {
   message: string;
   details: Record<string, unknown>;
   timestamp: Date;
+  resolved: boolean;
   acknowledgedAt?: Date;
   acknowledgedBy?: string;
 }

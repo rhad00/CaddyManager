@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { useWebSocket } from "@/hooks/useWebSocket";
+import React, { useState, useEffect } from "react";
 import { HealthStatus } from "./HealthStatus";
 import { MetricsChart } from "./MetricsChart";
 import { SSLCertificates } from "./SSLCertificates";
 import { LiveUpdates } from "./LiveUpdates";
 import { AlertsPanel } from "./AlertsPanel";
 import { api } from "@/services/api";
+import { useWebSocketContext } from "@/context/WebSocketContext";
 import {
-  MonitoringUpdate,
   ProxyHealth,
   ProxyMetrics,
   ProxySSLCertificates,
@@ -15,20 +14,41 @@ import {
   Metric,
   HealthCheck,
   SSLCertificate,
+  MonitoringUpdate,
+  SystemStatus,
 } from "@/types/monitoring";
 import { AlertInstance, AlertThreshold } from "@/types/alerts";
+
+// Type guards
+const isHealthCheck = (data: any): data is HealthCheck => {
+  return 'proxyId' in data && 'status' in data;
+};
+
+const isMetric = (data: any): data is Metric => {
+  return 'proxyId' in data && 'metricType' in data && 'value' in data;
+};
+
+const isSSLCertificate = (data: any): data is SSLCertificate => {
+  return 'proxyId' in data && 'domain' in data;
+};
+
+const isSystemStatus = (data: any): data is SystemStatus => {
+  return 'status' in data && 'message' in data;
+};
 
 export const MonitoringDashboard: React.FC = () => {
   // State for each monitoring aspect
   const [proxyHealth, setProxyHealth] = useState<ProxyHealth>({});
   const [proxyMetrics, setProxyMetrics] = useState<ProxyMetrics>({});
   const [certificates, setCertificates] = useState<ProxySSLCertificates>({});
-  const [updates, setUpdates] = useState<MonitoringUpdate[]>([]);
   const [selectedMetricType, setSelectedMetricType] = useState<MetricType>(
     MetricType.REQUEST_TIME
   );
   const [alerts, setAlerts] = useState<AlertInstance[]>([]);
   const [thresholds, setThresholds] = useState<AlertThreshold[]>([]);
+
+  // Get WebSocket connection state and updates
+  const { isConnected, isConnecting, isDisabled, lastUpdate, error } = useWebSocketContext();
 
   // Fetch alerts and thresholds on mount
   useEffect(() => {
@@ -48,158 +68,145 @@ export const MonitoringDashboard: React.FC = () => {
     fetchAlerts();
   }, []);
 
-  // Handle incoming WebSocket messages
-  const handleMessage = useCallback((message: MonitoringUpdate) => {
+  // Update state based on WebSocket messages
+  useEffect(() => {
+    if (!lastUpdate?.data || !lastUpdate.type) return;
+    const { data } = lastUpdate;
+
     try {
-      if (!message.data) {
-        console.error('Message data is missing:', message);
-        return;
-      }
-
-      switch (message.type) {
-        case "health": {
-          const healthData = message.data as HealthCheck;
-          if (!healthData.proxyId || !healthData.status) {
-            console.error('Invalid health data received:', healthData);
-            return;
+      switch (lastUpdate.type) {
+        case "health":
+          if (isHealthCheck(data)) {
+            setProxyHealth(prev => ({
+              ...prev,
+              [data.proxyId]: data,
+            }));
           }
-        setProxyHealth((prev) => ({
-          ...prev,
-          [healthData.proxyId]: healthData,
-        }));
-        break;
-      }
-        case "metric": {
-          const metricData = message.data as Metric;
-          if (!metricData.proxyId || !metricData.metricType || typeof metricData.value !== 'number') {
-            console.error('Invalid metric data received:', metricData);
-            return;
+          break;
+
+        case "metric":
+          if (isMetric(data)) {
+            setProxyMetrics(prev => {
+              const proxyMetrics = prev[data.proxyId] || {};
+              const metricHistory = proxyMetrics[data.metricType] || {
+                values: [],
+                timestamps: [],
+              };
+
+              return {
+                ...prev,
+                [data.proxyId]: {
+                  ...proxyMetrics,
+                  [data.metricType]: {
+                    values: [...metricHistory.values.slice(-99), data.value],
+                    timestamps: [...metricHistory.timestamps.slice(-99), data.timestamp],
+                  },
+                },
+              };
+            });
           }
-        setProxyMetrics((prev) => {
-          const proxyMetrics = prev[metricData.proxyId] || {};
-          const metricHistory = proxyMetrics[metricData.metricType] || {
-            values: [],
-            timestamps: [],
-          };
+          break;
 
-          // Keep last 100 data points
-          const values = [...metricHistory.values.slice(-99), metricData.value];
-          const timestamps = [
-            ...metricHistory.timestamps.slice(-99),
-            metricData.timestamp,
-          ];
+        case "ssl":
+          if (isSSLCertificate(data)) {
+            setCertificates(prev => {
+              const proxyCerts = [...(prev[data.proxyId] || [])];
+              const certIndex = proxyCerts.findIndex(c => c.id === data.id);
 
-          return {
-            ...prev,
-            [metricData.proxyId]: {
-              ...proxyMetrics,
-              [metricData.metricType]: { values, timestamps },
-            },
-          };
-        });
-        break;
-      }
-        case "ssl": {
-          const certData = message.data as SSLCertificate;
-          if (!certData.proxyId || !certData.domain || !certData.status) {
-            console.error('Invalid certificate data received:', certData);
-            return;
+              if (certIndex >= 0) {
+                proxyCerts[certIndex] = data;
+              } else {
+                proxyCerts.push(data);
+              }
+
+              return {
+                ...prev,
+                [data.proxyId]: proxyCerts,
+              };
+            });
           }
-        setCertificates((prev) => {
-          const proxyCerts = [...(prev[certData.proxyId] || [])];
-          const certIndex = proxyCerts.findIndex((c) => c.id === certData.id);
-
-          if (certIndex >= 0) {
-            proxyCerts[certIndex] = certData;
-          } else {
-            proxyCerts.push(certData);
-          }
-
-          return {
-            ...prev,
-            [certData.proxyId]: proxyCerts,
-          };
-        });
-        break;
+          break;
       }
-      }
-
-      // Add to updates list only if we successfully processed the message
-      setUpdates((prev) => [...prev.slice(-99), message]);
     } catch (error) {
-      console.error('Error processing monitoring update:', error);
+      console.error('Error processing update:', error);
     }
-  }, []);
+  }, [lastUpdate]);
 
-  // Connect to WebSocket
-  const { isConnected } = useWebSocket<any>({
-    url: `${import.meta.env.VITE_WS_URL}/api/v1/monitoring/ws`,
-    onMessage: (message) => {
-      if (!message?.event || !message?.data) {
-        console.error('Invalid monitoring update received:', message);
-        return;
+  // Show appropriate system state
+  const renderContent = () => {
+    if (lastUpdate?.type === 'system' && isSystemStatus(lastUpdate.data)) {
+      if (lastUpdate.data.status === 'no_proxies') {
+        return (
+          <div className="p-6 bg-secondary rounded-lg text-center">
+            <h2 className="text-xl font-semibold mb-2">No Proxies Configured</h2>
+            <p className="text-muted-foreground">
+              Configure proxies to start monitoring metrics and health status.
+            </p>
+          </div>
+        );
       }
+    }
 
-      // Transform backend event names to frontend types
-      const eventTypeMap: Record<string, "metric" | "health" | "ssl"> = {
-        'metrics-update': 'metric',
-        'health-check': 'health',
-        'ssl-alert': 'ssl'
-      };
+    return (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <HealthStatus proxyHealth={proxyHealth} />
+          <SSLCertificates certificates={certificates} />
+        </div>
 
-      const type = eventTypeMap[message.event];
-      if (!type) {
-        console.error('Unknown event type:', message.event);
-        return;
-      }
+        <div className="grid grid-cols-1 gap-6">
+          <MetricsChart
+            proxyMetrics={proxyMetrics}
+            selectedMetricType={selectedMetricType}
+          />
+        </div>
 
-      handleMessage({ type, data: message.data });
-    },
-  });
+        <div className="grid grid-cols-1 gap-6">
+          <div className="flex space-x-4 overflow-x-auto py-2">
+            {Object.values(MetricType).map((type) => (
+              <button
+                key={type}
+                onClick={() => setSelectedMetricType(type)}
+                className={`px-4 py-2 rounded-lg whitespace-nowrap ${
+                  selectedMetricType === type
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary/50 text-secondary-foreground"
+                }`}
+              >
+                {type
+                  .split("_")
+                  .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(" ")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <LiveUpdates updates={lastUpdate ? [lastUpdate] : []} />
+          <AlertsPanel alerts={alerts} thresholds={thresholds} />
+        </div>
+      </>
+    );
+  };
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <HealthStatus proxyHealth={proxyHealth} />
-        <SSLCertificates certificates={certificates} />
-      </div>
+    <div className="space-y-6 p-6 relative">
+      {renderContent()}
 
-      <div className="grid grid-cols-1 gap-6">
-        <MetricsChart
-          proxyMetrics={proxyMetrics}
-          selectedMetricType={selectedMetricType}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6">
-        <div className="flex space-x-4 overflow-x-auto py-2">
-          {Object.values(MetricType).map((type) => (
-            <button
-              key={type}
-              onClick={() => setSelectedMetricType(type)}
-              className={`px-4 py-2 rounded-lg whitespace-nowrap ${
-                selectedMetricType === type
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary/50 text-secondary-foreground"
-              }`}
-            >
-              {type
-                .split("_")
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(" ")}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <LiveUpdates updates={updates} />
-        <AlertsPanel alerts={alerts} thresholds={thresholds} />
-      </div>
-
-      {!isConnected && (
-        <div className="fixed bottom-4 right-4 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg">
-          WebSocket Disconnected - Attempting to reconnect...
+      {/* Connection Status */}
+      {/* Connection Status */}
+      {(!isConnected || error || isDisabled) && (
+        <div className="fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg bg-destructive text-destructive-foreground">
+          {isConnecting ? (
+            "Connecting to monitoring service..."
+          ) : isDisabled ? (
+            "Another monitoring session is active in another tab or window"
+          ) : error ? (
+            `Error: ${error}`
+          ) : (
+            "Disconnected - Attempting to reconnect..."
+          )}
         </div>
       )}
     </div>

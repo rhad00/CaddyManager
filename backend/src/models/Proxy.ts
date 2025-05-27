@@ -44,7 +44,7 @@ interface ICaddyReverseProxyHandler {
   }[];
   headers: {
     request: {
-      set: Record<string, string>;
+      set: Record<string, string[]>;
     };
   };
 }
@@ -325,12 +325,28 @@ export class Proxy extends Model {
             headers: {
               request: {
                 set: {
-                  ...this.config.upstream.headers,
-                  ...(this.config.custom_headers || {}),
-                  'X-Forwarded-Host': '{http.request.host}',
-                  'X-Real-IP': '{http.request.remote.host}',
-                  'X-Forwarded-For': '{http.request.remote.host}',
-                  'X-Forwarded-Proto': '{http.request.scheme}',
+                  ...(this.config.upstream.headers
+                    ? Object.entries(this.config.upstream.headers).reduce<Record<string, string[]>>(
+                        (acc, [k, v]) => {
+                          acc[k] = [v];
+                          return acc;
+                        },
+                        {},
+                      )
+                    : {}),
+                  ...(this.config.custom_headers
+                    ? Object.entries(this.config.custom_headers).reduce<Record<string, string[]>>(
+                        (acc, [k, v]) => {
+                          acc[k] = [v];
+                          return acc;
+                        },
+                        {},
+                      )
+                    : {}),
+                  'X-Forwarded-Host': ['{http.request.host}'],
+                  'X-Real-IP': ['{http.request.remote.host}'],
+                  'X-Forwarded-For': ['{http.request.remote.host}'],
+                  'X-Forwarded-Proto': ['{http.request.scheme}'],
                 },
               },
             },

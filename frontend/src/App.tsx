@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
+import { WebSocketProvider } from './context/WebSocketContext';
 import Layout from './components/layout/Layout';
 import ProxyListPage from './pages/proxies/ProxyListPage';
 import ProxyForm from './pages/proxies/ProxyForm';
@@ -12,6 +13,7 @@ import { MonitoringDashboard } from './components/monitoring/MonitoringDashboard
 function App() {
   return (
     <AuthProvider>
+      <WebSocketProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         
@@ -27,6 +29,7 @@ function App() {
           </Route>
         </Route>
       </Routes>
+      </WebSocketProvider>
     </AuthProvider>
   );
 }

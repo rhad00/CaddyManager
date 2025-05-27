@@ -2,6 +2,7 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../components/ui/Toast';
+import { extractError } from '../../services/api';
 import { Form, FormField, FormInput, FormSwitch, FormSubmit } from '../../components/ui/Form';
 import DomainFields from '../../components/ui/DomainFields';
 import { CreateProxyInput, createProxySchema } from '../../validations/proxySchema';
@@ -117,10 +118,9 @@ export default function ProxyForm({ proxy }: ProxyFormProps) {
       navigate('/proxies');
     } catch (error) {
       console.error('Form submission error:', error);
+      const apiError = extractError(error);
       toast(
-        `Failed to ${proxy ? 'update' : 'create'} proxy: ${
-          error instanceof Error ? error.message : 'Unknown error occurred'
-        }`,
+        `Failed to ${proxy ? 'update' : 'create'} proxy: ${apiError.message}`,
         'error',
       );
     }

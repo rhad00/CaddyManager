@@ -1,10 +1,16 @@
 import { Router, RequestHandler, NextFunction, Request, Response } from 'express';
-import { WebSocket } from 'ws';
+import { WebSocket as WS } from 'ws';
+
+interface IMonitoringWebSocket extends WS {
+  userId?: string;
+  isAlive?: boolean;
+}
 import MonitoringService from '../../services/monitoringService';
 import { AlertThreshold } from '../../models/alerts/AlertThreshold';
 import { AlertInstance } from '../../models/alerts/AlertInstance';
 import { authenticate } from '../../middleware/authMiddleware';
 import { IMonitoringOptions } from '../../types/monitoring';
+import { IAlertInstance, IAlertThreshold } from '../../types/alerts';
 
 // Helper function to wrap authentication middleware
 const auth = (req: Request, res: Response, next: NextFunction): void => {
@@ -57,37 +63,71 @@ const updateOptions: RequestHandler = (req, res) => {
 monitoringRouter.get('/options', auth, getOptions);
 
 // Get all active alerts
-const getAlertsHandler: RequestHandler = (_req, res, next) => {
-  AlertInstance.findAll({
-    where: { resolved: false },
-    include: [AlertThreshold],
-    order: [['createdAt', 'DESC']],
-  })
-    .then(alerts => {
-      res.json({
-        success: true,
-        data: alerts,
-      });
-    })
-    .catch(error => {
-      next(error);
+const getAlertsHandler = (async (_req: Request, res: Response) => {
+  try {
+    const alerts = await AlertInstance.findAll({
+      where: { resolved: false },
+      include: [
+        {
+          model: AlertThreshold,
+          attributes: ['id', 'name', 'type', 'severity', 'conditions'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+      attributes: [
+        'id',
+        'message',
+        'details',
+        'timestamp',
+        'acknowledgedAt',
+        'acknowledgedBy',
+        'createdAt',
+      ],
     });
-};
 
-const getThresholdsHandler: RequestHandler = (_req, res, next) => {
-  AlertThreshold.findAll({
-    order: [['createdAt', 'DESC']],
-  })
-    .then(thresholds => {
-      res.json({
-        success: true,
-        data: thresholds,
-      });
-    })
-    .catch(error => {
-      next(error);
+    // Transform the data to avoid circular references
+    const safeAlerts = alerts.map(alert => {
+      const plainAlert = alert.get({ plain: true }) as IAlertInstance;
+      const threshold = alert.threshold?.get({ plain: true }) as IAlertThreshold | undefined;
+
+      return {
+        ...plainAlert,
+        threshold: threshold || null,
+      };
     });
-};
+
+    res.json({
+      success: true,
+      data: safeAlerts,
+    });
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    const message = error instanceof Error ? error.message : 'Failed to fetch alerts';
+    res.status(500).json({
+      success: false,
+      error: message,
+    });
+  }
+}) as RequestHandler;
+
+const getThresholdsHandler = (async (_req: Request, res: Response) => {
+  try {
+    const thresholds = await AlertThreshold.findAll({
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({
+      success: true,
+      data: thresholds || [],
+    });
+  } catch (error) {
+    console.error('Error fetching thresholds:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch alert thresholds',
+    });
+  }
+}) as RequestHandler;
 
 monitoringRouter.get('/alerts', auth, getAlertsHandler);
 monitoringRouter.get('/alerts/thresholds', auth, getThresholdsHandler);
@@ -95,7 +135,7 @@ monitoringRouter.get('/alerts/thresholds', auth, getThresholdsHandler);
 monitoringRouter.put('/options', auth, updateOptions);
 
 // WebSocket connection handler
-export function handleWebSocketConnection(ws: WebSocket): void {
+export function handleWebSocketConnection(ws: IMonitoringWebSocket): void {
   monitoringService.addWebSocketClient(ws);
 }
 

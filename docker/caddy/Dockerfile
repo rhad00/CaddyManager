@@ -4,8 +4,8 @@ FROM caddy:2-alpine
 RUN apk add --no-cache netcat-openbsd curl
 
 # Copy Caddyfile and startup script
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY ./docker/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY ./docker/caddy/docker-entrypoint.sh /docker-entrypoint.sh
 
 # Make startup script executable
 RUN chmod +x /docker-entrypoint.sh
