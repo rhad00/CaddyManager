@@ -32,3 +32,4 @@ coverage/
 Thumbs.db
 .clinerules/
 cline_docs/
+*.sqlite
