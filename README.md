@@ -1,41 +1,228 @@
 # CaddyManager
 
-CaddyManager is an open-source reverse proxy manager built on top of Caddy Server. It provides a full-featured web-based UI and REST API backend, including a self-contained login system, initial default admin setup, and advanced features similar to NPMPlus, with additional support for service-specific header templates.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub issues](https://img.shields.io/github/issues/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/issues)
+[![GitHub stars](https://img.shields.io/github/stars/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/stargazers)
+[![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://hub.docker.com/r/rhad00/CaddyManager)
 
-## Features
+CaddyManager is a powerful, open-source reverse proxy manager built on top of Caddy Server. It provides a feature-rich web-based UI and REST API backend for managing Caddy configurations, with a self-contained login system, initial admin setup, and advanced features similar to NPMPlus.
 
-- **Authentication & User Management**: Self-contained auth system with JWT, role-based access control, and brute-force protection
-- **Proxy Host Management**: Multi-domain support, automatic SSL via Let's Encrypt, custom SSL certs, and advanced routing options
-- **Header & Middleware Configuration**: Custom header injection, security headers, rate limiting, and IP filtering
-- **Templates for Common Services**: Predefined templates for Amazon S3, Authelia, Keycloak, Nextcloud, and more
-- **Dashboard UI**: Modern React interface with TailwindCSS and ShadCN UI components
-- **Backend API**: RESTful API with Caddy integration for configuration management
-- **Security & Hardening**: HTTPS enforcement, secure cookies, CSRF protection, and more
-- **Backup & Restore**: Configuration export/import, auto-backup, and optional cloud backup
+![CaddyManager Dashboard](.github/images/dashboard.png)
 
-## Project Structure
+## 🚀 Features
 
-```
-CaddyManager/
-├── backend/               # Backend API server
-├── frontend/              # React frontend application
-├── docker/                # Docker and deployment configurations
-├── docs/                  # Documentation
-└── scripts/               # Utility scripts
-```
+### Core Features
+- **Authentication & User Management**
+  - JWT-based authentication with secure password hashing
+  - Role-based access control (Admin, Read-only)
+  - Brute-force protection with rate limiting
+  - Initial admin setup automation
 
-## Getting Started
+- **Proxy Host Management**
+  - Multi-domain support
+  - Automatic SSL via Let's Encrypt
+  - Custom SSL certificate management
+  - Advanced routing options
+  - HTTP to HTTPS redirection
+  - Compression options (gzip/zstd)
 
-See the [Getting Started Guide](./getting_started.md) for detailed instructions on setting up the development environment and beginning implementation.
+- **Header & Middleware Configuration**
+  - Custom header injection (request/response)
+  - Security headers management (CSP, XSS, HSTS)
+  - Rate limiting middleware
+  - IP filtering (allow/block lists)
+  - Basic authentication
+  - Path-based routing
 
-## Development Roadmap
+### Advanced Features
+- **Service Templates**
+  - Predefined templates for:
+    - Amazon S3
+    - Authelia
+    - Keycloak
+    - Nextcloud
+    - Cloudflare Tunnel
+    - Grafana
+    - Kibana/Elastic
+  - Custom template creation
+  - Template merging with headers
 
-The [Development Roadmap](./development_roadmap.md) outlines the planned phases and milestones for implementing all features.
+- **Backup & Restore**
+  - Configuration export/import
+  - Automated backups
+  - SSL certificate backup
+  - Optional S3 cloud backup
+  - Encrypted local backups
 
-## Technology Stack
+- **Monitoring & Security**
+  - System health monitoring
+  - SSL expiration tracking
+  - Access and error logging
+  - API key management
+  - Comprehensive security features
 
-The [Technology Stack](./technology_stack.md) document details the recommended technologies for both backend and frontend development.
+## 🛠 Technology Stack
 
-## License
+### Backend
+- **Runtime**: Node.js 20.x LTS
+- **Framework**: Express.js
+- **Database**: PostgreSQL with Sequelize ORM
+- **Authentication**: JWT with Passport.js
+- **API Documentation**: Swagger/OpenAPI
+- **Testing**: Jest, Supertest
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+### Frontend
+- **Framework**: React 18+
+- **Build Tool**: Vite
+- **UI Framework**: TailwindCSS + ShadCN UI
+- **State Management**: React Context API + React Query
+- **Form Handling**: React Hook Form
+- **Testing**: Vitest + React Testing Library
+
+### Infrastructure
+- **Container**: Docker & Docker Compose
+- **Reverse Proxy**: Caddy 2.x
+- **CI/CD**: GitHub Actions
+- **Monitoring**: Prometheus + Grafana (optional)
+
+## 🚀 Quick Start
+
+### Docker Deployment (Recommended)
+
+1. Create a docker-compose.yml:
+\`\`\`yaml
+version: '3.8'
+services:
+  caddymanager:
+    image: caddymanager/caddymanager:latest
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"  # Caddy API
+    volumes:
+      - ./data:/data
+      - ./config:/config
+    environment:
+      - DB_TYPE=sqlite  # or postgres
+      - ADMIN_EMAIL=admin@example.com
+      - ADMIN_PASSWORD=changeme
+\`\`\`
+
+2. Start the application:
+\`\`\`bash
+docker-compose up -d
+\`\`\`
+
+3. Access the UI at http://localhost (will redirect to HTTPS)
+
+### Manual Installation
+
+1. Clone the repository:
+\`\`\`bash
+git clone https://github.com/rhad00/CaddyManager.git
+cd caddymanager
+\`\`\`
+
+2. Install dependencies:
+\`\`\`bash
+# Backend
+cd backend
+npm install
+
+# Frontend
+cd ../frontend
+npm install
+\`\`\`
+
+3. Configure environment:
+\`\`\`bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+\`\`\`
+
+4. Start development servers:
+\`\`\`bash
+# Backend
+cd backend
+npm run dev
+
+# Frontend
+cd ../frontend
+npm run dev
+\`\`\`
+
+## 📝 Documentation
+
+- [Getting Started Guide](./getting_started.md)
+- [Development Roadmap](./development_roadmap.md)
+- [Technology Stack Details](./technology_stack.md)
+- [API Documentation](https://api-docs.caddymanager.org)
+- [Contributing Guidelines](./CONTRIBUTING.md)
+
+## 🗺 Roadmap
+
+### Short-term (1-3 months)
+- Enhanced monitoring capabilities
+- Additional service templates
+- Advanced analytics dashboard
+- API key management system
+- Multi-language support
+
+### Mid-term (3-6 months)
+- Plugin system for extensions
+- Multi-node Caddy management
+- Advanced backup strategies
+- Additional database support
+- Enhanced security features
+
+### Long-term (6-12 months)
+- Clustering and high availability
+- Custom Caddy module support
+- Enterprise features (LDAP/SAML)
+- Community plugin marketplace
+- Advanced analytics and reporting
+
+## 👥 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+1. Fork the repository
+2. Create your feature branch:
+   \`\`\`bash
+   git checkout -b feature/amazing-feature
+   \`\`\`
+3. Commit your changes:
+   \`\`\`bash
+   git commit -m 'Add amazing feature'
+   \`\`\`
+4. Push to the branch:
+   \`\`\`bash
+   git push origin feature/amazing-feature
+   \`\`\`
+5. Open a Pull Request
+
+## 🐛 Bug Reports & Feature Requests
+
+Please use the [GitHub issue tracker](https://github.com/rhad00/CaddyManager/issues) to report bugs or suggest features.
+
+When reporting bugs, please include:
+- Detailed description of the issue
+- Steps to reproduce
+- Expected vs actual behavior
+- CaddyManager version
+- Environment details (OS, Docker version if applicable)
+- Relevant logs or screenshots
+
+## 📄 License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Caddy Server](https://caddyserver.com/) for the amazing reverse proxy
+- [NPMPlus](https://github.com/nginx-proxy-manager/nginx-proxy-manager) for inspiration
+- All our [contributors](https://github.com/rhad00/CaddyManager/graphs/contributors)
+
+---
+
+<p align="center">Made with ❤️ by the CaddyManager Team</p>
