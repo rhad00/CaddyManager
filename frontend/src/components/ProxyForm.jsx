@@ -14,6 +14,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [error, setError] = useState(null);
   const [selectedTemplateDetails, setSelectedTemplateDetails] = useState(null);
   const [configPreview, setConfigPreview] = useState(null);
+  const [securityHeadersEnabled, setSecurityHeadersEnabled] = useState(false);
   
   const { token, currentUser } = useAuth();
   
@@ -52,6 +53,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       setSslType(proxy.ssl_type);
       setHttpToHttpsRedirect(proxy.http_to_https_redirect);
       setCompressionEnabled(proxy.compression_enabled);
+      setSecurityHeadersEnabled(proxy.security_headers_enabled);
     }
   }, [API_URL, token, proxy]);
 
@@ -80,6 +82,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         ssl_type: sslType,
         http_to_https_redirect: httpToHttpsRedirect,
         compression_enabled: compressionEnabled,
+        security_headers_enabled: securityHeadersEnabled,
         created_by: currentUser.id
       };
       
@@ -182,7 +185,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="My Website"
+              placeholder="My proxy name"
               required
             />
           </div>
@@ -207,7 +210,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
           
           <div>
             <label htmlFor="upstream_url" className="block text-sm font-medium text-gray-700">
-              Upstream URL *
+              Upstream Server *
             </label>
             <input
               type="text"
@@ -215,7 +218,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               value={upstreamUrl}
               onChange={(e) => setUpstreamUrl(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="http://localhost:8080"
+              placeholder="localhost:8080 or server:80 or server:443"
               required
             />
           </div>
@@ -273,6 +276,34 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               <p className="text-gray-500">
                 Compress responses using gzip/zstd
               </p>
+            </div>
+          </div>
+
+          <div className="flex items-start">
+            <div className="flex items-center h-5">
+              <input
+                id="security_headers_enabled"
+                type="checkbox"
+                checked={securityHeadersEnabled}
+                onChange={(e) => setSecurityHeadersEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm">
+              <label htmlFor="security_headers_enabled" className="font-medium text-gray-700">
+                Enable Security Headers
+              </label>
+              <p className="text-gray-500">
+                Add recommended security headers:
+              </p>
+              <ul className="mt-2 text-xs text-gray-500 space-y-1 list-disc list-inside">
+                <li>Strict-Transport-Security (HSTS): max-age=31536000; includeSubDomains; preload</li>
+                <li>X-Content-Type-Options: nosniff</li>
+                <li>X-Frame-Options: SAMEORIGIN</li>
+                <li>Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';</li>
+                <li>Referrer-Policy: strict-origin-when-cross-origin</li>
+                <li>Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()</li>
+              </ul>
             </div>
           </div>
           

@@ -12,58 +12,7 @@
           "listen": [
             ":443"
           ],
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "headers": {
-                    "request": {
-                      "set": {
-                        "Host": [
-                          "{http.reverse_proxy.upstream.host}"
-                        ],
-                        "X-Forwarded-For": [
-                          "{http.request.remote.host}"
-                        ]
-                      }
-                    },
-                    "response": {
-                      "set": {
-                        "Access-Control-Allow-Headers": [
-                          "Authorization, Content-Type, X-Amz-Date, X-Amz-Content-Sha256, X-Amz-Security-Token"
-                        ],
-                        "Access-Control-Allow-Methods": [
-                          "GET, PUT, POST, DELETE, HEAD"
-                        ],
-                        "Access-Control-Allow-Origin": [
-                          "*"
-                        ]
-                      }
-                    }
-                  },
-                  "transport": {
-                    "protocol": "http",
-                    "tls": {
-                      "insecure_skip_verify": true
-                    }
-                  },
-                  "upstreams": [
-                    {
-                      "dial": "10.35.1.14:443"
-                    }
-                  ]
-                }
-              ],
-              "match": [
-                {
-                  "host": [
-                    "s3.holits.com"
-                  ]
-                }
-              ]
-            }
-          ]
+          "routes": []
         },
         "srv1": {
           "automatic_https": {

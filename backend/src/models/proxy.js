@@ -54,6 +54,11 @@ const Proxy = sequelize.define('Proxy', {
     defaultValue: 'active',
     allowNull: false
   },
+  security_headers_enabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    allowNull: false
+  },
   caddy_route_index: {
     type: DataTypes.INTEGER,
     allowNull: true

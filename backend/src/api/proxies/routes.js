@@ -3,6 +3,7 @@ const Proxy = require('../../models/proxy');
 const Header = require('../../models/header');
 const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
+const securityHeadersService = require('../../services/securityHeadersService');
 const { authMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
@@ -110,6 +111,11 @@ router.post('/', authMiddleware, async (req, res) => {
     // Create the proxy in the database
     const proxy = await Proxy.create(req.body, { transaction });
     
+    // Apply security headers if enabled
+    if (req.body.security_headers_enabled) {
+      await securityHeadersService.applySecurityHeaders(proxy.id, Header);
+    }
+    
     // Create headers if provided
     if (req.body.headers && Array.isArray(req.body.headers)) {
       for (const header of req.body.headers) {
@@ -189,6 +195,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
     
     // Update the proxy
     await proxy.update(req.body, { transaction });
+    
+    // Handle security headers
+    if (req.body.security_headers_enabled) {
+      await securityHeadersService.applySecurityHeaders(proxy.id, Header);
+    } else {
+      await securityHeadersService.removeSecurityHeaders(proxy.id, Header);
+    }
     
     // Handle headers
     if (req.body.headers && Array.isArray(req.body.headers)) {

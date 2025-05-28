@@ -7,6 +7,71 @@
 
 CaddyManager is a powerful, open-source reverse proxy manager built on top of Caddy Server. It provides a feature-rich web-based UI and REST API backend for managing Caddy configurations, with a self-contained login system, initial admin setup, and advanced features similar to NPMPlus.
 
+## How It Works
+
+### Initial Setup and Caddyfile
+The application uses a base Caddyfile for initial startup that:
+- Configures the Admin API endpoint on port 2019 (accessible only from internal network)
+- Disables automatic HTTPS redirects initially
+- Sets up file system storage for certificates and data
+- Provides default placeholder responses on ports 80 and 443
+
+On startup, the CaddyService:
+1. Checks for an existing configuration backup
+2. If a backup exists, loads it
+3. If no backup exists but there are proxies in the database, rebuilds the configuration
+4. If neither exists, uses the default Caddyfile configuration
+
+### Template System
+The application includes pre-configured templates for common services:
+- Authelia (Authentication server)
+- Keycloak (Identity management)
+- Amazon S3 (Storage service)
+- Nextcloud (Self-hosted productivity)
+- Cloudflare Tunnel
+- Grafana (Monitoring platform)
+- Kibana/Elastic (Dashboard)
+
+Each template includes:
+- Predefined headers for proper service functionality
+- Middleware configurations (if required)
+- Specific routing rules
+
+Templates can be applied to proxies to automatically configure:
+- Request/response headers
+- Authentication settings
+- Rate limiting
+- IP filtering
+- Path rewrites
+
+### Header Management
+Headers are managed through a flexible system that supports:
+- Request and response header types
+- Dynamic values using Caddy placeholders
+- Template-based header inheritance
+- Per-proxy custom headers
+
+Example header configurations:
+
+1. Authentication header from Authelia template:
+```javascript
+{
+  header_type: 'request',
+  header_name: 'x-original-uri',
+  header_value: '{http.request.uri}'
+}
+```
+
+2. Security header (automatically applied when security headers are enabled):
+```javascript
+{
+  header_type: 'response',
+  header_name: 'Strict-Transport-Security',
+  header_value: 'max-age=31536000; includeSubDomains; preload',
+  enabled: true
+}
+```
+
 ![CaddyManager Dashboard](.github/images/dashboard.png)
 
 
@@ -31,7 +96,13 @@ CaddyManager is a powerful, open-source reverse proxy manager built on top of Ca
 
 - **Header & Middleware Configuration**
   - Custom header injection (request/response)
-  - Security headers management (CSP, XSS, HSTS)
+  - One-click security headers configuration:
+    - Strict-Transport-Security (HSTS) for enhanced transport security
+    - X-Content-Type-Options to prevent MIME-type sniffing
+    - X-Frame-Options to control frame embedding
+    - Content-Security-Policy for XSS prevention
+    - Referrer-Policy to control referrer information
+    - Permissions-Policy to manage browser features
   - Rate limiting middleware
   - IP filtering (allow/block lists)
   - Basic authentication
@@ -63,6 +134,38 @@ CaddyManager is a powerful, open-source reverse proxy manager built on top of Ca
   - Access and error logging
   - API key management
   - Comprehensive security features
+
+## Implementation Details
+
+### Proxy Management
+- Each proxy is stored in the database with:
+  - Domain configuration
+  - SSL settings
+  - Upstream URL
+  - Security headers configuration
+  - Associated headers and middleware
+- Changes trigger automatic Caddy configuration updates via Admin API
+- Configuration backups are maintained for reliability
+
+### Configuration Persistence
+- Configurations are stored in both the database and Caddy
+- Automatic backup system maintains config_backups/caddy_config_backup.json
+- Configuration is rebuilt from database on service restart
+- Handles both HTTP and HTTPS proxies with proper SSL termination
+
+### Template Implementation
+Templates simplify service configuration through:
+1. Predefined header sets for common services
+2. Middleware configurations (rate limiting, auth, etc.)
+3. Path-based routing rules
+4. SSL and compression settings
+
+Example template usage:
+```javascript
+await caddyService.applyTemplate(proxy, template);
+// Applies all template headers and middleware
+// Updates Caddy configuration automatically
+```
 
 ## 🛠 Technology Stack
 
