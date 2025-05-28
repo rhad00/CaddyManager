@@ -9,6 +9,9 @@ CaddyManager is a powerful, open-source reverse proxy manager built on top of Ca
 
 ![CaddyManager Dashboard](.github/images/dashboard.png)
 
+
+## NOTE: this project is in very Alpha stage, and it might not work as expected.
+
 ## 🚀 Features
 
 ### Core Features
@@ -90,7 +93,7 @@ CaddyManager is a powerful, open-source reverse proxy manager built on top of Ca
 ### Docker Deployment (Recommended)
 
 1. Create a docker-compose.yml:
-\`\`\`yaml
+```yaml
 version: '3.8'
 services:
   caddymanager:
@@ -106,25 +109,25 @@ services:
       - DB_TYPE=sqlite  # or postgres
       - ADMIN_EMAIL=admin@example.com
       - ADMIN_PASSWORD=changeme
-\`\`\`
+```
 
 2. Start the application:
-\`\`\`bash
+```bash
 docker-compose up -d
-\`\`\`
+```
 
 3. Access the UI at http://localhost (will redirect to HTTPS)
 
 ### Manual Installation
 
 1. Clone the repository:
-\`\`\`bash
+```bash
 git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
-\`\`\`
+```
 
 2. Install dependencies:
-\`\`\`bash
+```bash
 # Backend
 cd backend
 npm install
@@ -132,16 +135,16 @@ npm install
 # Frontend
 cd ../frontend
 npm install
-\`\`\`
+```
 
 3. Configure environment:
-\`\`\`bash
+```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
-\`\`\`
+```
 
 4. Start development servers:
-\`\`\`bash
+```bash
 # Backend
 cd backend
 npm run dev
@@ -149,7 +152,7 @@ npm run dev
 # Frontend
 cd ../frontend
 npm run dev
-\`\`\`
+```
 
 ## 📝 Documentation
 
@@ -188,17 +191,17 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 1. Fork the repository
 2. Create your feature branch:
-   \`\`\`bash
+   ```bash
    git checkout -b feature/amazing-feature
-   \`\`\`
+   ```
 3. Commit your changes:
-   \`\`\`bash
+   ```bash
    git commit -m 'Add amazing feature'
-   \`\`\`
+   ```
 4. Push to the branch:
-   \`\`\`bash
+   ```bash
    git push origin feature/amazing-feature
-   \`\`\`
+   ```
 5. Open a Pull Request
 
 ## 🐛 Bug Reports & Feature Requests
