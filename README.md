@@ -266,21 +266,17 @@ npm run dev
 
 ## 🗺 Roadmap
 
-### Short-term (1-3 months)
+### Wish list
 - Enhanced monitoring capabilities
 - Additional service templates
 - Advanced analytics dashboard
 - API key management system
 - Multi-language support
-
-### Mid-term (3-6 months)
 - Plugin system for extensions
 - Multi-node Caddy management
 - Advanced backup strategies
 - Additional database support
 - Enhanced security features
-
-### Long-term (6-12 months)
 - Clustering and high availability
 - Custom Caddy module support
 - Enterprise features (LDAP/SAML)
