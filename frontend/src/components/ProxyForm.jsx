@@ -6,7 +6,6 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [domains, setDomains] = useState('');
   const [upstreamUrl, setUpstreamUrl] = useState('');
   const [sslType, setSslType] = useState('acme');
-  const [httpToHttpsRedirect, setHttpToHttpsRedirect] = useState(true);
   const [compressionEnabled, setCompressionEnabled] = useState(true);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
@@ -62,7 +61,6 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       setDomains(proxy.domains.join(', '));
       setUpstreamUrl(proxy.upstream_url);
       setSslType(proxy.ssl_type);
-      setHttpToHttpsRedirect(proxy.http_to_https_redirect);
       setCompressionEnabled(proxy.compression_enabled);
       setSecurityHeadersEnabled(proxy.security_headers_enabled);
 
@@ -121,7 +119,6 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         domains: domainsArray,
         upstream_url: upstreamUrl,
         ssl_type: sslType,
-        http_to_https_redirect: httpToHttpsRedirect,
         compression_enabled: compressionEnabled,
         security_headers_enabled: securityHeadersEnabled,
         rate_limit: rateLimitEnabled ? {
@@ -299,25 +296,6 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             </select>
           </div>
           
-          <div className="flex items-start">
-            <div className="flex items-center h-5">
-              <input
-                id="http_to_https_redirect"
-                type="checkbox"
-                checked={httpToHttpsRedirect}
-                onChange={(e) => setHttpToHttpsRedirect(e.target.checked)}
-                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
-              />
-            </div>
-            <div className="ml-3 text-sm">
-              <label htmlFor="http_to_https_redirect" className="font-medium text-gray-700">
-                HTTP to HTTPS Redirect
-              </label>
-              <p className="text-gray-500">
-                Automatically redirect HTTP requests to HTTPS
-              </p>
-            </div>
-          </div>
           
           <div className="flex items-start">
             <div className="flex items-center h-5">

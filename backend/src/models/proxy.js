@@ -29,11 +29,6 @@ const Proxy = sequelize.define('Proxy', {
     type: DataTypes.UUID,
     allowNull: true
   },
-  http_to_https_redirect: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true,
-    allowNull: false
-  },
   compression_enabled: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,

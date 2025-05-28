@@ -268,14 +268,6 @@ class CaddyService {
       });
     }
     
-    // Add HTTPS redirect if needed
-    if (proxy.ssl_type !== 'none' && proxy.http_to_https_redirect) {
-      handlers.push({
-        handler: "redir",
-        if: "{scheme} is http",
-        to: "https://{host}{uri} permanent"
-      });
-    }
     
     // Add compression if enabled
     if (proxy.compression_enabled) {

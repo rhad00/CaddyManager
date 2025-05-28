@@ -59,4 +59,5 @@ temp/
 *.crt
 
 backend/config_backups/
+backend/config/
 *.sh
