@@ -78,10 +78,24 @@ This section guides you through submitting an enhancement suggestion for CaddyMa
 
 ## Git Commit Messages
 
+* Use semantic versioning wording:
+    * `feat:` for new features (triggers MINOR version bump)
+    * `fix:` for bug fixes (triggers PATCH version bump)
+    * `BREAKING CHANGE:` in the commit body for breaking changes (triggers MAJOR version bump)
+    * `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:` for other changes
 * Use the present tense ("Add feature" not "Added feature")
 * Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
 * Limit the first line to 72 characters or less
 * Reference issues and pull requests liberally after the first line
+
+Examples:
+```
+feat: add user authentication system
+fix: resolve memory leak in proxy manager
+BREAKING CHANGE: refactor API endpoints to follow REST conventions
+docs: update installation instructions
+chore: update dependencies
+```
 * Consider starting the commit message with an applicable emoji:
     * 🎨 `:art:` when improving the format/structure of the code
     * 🐎 `:racehorse:` when improving performance
