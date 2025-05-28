@@ -26,7 +26,7 @@ On startup, the CaddyService:
 The application includes pre-configured templates for common services:
 - Authelia (Authentication server)
 - Keycloak (Identity management)
-- Amazon S3 (Storage service)
+- Amazon S3 compatible services (MiniIO, Ceph RadosGW) (Storage service)
 - Nextcloud (Self-hosted productivity)
 - Cloudflare Tunnel
 - Grafana (Monitoring platform)
@@ -118,22 +118,22 @@ Example header configurations:
     - Cloudflare Tunnel
     - Grafana
     - Kibana/Elastic
-  - Custom template creation
-  - Template merging with headers
+  - Custom template creation (to do)
+  - Template merging with headers (to do)
 
 - **Backup & Restore**
   - Configuration export/import
-  - Automated backups
-  - SSL certificate backup
-  - Optional S3 cloud backup
-  - Encrypted local backups
+  - Automated backups (to do)
+  - SSL certificate backup (to do)
+  - Optional S3 cloud backup (to do)
+  - Encrypted local backups (to do)
 
 - **Monitoring & Security**
   - System health monitoring
-  - SSL expiration tracking
-  - Access and error logging
-  - API key management
-  - Comprehensive security features
+  - SSL expiration tracking (to do)
+  - Access and error logging (to do)
+  - API key management (to do)
+  - Comprehensive security features (to do)
 
 ## Implementation Details
 
@@ -149,9 +149,9 @@ Example header configurations:
 
 ### Configuration Persistence
 - Configurations are stored in both the database and Caddy
-- Automatic backup system maintains config_backups/caddy_config_backup.json
+- Automatic backup system maintains config_backups/caddy_config_backup.json which can be mounted as local folder in docker or in a volume
 - Configuration is rebuilt from database on service restart
-- Handles both HTTP and HTTPS proxies with proper SSL termination
+- Handles both HTTP and HTTPS proxies with proper SSL termination (ACME Let's Encrypt without user intervention)
 
 ### Template Implementation
 Templates simplify service configuration through:
@@ -160,7 +160,7 @@ Templates simplify service configuration through:
 3. Path-based routing rules
 4. SSL and compression settings
 
-Example template usage:
+Example template usage in code:
 ```javascript
 await caddyService.applyTemplate(proxy, template);
 // Applies all template headers and middleware
@@ -193,7 +193,7 @@ await caddyService.applyTemplate(proxy, template);
 
 ## 🚀 Quick Start
 
-### Docker Deployment (Recommended)
+### Docker Deployment (Recommended) (not available yet)
 
 1. Create a docker-compose.yml:
 ```yaml
