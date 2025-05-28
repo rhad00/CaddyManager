@@ -15,6 +15,17 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [selectedTemplateDetails, setSelectedTemplateDetails] = useState(null);
   const [configPreview, setConfigPreview] = useState(null);
   const [securityHeadersEnabled, setSecurityHeadersEnabled] = useState(false);
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(false);
+  const [requestsPerSecond, setRequestsPerSecond] = useState(10);
+  const [rateLimitBurst, setRateLimitBurst] = useState(20);
+  const [ipFilteringEnabled, setIpFilteringEnabled] = useState(false);
+  const [ipFilteringMode, setIpFilteringMode] = useState('block');
+  const [ipList, setIpList] = useState('');
+  const [basicAuthEnabled, setBasicAuthEnabled] = useState(false);
+  const [basicAuthUsername, setBasicAuthUsername] = useState('');
+  const [basicAuthPassword, setBasicAuthPassword] = useState('');
+  const [pathRoutingEnabled, setPathRoutingEnabled] = useState(false);
+  const [pathRoutes, setPathRoutes] = useState([{ path: '', upstream_url: '' }]);
   
   const { token, currentUser } = useAuth();
   
@@ -54,6 +65,36 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       setHttpToHttpsRedirect(proxy.http_to_https_redirect);
       setCompressionEnabled(proxy.compression_enabled);
       setSecurityHeadersEnabled(proxy.security_headers_enabled);
+
+      // Populate rate limiting fields
+      if (proxy.rate_limit) {
+        setRateLimitEnabled(proxy.rate_limit.enabled);
+        setRequestsPerSecond(proxy.rate_limit.requests_per_second);
+        setRateLimitBurst(proxy.rate_limit.burst);
+      }
+
+      // Populate IP filtering fields
+      if (proxy.ip_filtering) {
+        setIpFilteringEnabled(proxy.ip_filtering.enabled);
+        setIpFilteringMode(proxy.ip_filtering.mode);
+        setIpList(proxy.ip_filtering.ip_list.join('\n'));
+      }
+
+      // Populate basic auth fields
+      if (proxy.basic_auth) {
+        setBasicAuthEnabled(proxy.basic_auth.enabled);
+        setBasicAuthUsername(proxy.basic_auth.username);
+        // Note: Password is not populated for security reasons
+      }
+
+      // Populate path routing fields
+      if (proxy.path_routing) {
+        setPathRoutingEnabled(proxy.path_routing.enabled);
+        setPathRoutes(proxy.path_routing.routes.length > 0 
+          ? proxy.path_routing.routes 
+          : [{ path: '', upstream_url: '' }]
+        );
+      }
     }
   }, [API_URL, token, proxy]);
 
@@ -83,6 +124,25 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         http_to_https_redirect: httpToHttpsRedirect,
         compression_enabled: compressionEnabled,
         security_headers_enabled: securityHeadersEnabled,
+        rate_limit: rateLimitEnabled ? {
+          enabled: true,
+          requests_per_second: parseInt(requestsPerSecond),
+          burst: parseInt(rateLimitBurst)
+        } : null,
+        ip_filtering: ipFilteringEnabled ? {
+          enabled: true,
+          mode: ipFilteringMode,
+          ip_list: ipList.split('\n').map(ip => ip.trim()).filter(Boolean)
+        } : null,
+        basic_auth: basicAuthEnabled ? {
+          enabled: true,
+          username: basicAuthUsername,
+          password: basicAuthPassword // Will be hashed on the backend
+        } : null,
+        path_routing: pathRoutingEnabled ? {
+          enabled: true,
+          routes: pathRoutes.filter(route => route.path && route.upstream_url)
+        } : null,
         created_by: currentUser.id
       };
       
@@ -306,7 +366,211 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               </ul>
             </div>
           </div>
-          
+
+          {/* Rate Limiting Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="rate_limit_enabled"
+                type="checkbox"
+                checked={rateLimitEnabled}
+                onChange={(e) => setRateLimitEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="rate_limit_enabled" className="font-medium text-gray-700">
+                Enable Rate Limiting
+              </label>
+              {rateLimitEnabled && (
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600">Requests per second</label>
+                    <input
+                      type="number"
+                      value={requestsPerSecond}
+                      onChange={(e) => setRequestsPerSecond(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">Burst</label>
+                    <input
+                      type="number"
+                      value={rateLimitBurst}
+                      onChange={(e) => setRateLimitBurst(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      min="1"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* IP Filtering Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="ip_filtering_enabled"
+                type="checkbox"
+                checked={ipFilteringEnabled}
+                onChange={(e) => setIpFilteringEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="ip_filtering_enabled" className="font-medium text-gray-700">
+                Enable IP Filtering
+              </label>
+              {ipFilteringEnabled && (
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600">Mode</label>
+                    <select
+                      value={ipFilteringMode}
+                      onChange={(e) => setIpFilteringMode(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    >
+                      <option value="block">Block List</option>
+                      <option value="allow">Allow List</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">IP Addresses (one per line)</label>
+                    <textarea
+                      value={ipList}
+                      onChange={(e) => setIpList(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      rows="4"
+                      placeholder="192.168.1.1&#10;10.0.0.0/24"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Basic Authentication Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="basic_auth_enabled"
+                type="checkbox"
+                checked={basicAuthEnabled}
+                onChange={(e) => setBasicAuthEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="basic_auth_enabled" className="font-medium text-gray-700">
+                Enable Basic Authentication
+              </label>
+              {basicAuthEnabled && (
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600">Username</label>
+                    <input
+                      type="text"
+                      value={basicAuthUsername}
+                      onChange={(e) => setBasicAuthUsername(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">Password</label>
+                    <input
+                      type="password"
+                      value={basicAuthPassword}
+                      onChange={(e) => setBasicAuthPassword(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Path-based Routing Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="path_routing_enabled"
+                type="checkbox"
+                checked={pathRoutingEnabled}
+                onChange={(e) => setPathRoutingEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="path_routing_enabled" className="font-medium text-gray-700">
+                Enable Path-based Routing
+              </label>
+              {pathRoutingEnabled && (
+                <div className="mt-2 space-y-3">
+                  {pathRoutes.map((route, index) => (
+                    <div key={index} className="p-3 border border-gray-200 rounded-md">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium">Route {index + 1}</span>
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newRoutes = [...pathRoutes];
+                              newRoutes.splice(index, 1);
+                              setPathRoutes(newRoutes);
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-sm text-gray-600">Path</label>
+                          <input
+                            type="text"
+                            value={route.path}
+                            onChange={(e) => {
+                              const newRoutes = [...pathRoutes];
+                              newRoutes[index].path = e.target.value;
+                              setPathRoutes(newRoutes);
+                            }}
+                            placeholder="/api/*"
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600">Upstream URL</label>
+                          <input
+                            type="text"
+                            value={route.upstream_url}
+                            onChange={(e) => {
+                              const newRoutes = [...pathRoutes];
+                              newRoutes[index].upstream_url = e.target.value;
+                              setPathRoutes(newRoutes);
+                            }}
+                            placeholder="localhost:8080"
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setPathRoutes([...pathRoutes, { path: '', upstream_url: '' }])}
+                    className="mt-2 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    Add Route
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div>
             <label htmlFor="template" className="block text-sm font-medium text-gray-700">
               Apply Template

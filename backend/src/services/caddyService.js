@@ -236,42 +236,44 @@ class CaddyService {
     // Start with the handlers array
     const handlers = [];
 
-    // Add middlewares first
-    if (proxy.middlewares && proxy.middlewares.length > 0) {
-      for (const middleware of proxy.middlewares) {
-        switch (middleware.type) {
-          case 'basic_auth':
-            handlers.push({
-              handler: "basic_auth",
-              users: {
-                [middleware.config.username]: middleware.config.password
-              }
-            });
-            break;
-          case 'rate_limit':
-            handlers.push({
-              handler: "rate_limit",
-              rate: parseInt(middleware.config.rate),
-              unit: middleware.config.unit || "second"
-            });
-            break;
-          case 'ip_filter':
-            handlers.push({
-              handler: "ip_filter",
-              allow: middleware.config.allow_list ? middleware.config.allow_list.split(',').map(ip => ip.trim()) : [],
-              deny: middleware.config.deny_list ? middleware.config.deny_list.split(',').map(ip => ip.trim()) : []
-            });
-            break;
-          // Add more middleware types as needed
+    // Add rate limiting if enabled
+    if (proxy.rate_limit && proxy.rate_limit.enabled) {
+      handlers.push({
+        handler: "rate_limit",
+        rate: proxy.rate_limit.requests_per_second,
+        burst: proxy.rate_limit.burst,
+        window: "1s"
+      });
+    }
+
+    // Add IP filtering if enabled
+    if (proxy.ip_filtering && proxy.ip_filtering.enabled) {
+      handlers.push({
+        handler: "request_filter",
+        paths: ["/*"],
+        filters: [{
+          type: "remote_ip",
+          [proxy.ip_filtering.mode === "allow" ? "allow" : "deny"]: proxy.ip_filtering.ip_list
+        }]
+      });
+    }
+
+    // Add basic authentication if enabled
+    if (proxy.basic_auth && proxy.basic_auth.enabled) {
+      handlers.push({
+        handler: "basic_auth",
+        users: {
+          [proxy.basic_auth.username]: proxy.basic_auth.hashed_password
         }
-      }
+      });
     }
     
     // Add HTTPS redirect if needed
-    if (proxy.ssl_type !== 'none' && proxy.http_redirect) {
+    if (proxy.ssl_type !== 'none' && proxy.http_to_https_redirect) {
       handlers.push({
-        handler: "redirect",
-        scheme: "https"
+        handler: "redir",
+        if: "{scheme} is http",
+        to: "https://{host}{uri} permanent"
       });
     }
     
@@ -285,63 +287,84 @@ class CaddyService {
         }
       });
     }
+
+    let reverseProxyHandler;
     
-    // Create the reverse proxy handler
-    const reverseProxyHandler = {
-      handler: "reverse_proxy",
-      upstreams: [{
-        dial: proxy.upstream_url
-      }]
-    };
+    // Handle path-based routing or default reverse proxy
+    if (proxy.path_routing && proxy.path_routing.enabled && proxy.path_routing.routes && proxy.path_routing.routes.length > 0) {
+      // For path-based routing, we'll create a subroute handler
+      handlers.push({
+        handler: "subroute",
+        routes: proxy.path_routing.routes.map(route => ({
+          match: [{
+            path: [route.path]
+          }],
+          handle: [{
+            handler: "reverse_proxy",
+            upstreams: [{
+              dial: route.upstream_url
+            }]
+          }]
+        }))
+      });
+    } else {
+      // Create the default reverse proxy handler
+      reverseProxyHandler = {
+        handler: "reverse_proxy",
+        upstreams: [{
+          dial: proxy.upstream_url
+        }]
+      };
 
       // Process headers
-    if (proxy.headers && proxy.headers.length > 0) {
-      const enabledHeaders = proxy.headers.filter(header => header.enabled);
-      const requestHeaders = {};
-      const responseHeaders = {};
+      if (proxy.headers && proxy.headers.length > 0) {
+        const enabledHeaders = proxy.headers.filter(header => header.enabled);
+        const requestHeaders = {};
+        const responseHeaders = {};
 
-      // Group headers by type
-      for (const header of enabledHeaders) {
-        const headerName = header.header_name;
-        const headerValue = header.header_value;
+        // Group headers by type
+        for (const header of enabledHeaders) {
+          const headerName = header.header_name;
+          const headerValue = header.header_value;
 
-        if (header.header_type === 'request') {
-          requestHeaders[headerName] = [headerValue];
-        } else if (header.header_type === 'response') {
-          responseHeaders[headerName] = [headerValue];
+          if (header.header_type === 'request') {
+            requestHeaders[headerName] = [headerValue];
+          } else if (header.header_type === 'response') {
+            responseHeaders[headerName] = [headerValue];
+          }
+        }
+
+        // Add headers to reverse proxy configuration
+        if (Object.keys(requestHeaders).length > 0 || Object.keys(responseHeaders).length > 0) {
+          reverseProxyHandler.headers = {};
+          
+          if (Object.keys(requestHeaders).length > 0) {
+            reverseProxyHandler.headers.request = {
+              set: requestHeaders
+            };
+          }
+          
+          if (Object.keys(responseHeaders).length > 0) {
+            reverseProxyHandler.headers.response = {
+              set: responseHeaders
+            };
+          }
         }
       }
 
-      // Add headers to reverse proxy configuration
-      if (Object.keys(requestHeaders).length > 0 || Object.keys(responseHeaders).length > 0) {
-        reverseProxyHandler.headers = {};
-        
-        if (Object.keys(requestHeaders).length > 0) {
-          reverseProxyHandler.headers.request = {
-            set: requestHeaders
-          };
-        }
-        
-        if (Object.keys(responseHeaders).length > 0) {
-          reverseProxyHandler.headers.response = {
-            set: responseHeaders
-          };
-        }
+      // Add transport config if using HTTPS
+      if (this.shouldUseHTTPSTransport(proxy.upstream_url)) {
+        reverseProxyHandler.transport = {
+          protocol: "http",
+          tls: {
+            insecure_skip_verify: true
+          }
+        };
       }
+
+      handlers.push(reverseProxyHandler);
     }
 
-    // Add transport config if using HTTPS
-    if (this.shouldUseHTTPSTransport(proxy.upstream_url)) {
-      reverseProxyHandler.transport = {
-        protocol: "http",
-        tls: {
-          insecure_skip_verify: true
-        }
-      };
-    }
-
-    handlers.push(reverseProxyHandler);
-    
     // Create the route with all handlers
     const route = {
       match: [{
@@ -350,11 +373,10 @@ class CaddyService {
       handle: handlers
     };
 
-
     // Make sure the route has a terminal handler (reverse_proxy)
-    if (!route.handle.some(h => h.handler === 'reverse_proxy')) {
-      console.error('Route is missing reverse_proxy handler:', route);
-      throw new Error('Invalid route configuration: missing reverse_proxy handler');
+    if (!route.handle.some(h => h.handler === 'reverse_proxy' || h.handler === 'subroute')) {
+      console.error('Route is missing terminal handler:', route);
+      throw new Error('Invalid route configuration: missing terminal handler');
     }
     
     return route;

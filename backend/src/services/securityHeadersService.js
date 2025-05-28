@@ -37,14 +37,15 @@ const DEFAULT_SECURITY_HEADERS = [
   }
 ];
 
-const applySecurityHeaders = async (proxyId, headersModel) => {
+const applySecurityHeaders = async (proxyId, headersModel, transaction) => {
   try {
     // Remove any existing security headers for this proxy
     await headersModel.destroy({
       where: {
         proxy_id: proxyId,
         header_name: DEFAULT_SECURITY_HEADERS.map(h => h.header_name)
-      }
+      },
+      transaction
     });
 
     // Create all security headers for this proxy
@@ -53,20 +54,21 @@ const applySecurityHeaders = async (proxyId, headersModel) => {
       proxy_id: proxyId
     }));
 
-    await headersModel.bulkCreate(headersToCreate);
+    await headersModel.bulkCreate(headersToCreate, { transaction });
   } catch (error) {
     console.error('Error applying security headers:', error);
     throw new Error('Failed to apply security headers');
   }
 };
 
-const removeSecurityHeaders = async (proxyId, headersModel) => {
+const removeSecurityHeaders = async (proxyId, headersModel, transaction) => {
   try {
     await headersModel.destroy({
       where: {
         proxy_id: proxyId,
         header_name: DEFAULT_SECURITY_HEADERS.map(h => h.header_name)
-      }
+      },
+      transaction
     });
   } catch (error) {
     console.error('Error removing security headers:', error);

@@ -3,6 +3,9 @@
 	# Admin API endpoint (only accessible from internal network)
 	admin 0.0.0.0:2019
 	auto_https disable_redirects
+	metrics {
+		per_host
+	}
 	
 	# Use custom storage for certificates and other data
 	storage file_system {

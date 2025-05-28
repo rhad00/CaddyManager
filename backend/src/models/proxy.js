@@ -59,6 +59,30 @@ const Proxy = sequelize.define('Proxy', {
     defaultValue: false,
     allowNull: false
   },
+  rate_limit: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Rate limiting configuration: {enabled: boolean, requests_per_second: number, burst: number}'
+  },
+  ip_filtering: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'IP filtering configuration: {enabled: boolean, mode: "allow" | "block", ip_list: string[]}'
+  },
+  basic_auth: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Basic auth configuration: {enabled: boolean, username: string, hashed_password: string}'
+  },
+  path_routing: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Path routing configuration: {enabled: boolean, routes: [{path: string, upstream_url: string}]}'
+  },
   caddy_route_index: {
     type: DataTypes.INTEGER,
     allowNull: true

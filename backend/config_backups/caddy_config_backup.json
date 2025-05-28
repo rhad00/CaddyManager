@@ -4,6 +4,9 @@
   },
   "apps": {
     "http": {
+      "metrics": {
+        "per_host": true
+      },
       "servers": {
         "srv0": {
           "automatic_https": {
@@ -12,7 +15,26 @@
           "listen": [
             ":443"
           ],
-          "routes": []
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "No routes configured yet (HTTPS)",
+                          "handler": "static_response",
+                          "status_code": 503
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         },
         "srv1": {
           "automatic_https": {

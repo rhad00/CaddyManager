@@ -111,9 +111,9 @@ router.post('/', authMiddleware, async (req, res) => {
     // Create the proxy in the database
     const proxy = await Proxy.create(req.body, { transaction });
     
-    // Apply security headers if enabled
+    // Apply security headers if enabled (within transaction)
     if (req.body.security_headers_enabled) {
-      await securityHeadersService.applySecurityHeaders(proxy.id, Header);
+      await securityHeadersService.applySecurityHeaders(proxy.id, Header, transaction);
     }
     
     // Create headers if provided
@@ -196,11 +196,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
     // Update the proxy
     await proxy.update(req.body, { transaction });
     
-    // Handle security headers
+    // Handle security headers (within transaction)
     if (req.body.security_headers_enabled) {
-      await securityHeadersService.applySecurityHeaders(proxy.id, Header);
+      await securityHeadersService.applySecurityHeaders(proxy.id, Header, transaction);
     } else {
-      await securityHeadersService.removeSecurityHeaders(proxy.id, Header);
+      await securityHeadersService.removeSecurityHeaders(proxy.id, Header, transaction);
     }
     
     // Handle headers
