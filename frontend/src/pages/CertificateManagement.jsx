@@ -406,7 +406,7 @@ const CertificateManagement = () => {
       return (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
           <div className="flex">
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
@@ -460,11 +460,11 @@ const CertificateManagement = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <p className="truncate text-sm font-medium text-indigo-600">{certificate.name}</p>
-                    <div className={`ml-2 inline-flex flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClass(certificate.valid_to)}`}>
+                    <div className={`ml-2 inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClass(certificate.valid_to)}`}>
                       {certificate.status}
                     </div>
                   </div>
-                  <div className="ml-2 flex flex-shrink-0">
+                  <div className="ml-2 flex shrink-0">
                     <p className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${certificate.type === 'acme' ? 'bg-green-100 text-green-800' : certificate.type === 'uploaded' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
                       {certificate.type}
                     </p>
@@ -473,14 +473,14 @@ const CertificateManagement = () => {
                 <div className="mt-2 sm:flex sm:justify-between">
                   <div className="sm:flex">
                     <p className="flex items-center text-sm text-gray-500">
-                      <svg className="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <svg className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                       </svg>
                       {certificate.domains.split(',').join(', ')}
                     </p>
                   </div>
                   <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                    <svg className="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <svg className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                     </svg>
                     <p>
@@ -512,7 +512,7 @@ const CertificateManagement = () => {
       return (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
           <div className="flex">
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
@@ -557,11 +557,11 @@ const CertificateManagement = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <p className="truncate text-sm font-medium text-indigo-600">{ca.name}</p>
-                    <div className={`ml-2 inline-flex flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${ca.trusted ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    <div className={`ml-2 inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${ca.trusted ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                       {ca.trusted ? 'Trusted' : 'Untrusted'}
                     </div>
                   </div>
-                  <div className="ml-2 flex flex-shrink-0">
+                  <div className="ml-2 flex shrink-0">
                     <p className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${ca.type === 'acme' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
                       {ca.type}
                     </p>
@@ -572,14 +572,14 @@ const CertificateManagement = () => {
                     <p className="flex items-center text-sm text-gray-500">
                       {ca.type === 'acme' ? (
                         <>
-                          <svg className="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <svg className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.498-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.03 11H4.083a6.004 6.004 0 002.783 4.118z" clipRule="evenodd" />
                           </svg>
                           {ca.url}
                         </>
                       ) : (
                         <>
-                          <svg className="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                          <svg className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                           </svg>
                           Custom CA
@@ -589,7 +589,7 @@ const CertificateManagement = () => {
                   </div>
                   {ca.email && (
                     <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                      <svg className="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <svg className="mr-1.5 h-5 w-5 shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
                         <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                       </svg>
@@ -812,7 +812,7 @@ const CertificateManagement = () => {
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
               <div className="flex">
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
@@ -917,7 +917,7 @@ const CertificateManagement = () => {
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
               <div className="flex">
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
@@ -1014,7 +1014,7 @@ const CertificateManagement = () => {
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
               <div className="flex">
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>

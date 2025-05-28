@@ -17,7 +17,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: node src/index.js
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -38,7 +37,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: production
+      args:
+        - VITE_API_URL=/api
     ports:
       - "80:80"
     volumes:

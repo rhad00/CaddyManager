@@ -1,5 +1,7 @@
 const express = require('express');
-const { Proxy, Header, Middleware } = require('../../models');
+const Proxy = require('../../models/proxy');
+const Header = require('../../models/header');
+const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
 const { authMiddleware } = require('../../middleware/auth');
 const router = express.Router();

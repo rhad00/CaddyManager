@@ -41,6 +41,6 @@ const Middleware = sequelize.define('Middleware', {
 
 // Establish relationship with Proxy
 Middleware.belongsTo(Proxy, { foreignKey: 'proxy_id', onDelete: 'CASCADE' });
-Proxy.hasMany(Middleware, { foreignKey: 'proxy_id' });
+Proxy.hasMany(Middleware, { foreignKey: 'proxy_id', as: 'middlewares' });
 
 module.exports = Middleware;

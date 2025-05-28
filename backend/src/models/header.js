@@ -39,6 +39,6 @@ const Header = sequelize.define('Header', {
 
 // Establish relationship with Proxy
 Header.belongsTo(Proxy, { foreignKey: 'proxy_id', onDelete: 'CASCADE' });
-Proxy.hasMany(Header, { foreignKey: 'proxy_id' });
+Proxy.hasMany(Header, { foreignKey: 'proxy_id', as: 'headers' });
 
 module.exports = Header;

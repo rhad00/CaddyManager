@@ -1,7 +1,8 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const { Certificate, CertificateAuthority } = require('../models');
+const Certificate = require('../models/Certificate'); 
+const CertificateAuthority = require('../models/CertificateAuthority');
 const { execSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { sequelize } = require('../config/database');

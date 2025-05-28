@@ -55,6 +55,10 @@ const Proxy = sequelize.define('Proxy', {
     defaultValue: 'active',
     allowNull: false
   },
+  caddy_route_index: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   created_by: {
     type: DataTypes.UUID,
     allowNull: false,

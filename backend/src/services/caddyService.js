@@ -1,7 +1,9 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const { Proxy, Header, Middleware } = require('../models');
+const Proxy = require('../models/proxy');
+const Header = require('../models/header');
+const Middleware = require('../models/middleware');
 const { sequelize } = require('../config/database');
 require('dotenv').config();
 
@@ -117,6 +119,18 @@ class CaddyService {
         };
       }
       
+      // Filter out duplicate routes and keep track of unique domains
+      const uniqueDomains = new Set();
+      const uniqueProxies = proxies.filter(proxy => {
+        const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+        const domainKey = domains.sort().join(',');
+        if (uniqueDomains.has(domainKey)) {
+          return false;
+        }
+        uniqueDomains.add(domainKey);
+        return true;
+      });
+
       // Clear existing routes (except for the CaddyManager routes)
       const caddyManagerRoutes = currentConfig.apps.http.servers.srv0.routes.filter(route => 
         (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" && 
@@ -128,8 +142,8 @@ class CaddyService {
       
       currentConfig.apps.http.servers.srv0.routes = caddyManagerRoutes;
       
-      // Add routes for each proxy
-      for (const proxy of proxies) {
+      // Add routes for each unique proxy
+      for (const proxy of uniqueProxies) {
         const route = this.createRouteFromProxy(proxy);
         currentConfig.apps.http.servers.srv0.routes.push(route);
         
@@ -225,7 +239,7 @@ class CaddyService {
     // Create the base route
     const route = {
       match: [{
-        host: proxy.domains.split(',').map(d => d.trim())
+        host: Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]
       }],
       handle: [{
         handler: "reverse_proxy",
@@ -332,16 +346,35 @@ class CaddyService {
       if (!config.apps || !config.apps.http || !config.apps.http.servers || !config.apps.http.servers.srv0) {
         throw new Error('Invalid Caddy configuration: HTTP server not found');
       }
+
+      // Check for existing routes with the same domains and upstream URL
+      const existingRoutes = config.apps.http.servers.srv0.routes;
+      const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+      const domainKey = proxyDomains.sort().join(',');
+
+      const existingRoute = existingRoutes.find(route => {
+        if (route.match && route.match[0] && route.match[0].host &&
+            route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
+            route.handle[0].upstreams && route.handle[0].upstreams[0]) {
+          const routeDomains = route.match[0].host;
+          const routeDomainKey = Array.isArray(routeDomains) ? routeDomains.sort().join(',') : routeDomains;
+          const routeUpstream = route.handle[0].upstreams[0].dial;
+          return routeDomainKey === domainKey && routeUpstream === proxy.upstream_url;
+        }
+        return false;
+      });
+
+      // If a route with these domains and upstream exists, throw an error
+      if (existingRoute) {
+        throw new Error('A proxy with the same domain and upstream URL already exists');
+      }
       
       // Create the route for this proxy
       const route = this.createRouteFromProxy(proxy);
       
-      // Add the route to the configuration
-      const routeIndex = config.apps.http.servers.srv0.routes.length;
-      
-      // Use PATCH to add the route
-      await axios.patch(
-        `${this.apiUrl}/config/apps/http/servers/srv0/routes/${routeIndex}`,
+      // Use POST to add the route
+      await axios.post(
+        `${this.apiUrl}/config/apps/http/servers/srv0/routes`,
         route,
         {
           headers: {
@@ -350,9 +383,13 @@ class CaddyService {
         }
       );
       
+      // Get updated config to find the new route's index
+      const updatedConfig = await this.getConfig();
+      const newRouteIndex = updatedConfig.apps.http.servers.srv0.routes.length - 1;
+      
       // Update the proxy with its route index
       await proxy.update({
-        caddy_route_index: routeIndex
+        caddy_route_index: newRouteIndex
       });
       
       // Backup the updated configuration
@@ -361,7 +398,7 @@ class CaddyService {
       return {
         success: true,
         message: 'Proxy added to Caddy configuration',
-        routeIndex
+        routeIndex: newRouteIndex
       };
     } catch (error) {
       console.error('Failed to add proxy to Caddy configuration:', error);

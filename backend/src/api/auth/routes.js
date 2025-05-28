@@ -1,5 +1,6 @@
 const express = require('express');
 const { authenticateUser } = require('../../services/authService');
+const { authMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
@@ -63,12 +64,10 @@ router.post('/logout', (req, res) => {
  * @desc Get current user info
  * @access Private (will be protected by auth middleware)
  */
-router.get('/me', (req, res) => {
-  // This will be protected by auth middleware
-  // For now, just return a placeholder
+router.get('/me', authMiddleware, (req, res) => {
   res.status(200).json({ 
-    success: true, 
-    message: 'Protected route - will return user info when auth middleware is implemented' 
+    success: true,
+    user: req.user
   });
 });
 

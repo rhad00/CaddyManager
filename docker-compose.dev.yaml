@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   caddy:
     image: caddy:2
@@ -7,6 +5,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "2019:2019"  # Exposing admin API port for development
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -21,36 +20,38 @@ services:
     depends_on:
       - db
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
+      - PORT=3000
       - DB_HOST=db
       - DB_USER=caddymanager
-      - DB_PASSWORD=password
+      - DB_PASSWORD=devpassword123
       - DB_NAME=caddymanager
+      - DB_TYPE=postgres
+      - DB_PORT=5432
+      - DB_SSL=false
+      - DB_URL=postgresql://caddymanager:devpassword123@db:5432/caddymanager
       - CADDY_API_URL=http://caddy:2019
-      - JWT_SECRET=changeme_in_production_29341294612398764231987446
+      - JWT_SECRET=dev_secret_key_123_2316492642314
+      - LOG_LEVEL=debug
     volumes:
+      - ./backend:/app  # Mount source code for development
       - backend_logs:/app/logs
       - backend_metrics:/app/metrics
+    ports:
+      - "3000:3000"  # Expose backend port for direct access during development
     networks:
       - caddy_net
       - backend_net
-
-  frontend:
-    build:
-      context: ./frontend
-    restart: unless-stopped
-    environment:
-      - VITE_API_URL=http://localhost/api
-    networks:
-      - caddy_net
 
   db:
     image: postgres:16
     restart: unless-stopped
     environment:
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=devpassword123
       - POSTGRES_USER=caddymanager
       - POSTGRES_DB=caddymanager
+    ports:
+      - "5432:5432"  # Expose PostgreSQL port for direct access during development
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
@@ -62,12 +63,12 @@ networks:
 
 volumes:
   caddy_data:
-    name: caddymanager_caddy_data
+    name: caddymanager_dev_caddy_data
   caddy_config:
-    name: caddymanager_caddy_config
+    name: caddymanager_dev_caddy_config
   db_data:
-    name: caddymanager_db_data
+    name: caddymanager_dev_db_data
   backend_logs:
-    name: caddymanager_backend_logs
+    name: caddymanager_dev_backend_logs
   backend_metrics:
-    name: caddymanager_backend_metrics
+    name: caddymanager_dev_backend_metrics

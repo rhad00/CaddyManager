@@ -1,10 +1,10 @@
 # Global options
 {
 	# Admin API endpoint (only accessible from internal network)
-	admin localhost:2019
+	admin 0.0.0.0:2019
 	
 	# Enable automatic HTTPS
-	auto_https on
+	auto_https prefer_wildcard
 	
 	# Use custom storage for certificates and other data
 	storage file_system {
