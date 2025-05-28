@@ -12,9 +12,12 @@
   "dependencies": {
     "@shadcn/ui": "^0.0.4",
     "autoprefixer": "^10.4.21",
+    "chart.js": "^4.4.9",
     "postcss": "^8.5.3",
     "react": "^19.1.0",
+    "react-chartjs-2": "^5.3.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.1",
     "tailwindcss": "^4.1.7"
   },
   "devDependencies": {
