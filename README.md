@@ -94,7 +94,7 @@ CaddyManager is a powerful, open-source reverse proxy manager built on top of Ca
 version: '3.8'
 services:
   caddymanager:
-    image: caddymanager/caddymanager:latest
+    image: rhad00/CaddyManager:latest
     ports:
       - "80:80"
       - "443:443"
@@ -120,7 +120,7 @@ docker-compose up -d
 1. Clone the repository:
 \`\`\`bash
 git clone https://github.com/rhad00/CaddyManager.git
-cd caddymanager
+cd CaddyManager
 \`\`\`
 
 2. Install dependencies:
