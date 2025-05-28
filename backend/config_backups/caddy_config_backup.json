@@ -6,113 +6,26 @@
     "http": {
       "servers": {
         "srv0": {
-          "listen": [
-            ":80"
-          ],
-          "logs": {
-            "default_logger_name": "log0"
+          "automatic_https": {
+            "disable_redirects": true
           },
+          "listen": [
+            ":443"
+          ],
           "routes": [
             {
               "handle": [
                 {
-                  "encodings": {
-                    "gzip": {},
-                    "zstd": {}
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "tls": {
+                      "insecure_skip_verify": true
+                    }
                   },
-                  "handler": "encode",
-                  "prefer": [
-                    "gzip",
-                    "zstd"
-                  ]
-                }
-              ]
-            },
-            {
-              "group": "group2",
-              "handle": [
-                {
-                  "handler": "subroute",
-                  "routes": [
-                    {
-                      "handle": [
-                        {
-                          "handler": "rewrite",
-                          "strip_path_prefix": "/api"
-                        }
-                      ]
-                    },
-                    {
-                      "handle": [
-                        {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
-                            {
-                              "dial": "backend:3000"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ],
-              "match": [
-                {
-                  "path": [
-                    "/api/*"
-                  ]
-                }
-              ]
-            },
-            {
-              "group": "group2",
-              "handle": [
-                {
-                  "handler": "subroute",
-                  "routes": [
-                    {
-                      "handle": [
-                        {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
-                            {
-                              "dial": "frontend:80"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
                   "upstreams": [
                     {
-                      "dial": "https://10.35.1.14"
-                    }
-                  ]
-                }
-              ],
-              "match": [
-                {
-                  "host": [
-                    "s3.holits.com"
-                  ]
-                }
-              ]
-            },
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
-                    {
-                      "dial": "https://10.35.1.14"
+                      "dial": "10.35.1.14:443"
                     }
                   ]
                 }
@@ -126,29 +39,34 @@
               ]
             }
           ]
-        }
-      }
-    }
-  },
-  "logging": {
-    "logs": {
-      "default": {
-        "exclude": [
-          "http.log.access.log0"
-        ]
-      },
-      "log0": {
-        "encoder": {
-          "format": "json"
         },
-        "include": [
-          "http.log.access.log0"
-        ],
-        "writer": {
-          "filename": "/data/logs/access.log",
-          "output": "file",
-          "roll_keep": 10,
-          "roll_size_mb": 10
+        "srv1": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "No routes configured yet",
+                          "handler": "static_response",
+                          "status_code": 503
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       }
     }

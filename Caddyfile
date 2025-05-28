@@ -2,9 +2,7 @@
 {
 	# Admin API endpoint (only accessible from internal network)
 	admin 0.0.0.0:2019
-	
-	# Enable automatic HTTPS
-	auto_https prefer_wildcard
+	auto_https disable_redirects
 	
 	# Use custom storage for certificates and other data
 	storage file_system {
@@ -12,29 +10,14 @@
 	}
 }
 
-# Main site
 :80 {
-	# Reverse proxy for backend API
-	handle_path /api/* {
-		reverse_proxy backend:3000
-	}
-
-	# Reverse proxy for frontend
-	handle {
-		reverse_proxy frontend:80
-	}
-
-	# Enable logging
-	log {
-		output file /data/logs/access.log {
-			roll_size 10MB
-			roll_keep 10
-		}
-		format json
-	}
-
-	# Enable compression
-	encode gzip zstd
+    handle {
+        respond "No routes configured yet" 503
+    }
 }
 
-# HTTPS redirection and configuration will be managed by CaddyManager
+:443 {
+    handle {
+        respond "No routes configured yet (HTTPS)" 503
+    }
+}

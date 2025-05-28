@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const ProxyList = () => {
+const ProxyList = ({ onEdit, onCreate }) => {
   const [proxies, setProxies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,30 +10,30 @@ const ProxyList = () => {
   // API URL from environment
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  useEffect(() => {
-    const fetchProxies = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`${API_URL}/api/proxies`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch proxies');
+  const fetchProxies = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/proxies`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
-        
-        const data = await response.json();
-        setProxies(data.proxies || []);
-      } catch (error) {
-        console.error('Error fetching proxies:', error);
-        setError('Failed to load proxies. Please try again later.');
-      } finally {
-        setLoading(false);
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch proxies');
       }
-    };
-    
+      
+      const data = await response.json();
+      setProxies(data.proxies || []);
+    } catch (error) {
+      console.error('Error fetching proxies:', error);
+      setError('Failed to load proxies. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchProxies();
   }, [API_URL, token]);
 
@@ -72,6 +72,31 @@ const ProxyList = () => {
           None
         </span>
       );
+    }
+  };
+
+  const handleDelete = async (proxyId) => {
+    if (!window.confirm('Are you sure you want to delete this proxy?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/proxies/${proxyId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete proxy');
+      }
+
+      // Refresh the proxy list
+      fetchProxies();
+    } catch (error) {
+      console.error('Error deleting proxy:', error);
+      setError('Failed to delete proxy. Please try again later.');
     }
   };
 
@@ -129,14 +154,20 @@ const ProxyList = () => {
                     <span>SSL:</span>
                     {getSslBadge(proxy.ssl_type)}
                   </div>
-                  <div className="mt-2 flex space-x-2">
-                    <button className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200">
-                      Edit
-                    </button>
-                    <button className="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200">
-                      Delete
-                    </button>
-                  </div>
+                    <div className="mt-2 flex space-x-2">
+                      <button 
+                        onClick={() => onEdit(proxy)}
+                        className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(proxy.id)}
+                        className="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
                 </div>
               </div>
             </li>
@@ -144,7 +175,10 @@ const ProxyList = () => {
         )}
       </ul>
       <div className="px-6 py-4 border-t border-gray-200">
-        <button className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+        <button
+          onClick={onCreate}
+          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
           Create New Proxy
         </button>
       </div>

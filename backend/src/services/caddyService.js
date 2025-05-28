@@ -1,10 +1,8 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const Proxy = require('../models/proxy');
-const Header = require('../models/header');
-const Middleware = require('../models/middleware');
-const { sequelize } = require('../config/database');
+const { sequelize, Proxy, Header, Middleware } = require('../models');
+const { Op } = require('sequelize');
 require('dotenv').config();
 
 /**
@@ -245,7 +243,13 @@ class CaddyService {
         handler: "reverse_proxy",
         upstreams: [{
           dial: proxy.upstream_url
-        }]
+        }],
+        transport: this.shouldUseHTTPSTransport(proxy.upstream_url) ? {
+          protocol: "http",
+          tls: {
+            insecure_skip_verify: true
+          }
+        } : undefined
       }]
     };
     
@@ -255,10 +259,10 @@ class CaddyService {
       const responseHeaders = {};
       
       for (const header of proxy.headers) {
-        if (header.type === 'request') {
-          requestHeaders[header.name] = header.value;
-        } else if (header.type === 'response') {
-          responseHeaders[header.name] = header.value;
+        if (header.header_type === 'request') {
+          requestHeaders[header.header_name] = header.header_value;
+        } else if (header.header_type === 'response') {
+          responseHeaders[header.header_name] = header.header_value;
         }
       }
       
@@ -330,6 +334,15 @@ class CaddyService {
     }
     
     return route;
+  }
+
+  /**
+   * Check if the upstream URL should use HTTPS transport configuration
+   * @param {string} upstreamUrl - The upstream URL to check
+   * @returns {boolean} True if HTTPS transport should be used
+   */
+  shouldUseHTTPSTransport(upstreamUrl) {
+    return upstreamUrl.includes(':443') || upstreamUrl.startsWith('https://');
   }
   
   /**
@@ -454,38 +467,39 @@ class CaddyService {
    */
   async deleteProxy(proxy) {
     try {
-      // Check if we have a route index for this proxy
-      if (proxy.caddy_route_index === null || proxy.caddy_route_index === undefined) {
-        // No route index, nothing to delete
-        return {
-          success: true,
-          message: 'Proxy not found in Caddy configuration'
-        };
-      }
-      
-      // Use DELETE to remove the route
-      await axios.delete(
-        `${this.apiUrl}/config/apps/http/servers/srv0/routes/${proxy.caddy_route_index}`
-      );
-      
-      // Get all proxies with higher route indices
-      const proxiesToUpdate = await Proxy.findAll({
-        where: {
-          caddy_route_index: {
-            [sequelize.Op.gt]: proxy.caddy_route_index
+      // Delete from Caddy configuration if it exists there
+      if (proxy.caddy_route_index !== null && proxy.caddy_route_index !== undefined) {
+        try {
+          // Use DELETE to remove the route
+          await axios.delete(
+            `${this.apiUrl}/config/apps/http/servers/srv0/routes/${proxy.caddy_route_index}`
+          );
+          
+          // Get all proxies with higher route indices
+          const proxiesToUpdate = await Proxy.findAll({
+            where: {
+              caddy_route_index: {
+                [Op.gt]: proxy.caddy_route_index
+              }
+            }
+          });
+          
+          // Update their route indices
+          for (const p of proxiesToUpdate) {
+            await p.update({
+              caddy_route_index: p.caddy_route_index - 1
+            });
           }
+          
+          // Backup the updated configuration
+          await this.backupCurrentConfig();
+        } catch (error) {
+          console.error('Failed to delete proxy from Caddy (continuing anyway):', error);
         }
-      });
-      
-      // Update their route indices
-      for (const p of proxiesToUpdate) {
-        await p.update({
-          caddy_route_index: p.caddy_route_index - 1
-        });
       }
       
-      // Backup the updated configuration
-      await this.backupCurrentConfig();
+      // Always delete the proxy from the database
+      await proxy.destroy();
       
       return {
         success: true,
@@ -505,11 +519,45 @@ class CaddyService {
    */
   async applyTemplate(proxy, template) {
     try {
-      // Update the proxy in the database first
-      // This will be handled by the template service
+      // First get the current config to show what will change
+      const oldConfig = await this.getConfig();
+      const oldRoute = oldConfig.apps.http.servers.srv0.routes[proxy.caddy_route_index];
+
+      // First apply the template headers to the proxy
+      // Remove any existing headers
+      await Header.destroy({
+        where: { proxy_id: proxy.id }
+      });
+      
+      // Add template headers
+      if (template.headers && template.headers.length > 0) {
+        for (const header of template.headers) {
+          await Header.create({
+            proxy_id: proxy.id,
+            header_type: header.header_type,
+            header_name: header.header_name,
+            header_value: header.header_value
+          });
+        }
+      }
+      
+      // Reload proxy with new headers
+      await proxy.reload({
+        include: [{ model: Header, as: 'headers' }]
+      });
       
       // Then update the Caddy configuration
-      return await this.updateProxy(proxy);
+      const result = await this.updateProxy(proxy);
+      
+      // Get the new config to show what changed
+      const newConfig = await this.getConfig();
+      const newRoute = newConfig.apps.http.servers.srv0.routes[proxy.caddy_route_index];
+      
+      return {
+        ...result,
+        before: oldRoute,
+        after: newRoute
+      };
     } catch (error) {
       console.error('Failed to apply template to proxy in Caddy configuration:', error);
       throw new Error(`Failed to apply template: ${error.message}`);

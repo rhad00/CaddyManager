@@ -1,5 +1,4 @@
-const Template = require('../models/template');
-const { sequelize } = require('../config/database');
+const { sequelize, Template } = require('../models');
 
 /**
  * Service for managing predefined templates for common applications

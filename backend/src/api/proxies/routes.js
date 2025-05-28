@@ -13,7 +13,17 @@ const router = express.Router();
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    // Get all proxy IDs first
+    const proxyIds = await Proxy.findAll({
+      attributes: ['id'],
+      raw: true
+    });
+
+    // Then fetch complete data for each proxy
     const proxies = await Proxy.findAll({
+      where: {
+        id: proxyIds.map(p => p.id)
+      },
       include: [
         { model: Header, as: 'headers' },
         { model: Middleware, as: 'middlewares' }
@@ -76,6 +86,27 @@ router.post('/', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
+    // Format domains consistently as arrays
+    const newDomains = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
+    const sortedNewDomains = JSON.stringify(newDomains.sort());
+
+    // Find all proxies and check domains manually
+    const existingProxies = await Proxy.findAll();
+    const domainConflict = existingProxies.some(proxy => {
+      const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+      const sortedProxyDomains = JSON.stringify(proxyDomains.sort());
+      return sortedProxyDomains === sortedNewDomains;
+    });
+
+    if (domainConflict) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'A proxy with this name and domains already exists'
+      });
+    }
+
+
     // Create the proxy in the database
     const proxy = await Proxy.create(req.body, { transaction });
     

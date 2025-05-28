@@ -4,13 +4,15 @@ const { promisify } = require('util');
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const mkdirAsync = promisify(fs.mkdir);
-const User = require('../models/user');
-const Proxy = require('../models/proxy');
-const Header = require('../models/header');
-const Middleware = require('../models/middleware');
-const Template = require('../models/template');
-const Backup = require('../models/backup');
-const { sequelize } = require('../config/database');
+const { 
+  sequelize,
+  User,
+  Proxy,
+  Header,
+  Middleware,
+  Template,
+  Backup
+} = require('../models');
 require('dotenv').config();
 
 /**
@@ -58,8 +60,8 @@ class BackupService {
       const [proxies, templates] = await Promise.all([
         Proxy.findAll({
           include: [
-            { model: Header, as: 'Headers' },
-            { model: Middleware, as: 'Middlewares' }
+            { model: Header, as: 'headers' },
+            { model: Middleware, as: 'middlewares' }
           ]
         }),
         Template.findAll()
@@ -72,11 +74,11 @@ class BackupService {
         proxies: proxies.map(proxy => {
           const proxyData = proxy.toJSON();
           // Include headers and middleware if available
-          if (proxy.Headers) {
-            proxyData.headers = proxy.Headers.map(header => header.toJSON());
+          if (proxy.headers) {
+            proxyData.headers = proxy.headers.map(header => header.toJSON());
           }
-          if (proxy.Middlewares) {
-            proxyData.middlewares = proxy.Middlewares.map(middleware => middleware.toJSON());
+          if (proxy.middlewares) {
+            proxyData.middlewares = proxy.middlewares.map(middleware => middleware.toJSON());
           }
           return proxyData;
         }),

@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
-const User = require('./user');
 
 const Proxy = sequelize.define('Proxy', {
   id: {
@@ -63,15 +62,12 @@ const Proxy = sequelize.define('Proxy', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: User,
+      model: 'Users',
       key: 'id'
     }
   }
 }, {
   timestamps: true // Adds createdAt and updatedAt
 });
-
-// Establish relationship with User
-Proxy.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
 module.exports = Proxy;

@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-module.exports = (sequelize) => {
   const CertificateAuthority = sequelize.define('CertificateAuthority', {
     id: {
       type: DataTypes.INTEGER,
@@ -43,5 +43,4 @@ module.exports = (sequelize) => {
     }
   });
 
-  return CertificateAuthority;
-};
+module.exports = CertificateAuthority;

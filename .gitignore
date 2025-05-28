@@ -57,3 +57,7 @@ temp/
 *.pem
 *.key
 *.crt
+
+config_backups/
+*.sh
+

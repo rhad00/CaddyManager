@@ -1,6 +1,7 @@
 const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-module.exports = (sequelize) => {
+
   const Certificate = sequelize.define('Certificate', {
     id: {
       type: DataTypes.INTEGER,
@@ -57,8 +58,23 @@ module.exports = (sequelize) => {
       type: DataTypes.ENUM('valid', 'expired', 'revoked', 'pending'),
       allowNull: false,
       defaultValue: 'valid'
+    },
+    created_by: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: 'Users',
+        key: 'id'
+      }
+    },
+    ca_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'CertificateAuthorities',
+        key: 'id'
+      }
     }
   });
 
-  return Certificate;
-};
+module.exports = Certificate;

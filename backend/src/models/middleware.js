@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
-const Proxy = require('./proxy');
 
 const Middleware = sequelize.define('Middleware', {
   id: {
@@ -12,7 +11,7 @@ const Middleware = sequelize.define('Middleware', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: Proxy,
+      model: 'Proxies',
       key: 'id'
     }
   },
@@ -38,9 +37,5 @@ const Middleware = sequelize.define('Middleware', {
 }, {
   timestamps: true // Adds createdAt and updatedAt
 });
-
-// Establish relationship with Proxy
-Middleware.belongsTo(Proxy, { foreignKey: 'proxy_id', onDelete: 'CASCADE' });
-Proxy.hasMany(Middleware, { foreignKey: 'proxy_id', as: 'middlewares' });
 
 module.exports = Middleware;

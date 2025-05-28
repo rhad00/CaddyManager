@@ -12,6 +12,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedTemplateDetails, setSelectedTemplateDetails] = useState(null);
+  const [configPreview, setConfigPreview] = useState(null);
   
   const { token, currentUser } = useAuth();
   
@@ -123,11 +125,22 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         
         if (!templateResponse.ok) {
           console.error('Failed to apply template, but proxy was saved');
+        } else {
+          // Show the configuration changes
+          const templateResult = await templateResponse.json();
+          if (templateResult.result && templateResult.result.before && templateResult.result.after) {
+            setConfigPreview({
+              before: templateResult.result.before,
+              after: templateResult.result.after
+            });
+          }
         }
       }
       
-      // Call the onSave callback with the saved proxy
-      onSave(savedProxyData.proxy);
+      // Only call onSave if there's no config preview to show
+      if (!configPreview) {
+        onSave(savedProxyData.proxy);
+      }
     } catch (error) {
       console.error('Error saving proxy:', error);
       setError(error.message || 'Failed to save proxy. Please try again.');
@@ -267,24 +280,108 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             <label htmlFor="template" className="block text-sm font-medium text-gray-700">
               Apply Template
             </label>
-            <select
-              id="template"
-              value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="">None</option>
-              {templates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              Apply a predefined template for common services
-            </p>
+            <div>
+              <select
+                id="template"
+                value={selectedTemplate}
+                onChange={async (e) => {
+                  const templateId = e.target.value;
+                  setSelectedTemplate(templateId);
+                  if (templateId) {
+                    try {
+                      const response = await fetch(`${API_URL}/api/templates/${templateId}`, {
+                        headers: {
+                          'Authorization': `Bearer ${token}`
+                        }
+                      });
+                      if (response.ok) {
+                        const data = await response.json();
+                        setSelectedTemplateDetails(data.template);
+                      }
+                    } catch (error) {
+                      console.error('Error fetching template details:', error);
+                    }
+                  } else {
+                    setSelectedTemplateDetails(null);
+                  }
+                }}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              >
+                <option value="">None</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-sm text-gray-500">
+                Apply a predefined template for common services
+              </p>
+              
+              {selectedTemplateDetails && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Template Configuration Preview:</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700">Description:</h5>
+                      <p className="text-sm text-gray-600">{selectedTemplateDetails.description}</p>
+                    </div>
+                    {selectedTemplateDetails.headers && selectedTemplateDetails.headers.length > 0 && (
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-700">Headers to be configured:</h5>
+                        <div className="mt-2 space-y-2">
+                          {selectedTemplateDetails.headers.map((header, index) => (
+                            <div key={index} className="text-sm">
+                              <span className="font-mono text-indigo-600">{header.header_name}</span>
+                              <span className="text-gray-600"> = </span>
+                              <span className="font-mono text-green-600">{header.header_value}</span>
+                              <span className="text-gray-500 ml-2">({header.header_type})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {selectedTemplateDetails.middleware && selectedTemplateDetails.middleware.length > 0 && (
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-700">Middleware to be applied:</h5>
+                        <div className="mt-2 space-y-2">
+                          {selectedTemplateDetails.middleware.map((mw, index) => (
+                            <div key={index} className="text-sm">
+                              <span className="font-medium text-indigo-600">{mw.middleware_type}</span>
+                              <span className="text-gray-600 ml-2">
+                                {JSON.stringify(mw.configuration)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           
+          {configPreview && (
+            <div className="mb-6 p-4 bg-gray-50 rounded-md">
+              <h4 className="text-sm font-medium text-gray-900 mb-4">Configuration Changes:</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h5 className="text-sm font-medium text-gray-700 mb-2">Before:</h5>
+                  <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-60">
+                    {JSON.stringify(configPreview.before, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <h5 className="text-sm font-medium text-gray-700 mb-2">After:</h5>
+                  <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-60">
+                    {JSON.stringify(configPreview.after, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end space-x-3">
             <button
               type="button"
@@ -293,13 +390,28 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              {loading ? 'Saving...' : 'Save'}
-            </button>
+            {configPreview ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfigPreview(null);
+                    onSave(savedProxyData.proxy);
+                  }}
+                  className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Confirm Changes
+                </button>
+              </>
+            ) : (
+              <button
+                type="submit"
+                disabled={loading}
+                className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Save'}
+              </button>
+            )}
           </div>
         </form>
       </div>

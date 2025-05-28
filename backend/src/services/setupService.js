@@ -1,5 +1,4 @@
-const User = require('../models/user');
-const { sequelize } = require('../config/database');
+const { sequelize, User } = require('../models');
 require('dotenv').config();
 
 /**

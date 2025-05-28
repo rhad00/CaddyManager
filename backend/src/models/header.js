@@ -1,6 +1,5 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
-const Proxy = require('./proxy');
 
 const Header = sequelize.define('Header', {
   id: {
@@ -12,7 +11,7 @@ const Header = sequelize.define('Header', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: Proxy,
+      model: 'Proxies',
       key: 'id'
     }
   },
@@ -36,9 +35,5 @@ const Header = sequelize.define('Header', {
 }, {
   timestamps: true // Adds createdAt and updatedAt
 });
-
-// Establish relationship with Proxy
-Header.belongsTo(Proxy, { foreignKey: 'proxy_id', onDelete: 'CASCADE' });
-Proxy.hasMany(Header, { foreignKey: 'proxy_id', as: 'headers' });
 
 module.exports = Header;
