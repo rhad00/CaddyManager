@@ -1,0 +1,40 @@
+# Global options
+{
+	# Admin API endpoint (only accessible from internal network)
+	admin localhost:2019
+	
+	# Enable automatic HTTPS
+	auto_https on
+	
+	# Use custom storage for certificates and other data
+	storage file_system {
+		root /data
+	}
+}
+
+# Main site
+:80 {
+	# Reverse proxy for backend API
+	handle_path /api/* {
+		reverse_proxy backend:3000
+	}
+
+	# Reverse proxy for frontend
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	# Enable logging
+	log {
+		output file /data/logs/access.log {
+			roll_size 10MB
+			roll_keep 10
+		}
+		format json
+	}
+
+	# Enable compression
+	encode gzip zstd
+}
+
+# HTTPS redirection and configuration will be managed by CaddyManager

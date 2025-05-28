@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - caddy_net
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - DB_USER=caddymanager
+      - DB_PASSWORD=password
+      - DB_NAME=caddymanager
+      - CADDY_API_URL=http://caddy:2019
+      - JWT_SECRET=changeme_in_production
+    volumes:
+      - backend_logs:/app/logs
+      - backend_metrics:/app/metrics
+    networks:
+      - caddy_net
+      - backend_net
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost/api
+    networks:
+      - caddy_net
+
+  db:
+    image: postgres:13
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=caddymanager
+      - POSTGRES_DB=caddymanager
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - backend_net
+
+networks:
+  caddy_net:
+  backend_net:
+
+volumes:
+  caddy_data:
+    name: caddymanager_caddy_data
+  caddy_config:
+    name: caddymanager_caddy_config
+  db_data:
+    name: caddymanager_db_data
+  backend_logs:
+    name: caddymanager_backend_logs
+  backend_metrics:
+    name: caddymanager_backend_metrics
