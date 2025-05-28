@@ -27,27 +27,27 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'X-Original-URI',
+                header_name: 'x-original-uri',
                 header_value: '{http.request.uri}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Method',
+                header_name: 'x-forwarded-method',
                 header_value: '{http.request.method}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Proto',
+                header_name: 'x-forwarded-proto',
                 header_value: '{http.request.scheme}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Host',
+                header_name: 'x-forwarded-host',
                 header_value: '{http.request.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-URI',
+                header_name: 'x-forwarded-uri',
                 header_value: '{http.request.uri}'
               }
             ],
@@ -61,17 +61,17 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Proto',
+                header_name: 'x-forwarded-proto',
                 header_value: '{http.request.scheme}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Host',
+                header_name: 'x-forwarded-host',
                 header_value: '{http.request.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Real-IP',
+                header_name: 'x-real-ip',
                 header_value: '{http.request.remote.host}'
               }
             ],
@@ -86,27 +86,42 @@ class TemplateService {
               {
                 header_type: 'request',
                 header_name: 'Host',
-                header_value: '{http.reverse_proxy.upstream.host}'
+                header_value: '{http.request.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-For',
-                header_value: '{http.request.remote.host}'
+                header_name: 'Authorization',
+                header_value: '{http.request.header.Authorization}'
               },
               {
-                header_type: 'response',
-                header_name: 'Access-Control-Allow-Origin',
-                header_value: '*'
+                header_type: 'request',
+                header_name: 'Content-Type',
+                header_value: '{http.request.header.Content-Type}'
               },
               {
-                header_type: 'response',
-                header_name: 'Access-Control-Allow-Methods',
-                header_value: 'GET, PUT, POST, DELETE, HEAD'
+                header_type: 'request',
+                header_name: 'Content-Length',
+                header_value: '{http.request.header.Content-Length}'
               },
               {
-                header_type: 'response',
-                header_name: 'Access-Control-Allow-Headers',
-                header_value: 'Authorization, Content-Type, X-Amz-Date, X-Amz-Content-Sha256, X-Amz-Security-Token'
+                header_type: 'request',
+                header_name: 'Content-MD5',
+                header_value: '{http.request.header.Content-MD5}'
+              },
+              {
+                header_type: 'request',
+                header_name: 'X-Amz-Date',
+                header_value: '{http.request.header.X-Amz-Date}'
+              },
+              {
+                header_type: 'request',
+                header_name: 'X-Amz-Content-Sha256',
+                header_value: '{http.request.header.X-Amz-Content-Sha256}'
+              },
+              {
+                header_type: 'request',
+                header_name: 'X-Amz-Acl',
+                header_value: '{http.request.header.X-Amz-Acl}'
               }
             ],
             middleware: []
@@ -119,17 +134,17 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-For',
+                header_name: 'x-forwarded-for',
                 header_value: '{http.request.remote.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Proto',
+                header_name: 'x-forwarded-proto',
                 header_value: '{http.request.scheme}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Host',
+                header_name: 'x-forwarded-host',
                 header_value: '{http.request.host}'
               }
             ],
@@ -152,12 +167,12 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'CF-Connecting-IP',
+                header_name: 'cf-connecting-ip',
                 header_value: '{http.request.remote.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Real-IP',
+                header_name: 'x-real-ip',
                 header_value: '{http.request.remote.host}'
               }
             ],
@@ -171,17 +186,17 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'X-Webauth-User',
+                header_name: 'x-webauth-user',
                 header_value: '{http.auth.user.id}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-User',
+                header_name: 'x-forwarded-user',
                 header_value: '{http.auth.user.id}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Host',
+                header_name: 'x-forwarded-host',
                 header_value: '{http.request.host}'
               }
             ],
@@ -195,17 +210,17 @@ class TemplateService {
             headers: [
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-For',
+                header_name: 'x-forwarded-for',
                 header_value: '{http.request.remote.host}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Proto',
+                header_name: 'x-forwarded-proto',
                 header_value: '{http.request.scheme}'
               },
               {
                 header_type: 'request',
-                header_name: 'X-Forwarded-Host',
+                header_name: 'x-forwarded-host',
                 header_value: '{http.request.host}'
               }
             ],

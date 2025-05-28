@@ -190,7 +190,6 @@ class CaddyService {
           'Content-Type': 'application/json'
         }
       });
-      console.log('Configuration loaded successfully');
     } catch (error) {
       console.error('Failed to load Caddy configuration:', error.message);
       throw new Error(`Failed to load configuration: ${error.message}`);
@@ -234,61 +233,15 @@ class CaddyService {
    * @returns {Object} The route configuration
    */
   createRouteFromProxy(proxy) {
-    // Create the base route
-    const route = {
-      match: [{
-        host: Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]
-      }],
-      handle: [{
-        handler: "reverse_proxy",
-        upstreams: [{
-          dial: proxy.upstream_url
-        }],
-        transport: this.shouldUseHTTPSTransport(proxy.upstream_url) ? {
-          protocol: "http",
-          tls: {
-            insecure_skip_verify: true
-          }
-        } : undefined
-      }]
-    };
-    
-    // Add headers if present
-    if (proxy.headers && proxy.headers.length > 0) {
-      const requestHeaders = {};
-      const responseHeaders = {};
-      
-      for (const header of proxy.headers) {
-        if (header.header_type === 'request') {
-          requestHeaders[header.header_name] = header.header_value;
-        } else if (header.header_type === 'response') {
-          responseHeaders[header.header_name] = header.header_value;
-        }
-      }
-      
-      // Add request headers handler if needed
-      if (Object.keys(requestHeaders).length > 0) {
-        route.handle.unshift({
-          handler: "headers",
-          request: requestHeaders
-        });
-      }
-      
-      // Add response headers handler if needed
-      if (Object.keys(responseHeaders).length > 0) {
-        route.handle.unshift({
-          handler: "headers",
-          response: responseHeaders
-        });
-      }
-    }
-    
-    // Add middlewares if present
+    // Start with the handlers array
+    const handlers = [];
+
+    // Add middlewares first
     if (proxy.middlewares && proxy.middlewares.length > 0) {
       for (const middleware of proxy.middlewares) {
         switch (middleware.type) {
           case 'basic_auth':
-            route.handle.unshift({
+            handlers.push({
               handler: "basic_auth",
               users: {
                 [middleware.config.username]: middleware.config.password
@@ -296,14 +249,14 @@ class CaddyService {
             });
             break;
           case 'rate_limit':
-            route.handle.unshift({
+            handlers.push({
               handler: "rate_limit",
               rate: parseInt(middleware.config.rate),
               unit: middleware.config.unit || "second"
             });
             break;
           case 'ip_filter':
-            route.handle.unshift({
+            handlers.push({
               handler: "ip_filter",
               allow: middleware.config.allow_list ? middleware.config.allow_list.split(',').map(ip => ip.trim()) : [],
               deny: middleware.config.deny_list ? middleware.config.deny_list.split(',').map(ip => ip.trim()) : []
@@ -314,9 +267,17 @@ class CaddyService {
       }
     }
     
+    // Add HTTPS redirect if needed
+    if (proxy.ssl_type !== 'none' && proxy.http_redirect) {
+      handlers.push({
+        handler: "redirect",
+        scheme: "https"
+      });
+    }
+    
     // Add compression if enabled
     if (proxy.compression_enabled) {
-      route.handle.unshift({
+      handlers.push({
         handler: "encode",
         encodings: {
           gzip: {},
@@ -325,12 +286,75 @@ class CaddyService {
       });
     }
     
-    // Add HTTPS redirect if needed
-    if (proxy.ssl_type !== 'none' && proxy.http_redirect) {
-      route.handle.unshift({
-        handler: "redirect",
-        scheme: "https"
-      });
+    // Create the reverse proxy handler
+    const reverseProxyHandler = {
+      handler: "reverse_proxy",
+      upstreams: [{
+        dial: proxy.upstream_url
+      }]
+    };
+
+      // Process headers
+    if (proxy.headers && proxy.headers.length > 0) {
+      const enabledHeaders = proxy.headers.filter(header => header.enabled);
+      const requestHeaders = {};
+      const responseHeaders = {};
+
+      // Group headers by type
+      for (const header of enabledHeaders) {
+        const headerName = header.header_name;
+        const headerValue = header.header_value;
+
+        if (header.header_type === 'request') {
+          requestHeaders[headerName] = [headerValue];
+        } else if (header.header_type === 'response') {
+          responseHeaders[headerName] = [headerValue];
+        }
+      }
+
+      // Add headers to reverse proxy configuration
+      if (Object.keys(requestHeaders).length > 0 || Object.keys(responseHeaders).length > 0) {
+        reverseProxyHandler.headers = {};
+        
+        if (Object.keys(requestHeaders).length > 0) {
+          reverseProxyHandler.headers.request = {
+            set: requestHeaders
+          };
+        }
+        
+        if (Object.keys(responseHeaders).length > 0) {
+          reverseProxyHandler.headers.response = {
+            set: responseHeaders
+          };
+        }
+      }
+    }
+
+    // Add transport config if using HTTPS
+    if (this.shouldUseHTTPSTransport(proxy.upstream_url)) {
+      reverseProxyHandler.transport = {
+        protocol: "http",
+        tls: {
+          insecure_skip_verify: true
+        }
+      };
+    }
+
+    handlers.push(reverseProxyHandler);
+    
+    // Create the route with all handlers
+    const route = {
+      match: [{
+        host: Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]
+      }],
+      handle: handlers
+    };
+
+
+    // Make sure the route has a terminal handler (reverse_proxy)
+    if (!route.handle.some(h => h.handler === 'reverse_proxy')) {
+      console.error('Route is missing reverse_proxy handler:', route);
+      throw new Error('Invalid route configuration: missing reverse_proxy handler');
     }
     
     return route;
@@ -432,21 +456,15 @@ class CaddyService {
         return await this.addProxy(proxy);
       }
       
-      // Create the updated route for this proxy
+      // Get current config
+      const config = await this.getConfig();
+      
+      // Create and apply the updated route
       const route = this.createRouteFromProxy(proxy);
-      
-      // Use PATCH to update the route
-      await axios.patch(
-        `${this.apiUrl}/config/apps/http/servers/srv0/routes/${proxy.caddy_route_index}`,
-        route,
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
-      // Backup the updated configuration
+      config.apps.http.servers.srv0.routes[proxy.caddy_route_index] = route;
+      await this.loadConfig(config);
+
+      // Backup the configuration
       await this.backupCurrentConfig();
       
       return {
@@ -524,40 +542,30 @@ class CaddyService {
       const oldRoute = oldConfig.apps.http.servers.srv0.routes[proxy.caddy_route_index];
 
       // First apply the template headers to the proxy
-      // Remove any existing headers
-      await Header.destroy({
-        where: { proxy_id: proxy.id }
-      });
-      
-      // Add template headers
-      if (template.headers && template.headers.length > 0) {
-        for (const header of template.headers) {
-          await Header.create({
-            proxy_id: proxy.id,
-            header_type: header.header_type,
-            header_name: header.header_name,
-            header_value: header.header_value
-          });
+      await sequelize.transaction(async (transaction) => {
+        // Remove any existing headers
+        await Header.destroy({
+          where: { proxy_id: proxy.id },
+          transaction
+        });
+        
+        // Add template headers
+        if (template.headers && template.headers.length > 0) {
+          await Promise.all(template.headers.map(header => 
+            Header.create({
+              proxy_id: proxy.id,
+              header_type: header.header_type,
+              header_name: header.header_name,
+              header_value: header.header_value,
+              enabled: true // Explicitly enable headers from template
+            }, { transaction })
+          ));
         }
-      }
-      
-      // Reload proxy with new headers
-      await proxy.reload({
-        include: [{ model: Header, as: 'headers' }]
       });
       
-      // Then update the Caddy configuration
-      const result = await this.updateProxy(proxy);
-      
-      // Get the new config to show what changed
-      const newConfig = await this.getConfig();
-      const newRoute = newConfig.apps.http.servers.srv0.routes[proxy.caddy_route_index];
-      
-      return {
-        ...result,
-        before: oldRoute,
-        after: newRoute
-      };
+      // Reload proxy with new headers and update Caddy
+      await proxy.reload({ include: [{ model: Header, as: 'headers' }] });
+      return await this.updateProxy(proxy);
     } catch (error) {
       console.error('Failed to apply template to proxy in Caddy configuration:', error);
       throw new Error(`Failed to apply template: ${error.message}`);
