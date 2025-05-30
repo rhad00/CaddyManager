@@ -130,10 +130,8 @@ Example header configurations:
 
 - **Monitoring & Security**
   - System health monitoring
-  - SSL expiration tracking (to do)
   - Access and error logging (to do)
-  - API key management (to do)
-  - Comprehensive security features (to do)
+  - Comprehensive security features (CrowdSec / mod_security) (to do)
 
 ## Implementation Details
 
@@ -270,18 +268,13 @@ npm run dev
 - Enhanced monitoring capabilities
 - Additional service templates
 - Advanced analytics dashboard
-- API key management system
 - Multi-language support
 - Plugin system for extensions
 - Multi-node Caddy management
 - Advanced backup strategies
-- Additional database support
 - Enhanced security features
 - Clustering and high availability
-- Custom Caddy module support
 - Enterprise features (LDAP/SAML)
-- Community plugin marketplace
-- Advanced analytics and reporting
 
 ## 👥 Contributing
 
