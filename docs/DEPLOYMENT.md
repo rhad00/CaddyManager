@@ -102,12 +102,12 @@ docker-compose -f docker-compose.dev.yaml up -d
 ```nginx
 # Proxy /api requests to backend
 location /api/ {
-    proxy_pass http://backend:3000/api/;
+    proxy_pass http://backend:3000/;
     # ... other proxy settings
 }
 ```
 
-**Root Cause:** Previously, nginx was proxying `/api` to `backend:3000` without the `/api` prefix, but the backend routes are mounted on `/api/*`, causing path duplication.
+**Root Cause:** The nginx configuration was passing the `/api` prefix to the backend, but the backend routes are already mounted on `/api/*`, causing path duplication (/api/api). The fix strips the `/api` prefix when proxying to the backend.
 
 #### 2. Caddy Service Missing in Production
 
