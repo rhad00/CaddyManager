@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const ProxyList = ({ onEdit, onCreate }) => {
@@ -10,10 +10,10 @@ const ProxyList = ({ onEdit, onCreate }) => {
   // API URL from environment
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  const fetchProxies = async () => {
+  const fetchProxies = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/proxies`, {
+      const response = await fetch(`${API_URL}/proxies`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -31,11 +31,11 @@ const ProxyList = ({ onEdit, onCreate }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, token]);
 
   useEffect(() => {
     fetchProxies();
-  }, [API_URL, token]);
+  }, [fetchProxies]);
 
   const getStatusBadge = (status) => {
     if (status === 'active') {
@@ -81,7 +81,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/proxies/${proxyId}`, {
+      const response = await fetch(`${API_URL}/proxies/${proxyId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`

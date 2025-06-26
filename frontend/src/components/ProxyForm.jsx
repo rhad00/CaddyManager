@@ -35,7 +35,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/templates`, {
+        const response = await fetch(`${API_URL}/templates`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -149,7 +149,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       
       if (proxy) {
         // Update existing proxy
-        response = await fetch(`${API_URL}/api/proxies/${proxy.id}`, {
+        response = await fetch(`${API_URL}/proxies/${proxy.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -159,7 +159,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         });
       } else {
         // Create new proxy
-        response = await fetch(`${API_URL}/api/proxies`, {
+        response = await fetch(`${API_URL}/proxies`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -179,7 +179,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       
       // If a template was selected, apply it to the proxy
       if (selectedTemplate) {
-        const templateResponse = await fetch(`${API_URL}/api/templates/${selectedTemplate}/apply/${responseData.proxy.id}`, {
+        const templateResponse = await fetch(`${API_URL}/templates/${selectedTemplate}/apply/${responseData.proxy.id}`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -565,7 +565,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                   setSelectedTemplate(templateId);
                   if (templateId) {
                     try {
-                      const response = await fetch(`${API_URL}/api/templates/${templateId}`, {
+                      const response = await fetch(`${API_URL}/templates/${templateId}`, {
                         headers: {
                           'Authorization': `Bearer ${token}`
                         }

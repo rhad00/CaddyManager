@@ -14,7 +14,7 @@ const TemplateList = () => {
     const fetchTemplates = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${API_URL}/api/templates`, {
+        const response = await fetch(`${API_URL}/templates`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }

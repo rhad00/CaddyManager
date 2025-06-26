@@ -23,7 +23,7 @@ export const AuthProvider = ({ children }) => {
     const checkLoggedIn = async () => {
       if (token) {
         try {
-          const response = await fetch(`${API_URL}/api/auth/me`, {
+          const response = await fetch(`${API_URL}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       // Call logout endpoint (optional, as JWT is stateless)
-      await fetch(`${API_URL}/api/auth/logout`, {
+      await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

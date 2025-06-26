@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import TemplateList from '../components/TemplateList';
 
@@ -12,10 +12,10 @@ const TemplateManagement = () => {
   // API URL from environment
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/templates`, {
+      const response = await fetch(`${API_URL}/templates`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -33,11 +33,11 @@ const TemplateManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, token]);
 
   useEffect(() => {
     fetchTemplates();
-  }, [API_URL, token]);
+  }, [fetchTemplates]);
 
   const handleViewTemplate = (template) => {
     setSelectedTemplate(template);
