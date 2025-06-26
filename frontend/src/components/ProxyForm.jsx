@@ -96,6 +96,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
     }
   }, [API_URL, token, proxy]);
 
+  const [savedProxyData, setSavedProxyData] = useState(null);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -172,11 +174,12 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         throw new Error(errorData.message || 'Failed to save proxy');
       }
       
-      const savedProxyData = await response.json();
+      const responseData = await response.json();
+      setSavedProxyData(responseData);
       
       // If a template was selected, apply it to the proxy
       if (selectedTemplate) {
-        const templateResponse = await fetch(`${API_URL}/api/templates/${selectedTemplate}/apply/${savedProxyData.proxy.id}`, {
+        const templateResponse = await fetch(`${API_URL}/api/templates/${selectedTemplate}/apply/${responseData.proxy.id}`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
@@ -199,7 +202,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       
       // Only call onSave if there's no config preview to show
       if (!configPreview) {
-        onSave(savedProxyData.proxy);
+        onSave(responseData.proxy);
       }
     } catch (error) {
       console.error('Error saving proxy:', error);

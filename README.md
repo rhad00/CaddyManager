@@ -191,32 +191,58 @@ await caddyService.applyTemplate(proxy, template);
 
 ## 🚀 Quick Start
 
-### Docker Deployment (Recommended) (not available yet)
+### Docker Deployment (Recommended)
 
-1. Create a docker-compose.yml:
-```yaml
-services:
-  caddymanager:
-    image: rhad00/CaddyManager:latest
-    ports:
-      - "80:80"
-      - "443:443"
-      - "2019:2019"  # Caddy API
-    volumes:
-      - ./data:/data
-      - ./config:/config
-    environment:
-      - DB_TYPE=sqlite  # or postgres
-      - ADMIN_EMAIL=admin@example.com
-      - ADMIN_PASSWORD=changeme
-```
+#### Production Deployment
 
-2. Start the application:
+1. Clone the repository:
 ```bash
-docker-compose up -d
+git clone https://github.com/rhad00/CaddyManager.git
+cd CaddyManager
 ```
 
-3. Access the UI at http://localhost (will redirect to HTTPS)
+2. Create production environment file:
+```bash
+cp .env.prod.example .env.prod
+```
+
+3. Edit `.env.prod` with your production values:
+```bash
+# Database Configuration
+DB_PASSWORD=your_secure_production_password
+
+# JWT Configuration
+JWT_SECRET=your_production_jwt_secret_change_this_in_production_12345678901234567890
+JWT_EXPIRES_IN=24h
+
+# Other Backend Configuration
+LOG_LEVEL=info
+
+# Frontend Configuration
+VITE_API_URL=/api
+```
+
+4. Start the application:
+```bash
+docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
+```
+
+5. Access the UI at http://localhost
+   - The frontend serves the CaddyManager interface on port 80/443
+   - Caddy Admin API is available on port 2019 (internal use only)
+   - Configure your reverse proxies through the web interface
+
+#### Development Deployment
+
+1. Start development environment:
+```bash
+docker-compose -f docker-compose.dev.yaml up -d
+```
+
+2. Access the UI at http://localhost
+   - Backend API available at http://localhost:3000
+   - Database available at localhost:5432
+   - Caddy Admin API at http://localhost:2019
 
 ### Manual Installation
 
@@ -256,11 +282,14 @@ npm run dev
 
 ## 📝 Documentation
 
-- [Getting Started Guide](./getting_started.md)
-- [Development Roadmap](./development_roadmap.md)
-- [Technology Stack Details](./technology_stack.md)
+- [Deployment Guide](./docs/DEPLOYMENT.md) - Complete deployment and troubleshooting guide
+- [Getting Started Guide](./docs/getting_started.md)
+- [Development Roadmap](./docs/development_roadmap.md)
+- [Technology Stack Details](./docs/technology_stack.md)
+- [Project Structure](./docs/project_structure.md)
 - [API Documentation](https://api-docs.caddymanager.org)
 - [Contributing Guidelines](./CONTRIBUTING.md)
+- [Code of Conduct](./docs/CODE_OF_CONDUCT.md)
 
 ## 🗺 Roadmap
 
