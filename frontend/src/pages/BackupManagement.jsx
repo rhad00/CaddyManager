@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get, post, del } from '../utils/api';
 
 const BackupManagement = () => {
   const [backups, setBackups] = useState([]);
@@ -7,19 +8,12 @@ const BackupManagement = () => {
   const [error, setError] = useState(null);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
-  const { token } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const { token, csrfToken } = useAuth();
 
   const fetchBackups = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/backups`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await get('/api/backups', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch backups');
@@ -37,19 +31,15 @@ const BackupManagement = () => {
 
   useEffect(() => {
     fetchBackups();
-  }, [API_URL, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const handleCreateBackup = async () => {
     try {
       setActionInProgress(true);
       setActionMessage('Creating backup...');
       
-      const response = await fetch(`${API_URL}/api/backups`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await post('/api/backups', {}, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to create backup');
@@ -66,31 +56,27 @@ const BackupManagement = () => {
     }
   };
 
-  const handleDownloadBackup = (backupId) => {
-    // Create a hidden anchor element to trigger download
-    const downloadLink = document.createElement('a');
-    downloadLink.href = `${API_URL}/api/backups/${backupId}`;
-    downloadLink.download = 'backup.json';
-    
-    // Add authorization header using fetch API
-    fetch(`${API_URL}/api/backups/${backupId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
+  const handleDownloadBackup = async (backupId) => {
+    try {
+      const response = await get(`/api/backups/${backupId}`, token);
+      
+      if (!response.ok) {
+        throw new Error('Failed to download backup');
       }
-    })
-    .then(response => response.blob())
-    .then(blob => {
+      
+      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
       downloadLink.href = url;
+      downloadLink.download = 'backup.json';
       document.body.appendChild(downloadLink);
       downloadLink.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(downloadLink);
-    })
-    .catch(error => {
+    } catch (error) {
       console.error('Error downloading backup:', error);
       setError('Failed to download backup. Please try again later.');
-    });
+    }
   };
 
   const handleRestoreBackup = async (backupId) => {
@@ -102,12 +88,7 @@ const BackupManagement = () => {
       setActionInProgress(true);
       setActionMessage('Restoring backup...');
       
-      const response = await fetch(`${API_URL}/api/backups/${backupId}/restore`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await post(`/api/backups/${backupId}/restore`, {}, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to restore backup');
@@ -132,12 +113,7 @@ const BackupManagement = () => {
       setActionInProgress(true);
       setActionMessage('Deleting backup...');
       
-      const response = await fetch(`${API_URL}/api/backups/${backupId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await del(`/api/backups/${backupId}`, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to delete backup');

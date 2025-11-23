@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get } from '../utils/api';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -35,19 +36,12 @@ const MetricsDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [refreshInterval, setRefreshInterval] = useState(30); // seconds
   const { token } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   // Fetch metrics data
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/metrics`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await get('/api/metrics', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch metrics');
@@ -67,11 +61,7 @@ const MetricsDashboard = () => {
   // Fetch historical metrics data
   const fetchHistoricalMetrics = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/metrics/historical?limit=24`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await get('/api/metrics/historical?limit=24', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch historical metrics');
@@ -89,7 +79,8 @@ const MetricsDashboard = () => {
   useEffect(() => {
     fetchMetrics();
     fetchHistoricalMetrics();
-  }, [API_URL, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Set up periodic refresh
   useEffect(() => {
@@ -98,7 +89,8 @@ const MetricsDashboard = () => {
     }, refreshInterval * 1000);
     
     return () => clearInterval(intervalId);
-  }, [refreshInterval, API_URL, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshInterval, token]);
 
   // Format bytes to human-readable format
   const formatBytes = (bytes, decimals = 2) => {

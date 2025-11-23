@@ -2,6 +2,7 @@ const express = require('express');
 const { Certificate, CertificateAuthority } = require('../../models');
 const certificateService = require('../../services/certificateService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
+const { logAction } = require('../../services/auditService');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const router = express.Router();
@@ -113,6 +114,19 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
       req.files.privateKey[0].path
     );
     
+    // Log certificate upload
+    await logAction({
+      userId: req.user.id,
+      action: 'CERTIFICATE_UPLOADED',
+      resource: 'certificate',
+      resourceId: result.id,
+      details: {
+        name,
+        domains
+      },
+      status: 'success'
+    }, req);
+    
     res.status(201).json({
       success: true,
       message: 'Certificate uploaded successfully',
@@ -142,6 +156,19 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
         message: 'Certificate not found'
       });
     }
+    
+    // Log certificate deletion
+    await logAction({
+      userId: req.user.id,
+      action: 'CERTIFICATE_DELETED',
+      resource: 'certificate',
+      resourceId: certificate.id,
+      details: {
+        name: certificate.name,
+        domains: certificate.domains
+      },
+      status: 'success'
+    }, req);
     
     await certificateService.deleteCertificate(certificate);
     
@@ -180,6 +207,21 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
       validityDays || 365
     );
     
+    // Log certificate generation
+    await logAction({
+      userId: req.user.id,
+      action: 'CERTIFICATE_GENERATED',
+      resource: 'certificate',
+      resourceId: result.id,
+      details: {
+        name,
+        domains,
+        type: 'self-signed',
+        validityDays: validityDays || 365
+      },
+      status: 'success'
+    }, req);
+    
     res.status(201).json({
       success: true,
       message: 'Self-signed certificate generated successfully',
@@ -211,6 +253,19 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
     }
     
     const result = await certificateService.renewCertificate(certificate);
+    
+    // Log certificate renewal
+    await logAction({
+      userId: req.user.id,
+      action: 'CERTIFICATE_RENEWED',
+      resource: 'certificate',
+      resourceId: certificate.id,
+      details: {
+        name: certificate.name,
+        domains: certificate.domains
+      },
+      status: 'success'
+    }, req);
     
     res.status(200).json({
       success: true,

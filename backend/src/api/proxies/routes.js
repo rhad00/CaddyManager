@@ -5,6 +5,7 @@ const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
 const securityHeadersService = require('../../services/securityHeadersService');
 const { authMiddleware } = require('../../middleware/auth');
+const { logAction } = require('../../services/auditService');
 const router = express.Router();
 
 /**
@@ -150,6 +151,20 @@ router.post('/', authMiddleware, async (req, res) => {
     // Add the proxy to Caddy configuration using PATCH
     const caddyResult = await caddyService.addProxy(reloadedProxy);
     
+    // Log proxy creation
+    await logAction({
+      userId: req.user.id,
+      action: 'PROXY_CREATED',
+      resource: 'proxy',
+      resourceId: reloadedProxy.id,
+      details: {
+        name: reloadedProxy.name,
+        domains: reloadedProxy.domains,
+        upstream_url: reloadedProxy.upstream_url
+      },
+      status: 'success'
+    }, req);
+    
     res.status(201).json({
       success: true,
       message: 'Proxy created successfully',
@@ -251,6 +266,20 @@ router.put('/:id', authMiddleware, async (req, res) => {
     // Update the proxy in Caddy configuration using PATCH
     const caddyResult = await caddyService.updateProxy(reloadedProxy);
     
+    // Log proxy update
+    await logAction({
+      userId: req.user.id,
+      action: 'PROXY_UPDATED',
+      resource: 'proxy',
+      resourceId: reloadedProxy.id,
+      details: {
+        name: reloadedProxy.name,
+        domains: reloadedProxy.domains,
+        upstream_url: reloadedProxy.upstream_url
+      },
+      status: 'success'
+    }, req);
+    
     res.status(200).json({
       success: true,
       message: 'Proxy updated successfully',
@@ -308,6 +337,19 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     
     // Commit the database transaction
     await transaction.commit();
+    
+    // Log proxy deletion
+    await logAction({
+      userId: req.user.id,
+      action: 'PROXY_DELETED',
+      resource: 'proxy',
+      resourceId: proxy.id,
+      details: {
+        name: proxy.name,
+        domains: proxy.domains
+      },
+      status: 'success'
+    }, req);
     
     res.status(200).json({
       success: true,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get, post, put, del } from '../utils/api';
 import { format, parseISO, differenceInDays } from 'date-fns';
 
 const CertificateManagement = () => {
@@ -13,10 +14,7 @@ const CertificateManagement = () => {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [showGenerateForm, setShowGenerateForm] = useState(false);
   const [showAddCAForm, setShowAddCAForm] = useState(false);
-  const { token } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const { token, csrfToken } = useAuth();
 
   // Form states
   const [uploadForm, setUploadForm] = useState({
@@ -45,11 +43,7 @@ const CertificateManagement = () => {
   const fetchCertificates = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/certificates`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await get('/api/certificates', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch certificates');
@@ -70,11 +64,7 @@ const CertificateManagement = () => {
   const fetchCAs = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/certificates/cas`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await get('/api/certificates/cas', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch certificate authorities');
@@ -98,7 +88,7 @@ const CertificateManagement = () => {
     } else if (activeTab === 'cas') {
       fetchCAs();
     }
-  }, [activeTab, API_URL, token]);
+  }, [activeTab, token]);
 
   // Handle certificate selection
   const handleCertificateSelect = (certificate) => {
@@ -119,12 +109,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/certificates/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await del(`/api/certificates/${id}`, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to delete certificate');
@@ -150,12 +135,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/certificates/cas/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await del(`/api/certificates/cas/${id}`, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to delete certificate authority');
@@ -177,12 +157,7 @@ const CertificateManagement = () => {
   // Handle certificate renewal
   const handleRenewCertificate = async (id) => {
     try {
-      const response = await fetch(`${API_URL}/api/certificates/${id}/renew`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await post(`/api/certificates/${id}/renew`, {}, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to renew certificate');
@@ -199,14 +174,7 @@ const CertificateManagement = () => {
   // Handle CA trust update
   const handleUpdateCATrust = async (id, trusted) => {
     try {
-      const response = await fetch(`${API_URL}/api/certificates/cas/${id}/trust`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ trusted })
-      });
+      const response = await put(`/api/certificates/cas/${id}/trust`, { trusted }, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to update CA trust status');
@@ -236,13 +204,7 @@ const CertificateManagement = () => {
       formData.append('certificate', uploadForm.certificate);
       formData.append('privateKey', uploadForm.privateKey);
       
-      const response = await fetch(`${API_URL}/api/certificates/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
+      const response = await post('/api/certificates/upload', formData, token, csrfToken, true);
       
       if (!response.ok) {
         throw new Error('Failed to upload certificate');
@@ -275,14 +237,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/certificates/generate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(generateForm)
-      });
+      const response = await post('/api/certificates/generate', generateForm, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to generate certificate');
@@ -342,13 +297,7 @@ const CertificateManagement = () => {
       
       formData.append('trusted', caForm.trusted);
       
-      const response = await fetch(`${API_URL}/api/certificates/cas`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
+      const response = await post('/api/certificates/cas', formData, token, csrfToken, true);
       
       if (!response.ok) {
         throw new Error('Failed to add certificate authority');

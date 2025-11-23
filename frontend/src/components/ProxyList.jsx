@@ -1,28 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get, del } from '../utils/api';
 
 const ProxyList = ({ onEdit, onCreate }) => {
   const [proxies, setProxies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { token } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const { token, csrfToken } = useAuth();
 
   const fetchProxies = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/proxies`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
+      const response = await get('/api/proxies', token);
+
       if (!response.ok) {
         throw new Error('Failed to fetch proxies');
       }
-      
+
       const data = await response.json();
       setProxies(data.proxies || []);
     } catch (error) {
@@ -31,7 +25,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
     } finally {
       setLoading(false);
     }
-  }, [API_URL, token]);
+  }, [token]);
 
   useEffect(() => {
     fetchProxies();
@@ -81,12 +75,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/proxies/${proxyId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+      const response = await del(`/api/proxies/${proxyId}`, token, csrfToken);
 
       if (!response.ok) {
         throw new Error('Failed to delete proxy');
@@ -154,20 +143,20 @@ const ProxyList = ({ onEdit, onCreate }) => {
                     <span>SSL:</span>
                     {getSslBadge(proxy.ssl_type)}
                   </div>
-                    <div className="mt-2 flex space-x-2">
-                      <button 
-                        onClick={() => onEdit(proxy)}
-                        className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(proxy.id)}
-                        className="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                  <div className="mt-2 flex space-x-2">
+                    <button
+                      onClick={() => onEdit(proxy)}
+                      className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(proxy.id)}
+                      className="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </li>

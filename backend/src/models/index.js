@@ -5,8 +5,10 @@ const Header = require('./header');
 const Middleware = require('./middleware');
 const Template = require('./template');
 const Backup = require('./backup');
-const Certificate = require ('./certificate');
+const Certificate = require('./certificate');
 const CertificateAuthority = require('./certificateAuthority');
+const AuditLog = require('./auditLog');
+
 // Define associations after all models are loaded
 const setupAssociations = () => {
   // User - Proxy associations
@@ -29,6 +31,9 @@ const setupAssociations = () => {
 
   // CertificateAuthority - Certificate associations
   CertificateAuthority.hasMany(Certificate, { foreignKey: 'ca_id', as: 'certificates' });
+
+  // AuditLog - User associations
+  AuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 };
 
 // Call setupAssociations after models are defined
@@ -44,4 +49,5 @@ module.exports = {
   Backup,
   Certificate,
   CertificateAuthority,
+  AuditLog,
 };

@@ -62,3 +62,4 @@ backend/config_backups/
 backend/config/
 backend/backups/
 *.sh
+docs

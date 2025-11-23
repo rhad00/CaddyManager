@@ -5,12 +5,14 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const { testConnection } = require('./config/database');
 
-// Import routes (to be implemented)
-// const authRoutes = require('./api/auth/routes');
-// const proxyRoutes = require('./api/proxies/routes');
-// const templateRoutes = require('./api/templates/routes');
-// const userRoutes = require('./api/users/routes');
-// const settingsRoutes = require('./api/settings/routes');
+// Import routes
+const authRoutes = require('./api/auth/routes');
+const proxyRoutes = require('./api/proxies/routes');
+const templateRoutes = require('./api/templates/routes');
+const userRoutes = require('./api/users/routes');
+const backupRoutes = require('./api/backups/routes');
+const metricsRoutes = require('./api/metrics/routes');
+const auditRoutes = require('./api/audit/routes');
 
 // Create Express app
 const app = express();
@@ -21,17 +23,53 @@ app.use(cors()); // CORS support
 app.use(express.json()); // Parse JSON bodies
 app.use(morgan('dev')); // Request logging
 
+// Rate limiting
+const { apiLimiter } = require('./middleware/rateLimiter');
+app.use('/api', apiLimiter); // Apply to all API routes
+
+// CSRF Protection
+const cookieParser = require('cookie-parser');
+const csurf = require('csurf');
+
+app.use(cookieParser());
+
+// Configure CSRF
+// Note: In a real production environment with a separate frontend, 
+// you might need to adjust cookie settings (secure: true, sameSite: 'strict')
+const csrfProtection = csurf({ cookie: true });
+
+// Apply CSRF protection to all API routes that mutate state
+app.use('/api', csrfProtection);
+
+// Endpoint to get CSRF token
+app.get('/api/csrf-token', (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+// Error handler for CSRF
+app.use((err, req, res, next) => {
+  if (err.code !== 'EBADCSRFTOKEN') return next(err);
+  res.status(403).json({
+    error: {
+      message: 'Invalid CSRF token',
+      status: 403
+    }
+  });
+});
+
 // Basic route for health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes (to be implemented)
-// app.use('/api/auth', authRoutes);
-// app.use('/api/proxies', proxyRoutes);
-// app.use('/api/templates', templateRoutes);
-// app.use('/api/users', userRoutes);
-// app.use('/api/settings', settingsRoutes);
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/proxies', proxyRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/backups', backupRoutes);
+app.use('/api/metrics', metricsRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -55,7 +93,7 @@ const startServer = async () => {
       console.error('Failed to connect to database. Server will not start.');
       process.exit(1);
     }
-    
+
     // Start listening
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

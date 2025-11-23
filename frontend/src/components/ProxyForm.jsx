@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get, post, put } from '../utils/api';
 
 const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [name, setName] = useState('');
@@ -25,26 +26,19 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [basicAuthPassword, setBasicAuthPassword] = useState('');
   const [pathRoutingEnabled, setPathRoutingEnabled] = useState(false);
   const [pathRoutes, setPathRoutes] = useState([{ path: '', upstream_url: '' }]);
-  
-  const { token, currentUser } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  const { token, currentUser, csrfToken } = useAuth();
 
   // Load templates on component mount
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(`${API_URL}/templates`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
+        const response = await get('/api/templates', token);
+
         if (!response.ok) {
           throw new Error('Failed to fetch templates');
         }
-        
+
         const data = await response.json();
         setTemplates(data.templates || []);
       } catch (error) {
@@ -52,9 +46,9 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         setError('Failed to load templates. Please try again later.');
       }
     };
-    
+
     fetchTemplates();
-    
+
     // If editing an existing proxy, populate the form
     if (proxy) {
       setName(proxy.name);
@@ -88,13 +82,13 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       // Populate path routing fields
       if (proxy.path_routing) {
         setPathRoutingEnabled(proxy.path_routing.enabled);
-        setPathRoutes(proxy.path_routing.routes.length > 0 
-          ? proxy.path_routing.routes 
+        setPathRoutes(proxy.path_routing.routes.length > 0
+          ? proxy.path_routing.routes
           : [{ path: '', upstream_url: '' }]
         );
       }
     }
-  }, [API_URL, token, proxy]);
+  }, [token, proxy]);
 
   const [savedProxyData, setSavedProxyData] = useState(null);
 
@@ -102,20 +96,20 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
+
     try {
       // Validate form
       if (!name || !domains || !upstreamUrl) {
         throw new Error('Please fill in all required fields');
       }
-      
+
       // Parse domains from comma-separated string to array
       const domainsArray = domains.split(',').map(domain => domain.trim()).filter(Boolean);
-      
+
       if (domainsArray.length === 0) {
         throw new Error('Please provide at least one domain');
       }
-      
+
       const proxyData = {
         name,
         domains: domainsArray,
@@ -144,48 +138,34 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         } : null,
         created_by: currentUser.id
       };
-      
+
       let response;
-      
+
       if (proxy) {
         // Update existing proxy
-        response = await fetch(`${API_URL}/proxies/${proxy.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(proxyData)
-        });
+        response = await put(`/api/proxies/${proxy.id}`, proxyData, token, csrfToken);
       } else {
         // Create new proxy
-        response = await fetch(`${API_URL}/proxies`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(proxyData)
-        });
+        response = await post('/api/proxies', proxyData, token, csrfToken);
       }
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to save proxy');
       }
-      
+
       const responseData = await response.json();
       setSavedProxyData(responseData);
-      
+
       // If a template was selected, apply it to the proxy
       if (selectedTemplate) {
-        const templateResponse = await fetch(`${API_URL}/templates/${selectedTemplate}/apply/${responseData.proxy.id}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        
+        const templateResponse = await post(
+          `/api/templates/${selectedTemplate}/apply/${responseData.proxy.id}`,
+          {},
+          token,
+          csrfToken
+        );
+
         if (!templateResponse.ok) {
           console.error('Failed to apply template, but proxy was saved');
         } else {
@@ -199,7 +179,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
           }
         }
       }
-      
+
       // Only call onSave if there's no config preview to show
       if (!configPreview) {
         onSave(responseData.proxy);
@@ -218,7 +198,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         <h3 className="text-lg font-medium leading-6 text-gray-900">
           {proxy ? 'Edit Proxy' : 'Create New Proxy'}
         </h3>
-        
+
         {error && (
           <div className="mt-4 bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
             <div className="flex">
@@ -233,7 +213,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             </div>
           </div>
         )}
-        
+
         <form className="mt-5 space-y-6" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700">
@@ -249,7 +229,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               required
             />
           </div>
-          
+
           <div>
             <label htmlFor="domains" className="block text-sm font-medium text-gray-700">
               Domains *
@@ -267,7 +247,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               Comma-separated list of domains
             </p>
           </div>
-          
+
           <div>
             <label htmlFor="upstream_url" className="block text-sm font-medium text-gray-700">
               Upstream Server *
@@ -282,7 +262,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               required
             />
           </div>
-          
+
           <div>
             <label htmlFor="ssl_type" className="block text-sm font-medium text-gray-700">
               SSL Type
@@ -298,8 +278,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               <option value="none">None</option>
             </select>
           </div>
-          
-          
+
+
           <div className="flex items-start">
             <div className="flex items-center h-5">
               <input
@@ -565,11 +545,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                   setSelectedTemplate(templateId);
                   if (templateId) {
                     try {
-                      const response = await fetch(`${API_URL}/templates/${templateId}`, {
-                        headers: {
-                          'Authorization': `Bearer ${token}`
-                        }
-                      });
+                      const response = await get(`/api/templates/${templateId}`, token);
                       if (response.ok) {
                         const data = await response.json();
                         setSelectedTemplateDetails(data.template);
@@ -593,7 +569,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               <p className="mt-1 text-sm text-gray-500">
                 Apply a predefined template for common services
               </p>
-              
+
               {selectedTemplateDetails && (
                 <div className="mt-4 p-4 bg-gray-50 rounded-md">
                   <h4 className="text-sm font-medium text-gray-900 mb-2">Template Configuration Preview:</h4>
@@ -637,7 +613,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               )}
             </div>
           </div>
-          
+
           {configPreview && (
             <div className="mb-6 p-4 bg-gray-50 rounded-md">
               <h4 className="text-sm font-medium text-gray-900 mb-4">Configuration Changes:</h4>

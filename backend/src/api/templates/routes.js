@@ -3,6 +3,7 @@ const Template = require('../../models/template');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const caddyService = require('../../services/caddyService');
 const Proxy = require('../../models/proxy');
+const { logAction } = require('../../services/auditService');
 const router = express.Router();
 
 /**
@@ -81,6 +82,19 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
       middleware: middleware || []
     });
     
+    // Log template creation
+    await logAction({
+      userId: req.user.id,
+      action: 'TEMPLATE_CREATED',
+      resource: 'template',
+      resourceId: template.id,
+      details: {
+        name: template.name,
+        description: template.description
+      },
+      status: 'success'
+    }, req);
+    
     res.status(201).json({
       success: true,
       template
@@ -121,6 +135,19 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     
     await template.save();
     
+    // Log template update
+    await logAction({
+      userId: req.user.id,
+      action: 'TEMPLATE_UPDATED',
+      resource: 'template',
+      resourceId: template.id,
+      details: {
+        name: template.name,
+        description: template.description
+      },
+      status: 'success'
+    }, req);
+    
     res.status(200).json({
       success: true,
       template
@@ -149,6 +176,18 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
         message: 'Template not found' 
       });
     }
+    
+    // Log template deletion
+    await logAction({
+      userId: req.user.id,
+      action: 'TEMPLATE_DELETED',
+      resource: 'template',
+      resourceId: template.id,
+      details: {
+        name: template.name
+      },
+      status: 'success'
+    }, req);
     
     await template.destroy();
     
@@ -192,6 +231,20 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     
     // Apply template to proxy
     const result = await caddyService.applyTemplate(proxy, template);
+    
+    // Log template application
+    await logAction({
+      userId: req.user.id,
+      action: 'TEMPLATE_APPLIED',
+      resource: 'template',
+      resourceId: template.id,
+      details: {
+        templateName: template.name,
+        proxyId: proxy.id,
+        proxyName: proxy.name
+      },
+      status: 'success'
+    }, req);
     
     res.status(200).json({
       success: true,

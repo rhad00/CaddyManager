@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { get } from '../utils/api';
 
 const TemplateList = () => {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { token } = useAuth();
-  
-  // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${API_URL}/templates`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        const response = await get('/api/templates', token);
         
         if (!response.ok) {
           throw new Error('Failed to fetch templates');
@@ -35,7 +29,7 @@ const TemplateList = () => {
     };
     
     fetchTemplates();
-  }, [API_URL, token]);
+  }, [token]);
 
   if (loading) {
     return (
