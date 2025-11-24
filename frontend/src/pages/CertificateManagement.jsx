@@ -109,7 +109,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await del(`/api/certificates/${id}`, token, csrfToken);
+      const response = await del(`certificates/${id}`, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to delete certificate');
@@ -135,7 +135,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await del(`/api/certificates/cas/${id}`, token, csrfToken);
+      const response = await del(`/certificates/cas/${id}`, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to delete certificate authority');
@@ -157,7 +157,7 @@ const CertificateManagement = () => {
   // Handle certificate renewal
   const handleRenewCertificate = async (id) => {
     try {
-      const response = await post(`/api/certificates/${id}/renew`, {}, token, csrfToken);
+      const response = await post(`/certificates/${id}/renew`, {}, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to renew certificate');
@@ -174,7 +174,7 @@ const CertificateManagement = () => {
   // Handle CA trust update
   const handleUpdateCATrust = async (id, trusted) => {
     try {
-      const response = await put(`/api/certificates/cas/${id}/trust`, { trusted }, token, csrfToken);
+      const response = await put(`/certificates/cas/${id}/trust`, { trusted }, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to update CA trust status');

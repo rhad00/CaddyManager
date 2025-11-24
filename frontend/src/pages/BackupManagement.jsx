@@ -58,7 +58,7 @@ const BackupManagement = () => {
 
   const handleDownloadBackup = async (backupId) => {
     try {
-      const response = await get(`/api/backups/${backupId}`, token);
+      const response = await get(`/backups/${backupId}`, token);
       
       if (!response.ok) {
         throw new Error('Failed to download backup');
