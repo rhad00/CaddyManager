@@ -202,7 +202,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
                     >
                       Delete
                     </button>
-                    {proxy.ssl_type === 'acme' && (
+                    {(['acme','cloudflare'].includes(proxy.ssl_type)) && (
                       <button
                         onClick={() => handleRecheckTls(proxy.id)}
                         className="px-3 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200"

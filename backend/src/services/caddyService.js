@@ -18,6 +18,63 @@ class CaddyService {
     // Ensure config backup directory exists
     this.ensureConfigBackupDir();
   }
+
+  /**
+   * Ensure Cloudflare DNS ACME automation policy exists in the Caddy config
+   * This will add a TLS automation policy using the Cloudflare DNS provider
+   * and reference the token via the environment variable placeholder so the
+   * Caddy process can read it at runtime.
+   * @param {Object} config - The Caddy JSON config to modify
+   * @param {string[]} domains - The domains this policy should cover
+   */
+  ensureCloudflarePolicy(config, domains = []) {
+    try {
+      const tokenPresent = !!process.env.CLOUDFLARE_API_TOKEN;
+      if (!tokenPresent) return config;
+
+      config.apps = config.apps || {};
+      config.apps.tls = config.apps.tls || {};
+      config.apps.tls.automation = config.apps.tls.automation || {};
+      config.apps.tls.automation.policies = config.apps.tls.automation.policies || [];
+
+      // Create a policy for the provided domains
+      const subjects = Array.isArray(domains) ? domains : [domains];
+      const policy = {
+        subjects,
+        issuer: {
+          module: 'acme',
+          // Challenges configuration for DNS provider
+          challenges: {
+            dns: {
+              provider: {
+                name: 'cloudflare',
+                // Use env placeholder so token is read from Caddy's environment
+                api_token: '{env.CLOUDFLARE_API_TOKEN}'
+              }
+            }
+          }
+        }
+      };
+
+      // Append policy — avoid duplicate exact subjects
+      const exists = (config.apps.tls.automation.policies || []).some(p => {
+        if (!p.subjects) return false;
+        const a = Array.isArray(p.subjects) ? p.subjects.sort().join(',') : p.subjects;
+        const b = subjects.sort().join(',');
+        return a === b;
+      });
+
+      if (!exists) {
+        config.apps.tls.automation.policies.push(policy);
+        console.log('Added Cloudflare DNS automation policy for domains:', subjects.join(','));
+      }
+
+      return config;
+    } catch (err) {
+      console.error('Failed to ensure Cloudflare policy on config:', err.message);
+      return config;
+    }
+  }
   
   /**
    * Ensure config backup directory exists
@@ -154,6 +211,9 @@ class CaddyService {
       }
       
       // Load the updated configuration
+      // Ensure Cloudflare automation policy exists for any ACME/cloudflare proxies
+      const allDomains = proxies.flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains]);
+      this.ensureCloudflarePolicy(currentConfig, allDomains);
       await this.loadConfig(currentConfig);
       
       // Backup the configuration
@@ -447,11 +507,19 @@ class CaddyService {
       // Backup the updated configuration
       await this.backupCurrentConfig();
 
-      // If the proxy uses ACME for TLS, perform a short TLS verification to detect ACME failures
+      // If the proxy uses ACME or Cloudflare for TLS, ensure Cloudflare policy and perform a short TLS verification to detect ACME failures
       let tlsStatus = null;
       try {
-        if (proxy.ssl_type === 'acme') {
+        if (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') {
           const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+          try {
+            // Ensure the Cloudflare policy is present on current config before verifying
+            const config = await this.getConfig();
+            this.ensureCloudflarePolicy(config, domains);
+            await this.loadConfig(config);
+          } catch (err) {
+            console.error('Failed to ensure Cloudflare policy before TLS verification:', err.message);
+          }
           tlsStatus = await this.verifyTlsForDomains(domains, 10000);
           if (!tlsStatus.ok) {
             console.error('TLS verification failed for proxy domains:', tlsStatus);
@@ -500,6 +568,10 @@ class CaddyService {
       // Create and apply the updated route
       const route = this.createRouteFromProxy(proxy);
       config.apps.http.servers.srv0.routes[proxy.caddy_route_index] = route;
+      // Ensure Cloudflare policy for this proxy's domains if needed
+      if (proxy.ssl_type === 'cloudflare' || proxy.ssl_type === 'acme') {
+        this.ensureCloudflarePolicy(config, Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]);
+      }
       await this.loadConfig(config);
 
       // Backup the configuration
@@ -507,7 +579,7 @@ class CaddyService {
       // If the proxy uses ACME for TLS, perform a short TLS verification
       let tlsStatus = null;
       try {
-        if (proxy.ssl_type === 'acme') {
+        if (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') {
           const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
           tlsStatus = await this.verifyTlsForDomains(domains, 10000);
           if (!tlsStatus.ok) {

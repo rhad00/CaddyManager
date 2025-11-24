@@ -28,6 +28,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [pathRoutes, setPathRoutes] = useState([{ path: '', upstream_url: '' }]);
 
   const { token, currentUser, csrfToken } = useAuth();
+  const [features, setFeatures] = useState({});
 
   const [tlsStatus, setTlsStatus] = useState(null);
   const [tlsChecking, setTlsChecking] = useState(false);
@@ -79,6 +80,20 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         setError('Failed to load templates. Please try again later.');
       }
     };
+
+    const fetchFeatures = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/features`);
+        if (res.ok) {
+          const data = await res.json();
+          setFeatures(data.features || {});
+        }
+      } catch (err) {
+        console.error('Failed to fetch features:', err);
+      }
+    };
+
+    fetchFeatures();
 
     fetchTemplates();
 
@@ -307,10 +322,19 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             >
               <option value="acme">Let's Encrypt (ACME)</option>
+              {features.cloudflare && (
+                <option value="cloudflare">Let's Encrypt via Cloudflare DNS</option>
+              )}
               <option value="custom">Custom Certificate</option>
               <option value="none">None</option>
             </select>
           </div>
+
+          {sslType === 'cloudflare' && (
+            <div className="mt-2 text-sm text-gray-500">
+              Cloudflare DNS challenge selected. Ensure the server has `CLOUDFLARE_API_TOKEN` set so Caddy can use Cloudflare to complete ACME challenges.
+            </div>
+          )}
 
 
           <div className="flex items-start">
@@ -699,7 +723,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             )}
           </div>
           {/* TLS Details */}
-          {proxy && proxy.ssl_type === 'acme' && (
+          {proxy && (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') && (
             <div className="mt-6 p-4 bg-gray-50 rounded-md border">
               <div className="flex justify-between items-center">
                 <h4 className="text-sm font-medium text-gray-900">TLS Status</h4>

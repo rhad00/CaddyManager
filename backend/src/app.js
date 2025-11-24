@@ -13,6 +13,7 @@ const userRoutes = require('./api/users/routes');
 const backupRoutes = require('./api/backups/routes');
 const metricsRoutes = require('./api/metrics/routes');
 const auditRoutes = require('./api/audit/routes');
+const featuresRoutes = require('./api/features/routes');
 
 // Create Express app
 const app = express();
@@ -74,6 +75,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/backups', backupRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/features', featuresRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -96,6 +98,13 @@ const startServer = async () => {
     if (!dbConnected) {
       console.error('Failed to connect to database. Server will not start.');
       process.exit(1);
+    }
+
+    // Warn if CLOUDFLARE_API_TOKEN is not set — helpful for deployments
+    // where Caddy has the token but the backend was not given it.
+    if (!process.env.CLOUDFLARE_API_TOKEN) {
+      console.warn('CLOUDFLARE_API_TOKEN is not set in the backend environment.');
+      console.warn('If you intend to use Cloudflare DNS challenges, set CLOUDFLARE_API_TOKEN for the backend (for example in docker-compose or .env).');
     }
 
     // Start listening
