@@ -16,56 +16,49 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
-    depends_on:
-      - db
+    ports:
+      - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DB_HOST=db
-      - DB_USER=caddymanager
-      - DB_PASSWORD=password
-      - DB_NAME=caddymanager
+      - PORT=3000
+      - DB_TYPE=sqlite
+      - SQLITE_PATH=/app/data/caddymanager.db
       - CADDY_API_URL=http://caddy:2019
-      - JWT_SECRET=changeme_in_production_29341294612398764231987446
+      - JWT_SECRET=${JWT_SECRET:-changeme_in_production_29341294612398764231987446}
+      - JWT_EXPIRES_IN=24h
+      - LOG_LEVEL=info
     volumes:
+      - backend_data:/app/data
       - backend_logs:/app/logs
       - backend_metrics:/app/metrics
+      - backend_backups:/app/backups
     networks:
       - caddy_net
-      - backend_net
 
   frontend:
     build:
       context: ./frontend
     restart: unless-stopped
+    ports:
+      - "8080:80"
     environment:
-      - VITE_API_URL=http://localhost/api
+      - VITE_API_URL=http://localhost:3000/api
     networks:
       - caddy_net
 
-  db:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=caddymanager
-      - POSTGRES_DB=caddymanager
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    networks:
-      - backend_net
-
 networks:
   caddy_net:
-  backend_net:
 
 volumes:
   caddy_data:
     name: caddymanager_caddy_data
   caddy_config:
     name: caddymanager_caddy_config
-  db_data:
-    name: caddymanager_db_data
+  backend_data:
+    name: caddymanager_backend_data
   backend_logs:
     name: caddymanager_backend_logs
   backend_metrics:
     name: caddymanager_backend_metrics
+  backend_backups:
+    name: caddymanager_backend_backups

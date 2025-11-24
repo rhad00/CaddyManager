@@ -191,9 +191,93 @@ await caddyService.applyTemplate(proxy, template);
 
 ## 🚀 Quick Start
 
-### Docker Deployment (Recommended)
+CaddyManager offers three deployment configurations to suit different needs:
 
-#### Production Deployment
+### Deployment Options Overview
+
+| Configuration | Database | Use Case | Ports | Command |
+|--------------|----------|----------|-------|---------|
+| **Default** (`docker-compose.yml`) | SQLite | Small deployments, testing | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose up -d` |
+| **Development** (`docker-compose.dev.yaml`) | SQLite | Development, debugging | Caddy: 80/443/2019, Backend: 3000, Frontend: 8080 | `docker-compose -f docker-compose.dev.yaml up -d` |
+| **Production** (`docker-compose.prod.yml`) | PostgreSQL | Production, high-traffic | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d` |
+
+### 1. Default Deployment (SQLite - Recommended for Small Scale)
+
+**Best for:** Personal use, small teams, testing, low-traffic sites
+
+**Features:**
+- SQLite database (no separate DB container needed)
+- Simple setup with minimal configuration
+- All data stored in Docker volumes
+- Caddy handles SSL/TLS on ports 80/443
+- Frontend accessible on port 8080
+- Backend API on port 3000
+
+**Quick Start:**
+
+1. Clone the repository:
+```bash
+git clone https://github.com/rhad00/CaddyManager.git
+cd CaddyManager
+```
+
+2. (Optional) Set JWT secret:
+```bash
+export JWT_SECRET=your_secure_random_string_here
+```
+
+3. Start the application:
+```bash
+docker-compose up -d
+```
+
+4. Access the application:
+   - **Frontend UI**: http://localhost:8080
+   - **Caddy Proxy**: http://localhost (ports 80/443)
+   - **Backend API**: http://localhost:3000
+
+### 2. Development Deployment (SQLite)
+
+**Best for:** Active development, debugging, testing new features
+
+**Features:**
+- SQLite database for simplicity
+- Source code mounted for live reload
+- Caddy Admin API exposed on port 2019
+- Debug logging enabled
+- All ports exposed for direct access
+
+**Quick Start:**
+
+1. Clone and navigate:
+```bash
+git clone https://github.com/rhad00/CaddyManager.git
+cd CaddyManager
+```
+
+2. Start development environment:
+```bash
+docker-compose -f docker-compose.dev.yaml up -d
+```
+
+3. Access the application:
+   - **Frontend UI**: http://localhost:8080
+   - **Backend API**: http://localhost:3000
+   - **Caddy Proxy**: http://localhost (ports 80/443)
+   - **Caddy Admin API**: http://localhost:2019
+
+### 3. Production Deployment (PostgreSQL - Recommended for Scale)
+
+**Best for:** Production environments, high-traffic sites, enterprise deployments
+
+**Features:**
+- PostgreSQL database for reliability and performance
+- Optimized for production workloads
+- Environment-based configuration
+- Secure defaults
+- Caddy handles SSL/TLS on ports 80/443
+
+**Quick Start:**
 
 1. Clone the repository:
 ```bash
@@ -208,18 +292,17 @@ cp .env.prod.example .env.prod
 
 3. Edit `.env.prod` with your production values:
 ```bash
-# Database Configuration
+# Required: Database password
 DB_PASSWORD=your_secure_production_password
 
-# JWT Configuration
+# Required: JWT secret (use a long random string)
 JWT_SECRET=your_production_jwt_secret_change_this_in_production_12345678901234567890
+
+# Optional: Customize these if needed
+DB_NAME=caddymanager
+DB_USER=caddyuser
 JWT_EXPIRES_IN=24h
-
-# Other Backend Configuration
 LOG_LEVEL=info
-
-# Frontend Configuration
-VITE_API_URL=/api
 ```
 
 4. Start the application:
@@ -227,24 +310,94 @@ VITE_API_URL=/api
 docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
-5. Access the UI at http://localhost
-   - The frontend serves the CaddyManager interface on port 80/443
-   - Caddy Admin API is available on port 2019 (internal use only)
-   - Configure your reverse proxies through the web interface
+5. Access the application:
+   - **Frontend UI**: http://localhost:8080
+   - **Caddy Proxy**: http://localhost (ports 80/443)
+   - **Backend API**: http://localhost:3000
 
-#### Development Deployment
+### Port Reference
 
-1. Start development environment:
+All deployment configurations use consistent port mappings:
+
+- **80/443**: Caddy reverse proxy (handles your proxied services)
+- **3000**: Backend API (CaddyManager API)
+- **8080**: Frontend UI (CaddyManager web interface)
+- **2019**: Caddy Admin API (development only, internal use)
+- **5432**: PostgreSQL (production only, not exposed by default)
+
+## 📋 Environment Variables Reference
+
+### Backend Environment Variables
+
+All backend environment variables can be set in `.env` files or passed directly to Docker.
+
+#### Database Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `DB_TYPE` | `sqlite` | Database type: `sqlite` or `postgres` | No |
+| `SQLITE_PATH` | `./database.sqlite` | Path to SQLite database file | No (SQLite only) |
+| `DB_HOST` | `localhost` | PostgreSQL host | Yes (PostgreSQL) |
+| `DB_PORT` | `5432` | PostgreSQL port | No |
+| `DB_NAME` | `caddymanager` | Database name | Yes (PostgreSQL) |
+| `DB_USER` | `caddyuser` | Database username | Yes (PostgreSQL) |
+| `DB_PASSWORD` | - | Database password | Yes (PostgreSQL) |
+| `DB_SSL` | `false` | Enable SSL for database connection | No |
+| `DB_URL` | - | Full database connection URL (overrides individual settings) | No |
+
+#### Application Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `NODE_ENV` | `development` | Environment: `development`, `production`, or `test` | No |
+| `PORT` | `3000` | Backend server port | No |
+| `LOG_LEVEL` | `info` | Logging level: `error`, `warn`, `info`, `debug` | No |
+
+#### Authentication Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `JWT_SECRET` | - | Secret key for JWT token signing (use long random string) | **Yes** |
+| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`) | No |
+
+#### Caddy Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `CADDY_API_URL` | `http://localhost:2019` | Caddy Admin API endpoint | No |
+
+### Frontend Environment Variables
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `VITE_API_URL` | `http://localhost:3000/api` | Backend API URL | No |
+
+### Example Configurations
+
+#### Minimal SQLite Setup (Default/Dev)
 ```bash
-docker-compose -f docker-compose.dev.yaml up -d
+JWT_SECRET=your_random_secret_key_here
 ```
 
-2. Access the UI at http://localhost
-   - Backend API available at http://localhost:3000
-   - Database available at localhost:5432
-   - Caddy Admin API at http://localhost:2019
+#### Full PostgreSQL Setup (Production)
+```bash
+# Database
+DB_PASSWORD=secure_password_here
+DB_NAME=caddymanager
+DB_USER=caddyuser
+
+# Authentication
+JWT_SECRET=your_production_jwt_secret_change_this_12345678901234567890
+JWT_EXPIRES_IN=24h
+
+# Application
+NODE_ENV=production
+LOG_LEVEL=info
+```
 
 ### Manual Installation
+
+For development without Docker:
 
 1. Clone the repository:
 ```bash
@@ -269,14 +422,23 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-4. Start development servers:
+4. Edit `backend/.env` with required values:
 ```bash
-# Backend
-cd backend
+# Minimal configuration for local development
+NODE_ENV=development
+PORT=3000
+DB_TYPE=sqlite
+SQLITE_PATH=./database.sqlite
+JWT_SECRET=dev_secret_key_change_in_production
+CADDY_API_URL=http://localhost:2019
+```
+
+5. Start development servers:
+```bash
+# Backend (in backend directory)
 npm run dev
 
-# Frontend
-cd ../frontend
+# Frontend (in frontend directory, separate terminal)
 npm run dev
 ```
 
