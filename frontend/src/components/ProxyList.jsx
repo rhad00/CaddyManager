@@ -11,7 +11,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
   const fetchProxies = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await get('/api/proxies', token);
+      const response = await get('/proxies', token);
 
       if (!response.ok) {
         throw new Error('Failed to fetch proxies');
@@ -75,7 +75,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
     }
 
     try {
-      const response = await del(`/api/proxies/${proxyId}`, token, csrfToken);
+      const response = await del(`/proxies/${proxyId}`, token, csrfToken);
 
       if (!response.ok) {
         throw new Error('Failed to delete proxy');

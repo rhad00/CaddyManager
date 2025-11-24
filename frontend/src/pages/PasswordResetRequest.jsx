@@ -14,7 +14,7 @@ const PasswordResetRequest = () => {
     setLoading(true);
 
     try {
-      const response = await post('/api/auth/password-reset/request', { email }, null, null);
+      const response = await post('/auth/password-reset/request', { email }, null, null);
 
       if (!response.ok) {
         const data = await response.json();

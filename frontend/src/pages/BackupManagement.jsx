@@ -13,7 +13,7 @@ const BackupManagement = () => {
   const fetchBackups = async () => {
     try {
       setLoading(true);
-      const response = await get('/api/backups', token);
+      const response = await get('/backups', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch backups');
@@ -39,7 +39,7 @@ const BackupManagement = () => {
       setActionInProgress(true);
       setActionMessage('Creating backup...');
       
-      const response = await post('/api/backups', {}, token, csrfToken);
+      const response = await post('/backups', {}, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to create backup');
