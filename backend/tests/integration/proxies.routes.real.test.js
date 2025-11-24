@@ -2,26 +2,26 @@ const request = require('supertest');
 const express = require('express');
 
 // Mock models and services used by routes
-jest.mock('../../../src/models/proxy', () => ({
+jest.mock('../../src/models/proxy', () => ({
   findAll: jest.fn(),
   findByPk: jest.fn(),
   create: jest.fn(),
   sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
 }));
 
-jest.mock('../../../src/models/header', () => ({ create: jest.fn(), destroy: jest.fn() }));
-jest.mock('../../../src/models/middleware', () => ({ create: jest.fn(), destroy: jest.fn() }));
-jest.mock('../../../src/services/caddyService', () => ({ addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) }));
-jest.mock('../../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
-jest.mock('../../../src/services/auditService', () => ({ logAction: jest.fn() }));
+jest.mock('../../src/models/header', () => ({ create: jest.fn(), destroy: jest.fn() }));
+jest.mock('../../src/models/middleware', () => ({ create: jest.fn(), destroy: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) }));
+jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
+jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 
-const Proxy = require('../../../src/models/proxy');
-const Header = require('../../../src/models/header');
-const Middleware = require('../../../src/models/middleware');
-const proxiesRouter = require('../../../src/api/proxies/routes');
+const Proxy = require('../../src/models/proxy');
+const Header = require('../../src/models/header');
+const Middleware = require('../../src/models/middleware');
+const proxiesRouter = require('../../src/api/proxies/routes');
 
 // Simple auth middleware bypass for tests
-jest.mock('../../../src/middleware/auth', () => ({ authMiddleware: (req, res, next) => { req.user = { id: 'test-user' }; return next(); } }));
+jest.mock('../../src/middleware/auth', () => ({ authMiddleware: (req, res, next) => { req.user = { id: 'test-user' }; return next(); } }));
 
 describe('Proxies routes (integration-style with mocks)', () => {
   let app;

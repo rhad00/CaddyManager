@@ -240,13 +240,16 @@ router.post(
 );
 
 // Cleanup expired tokens periodically (every 15 minutes)
-setInterval(() => {
-  const now = Date.now();
-  for (const [hash, data] of resetTokens.entries()) {
-    if (now > data.expiresAt) {
-      resetTokens.delete(hash);
+// Avoid scheduling this during tests to prevent Jest from hanging on open handles
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [hash, data] of resetTokens.entries()) {
+      if (now > data.expiresAt) {
+        resetTokens.delete(hash);
+      }
     }
-  }
-}, 15 * 60 * 1000);
+  }, 15 * 60 * 1000);
+}
 
 module.exports = router;
