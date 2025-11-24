@@ -1,23 +1,24 @@
+/* global vi, describe, test, expect */
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import MetricsDashboard from '../src/pages/MetricsDashboard'
 
-// Mock AuthContext
-jest.mock('../src/context/AuthContext', () => ({
+// Mock AuthContext for Vitest
+vi.mock('../src/context/AuthContext', () => ({
   useAuth: () => ({ token: 'fake-token' })
 }))
 
-// Mock API util
-jest.mock('../src/utils/api', () => ({
-  get: jest.fn((path) => {
-    if (path === '/api/metrics') {
+// Mock API util for Vitest
+vi.mock('../src/utils/api', () => ({
+  get: vi.fn((path) => {
+    if (path === '/metrics') {
       return Promise.resolve({
         ok: true,
         json: async () => ({ metrics: { timestamp: Date.now(), http: { requestsTotal: 123 }, system: { memoryBytes: 1024 }, tls: { handshakesTotal: 5 } } })
       })
     }
 
-    if (path.startsWith('/api/metrics/historical')) {
+    if (path.startsWith('/metrics/historical')) {
       return Promise.resolve({
         ok: true,
         json: async () => ({ metrics: [] })
