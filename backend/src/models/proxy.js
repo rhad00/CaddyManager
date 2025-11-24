@@ -82,6 +82,15 @@ const Proxy = sequelize.define('Proxy', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  tls_status: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Last TLS verification result (ok, results array or error)'
+  },
+  tls_checked_at: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
   created_by: {
     type: DataTypes.UUID,
     allowNull: true,

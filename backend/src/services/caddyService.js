@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
+const tls = require('tls');
 const { sequelize, Proxy, Header, Middleware } = require('../models');
 const { Op } = require('sequelize');
 require('dotenv').config();
@@ -445,11 +446,34 @@ class CaddyService {
       
       // Backup the updated configuration
       await this.backupCurrentConfig();
-      
+
+      // If the proxy uses ACME for TLS, perform a short TLS verification to detect ACME failures
+      let tlsStatus = null;
+      try {
+        if (proxy.ssl_type === 'acme') {
+          const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+          tlsStatus = await this.verifyTlsForDomains(domains, 10000);
+          if (!tlsStatus.ok) {
+            console.error('TLS verification failed for proxy domains:', tlsStatus);
+          }
+
+          // Persist TLS status on the proxy record so frontend can display it
+          try {
+            await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
+          } catch (err) {
+            console.error('Failed to persist TLS status on proxy record:', err.message);
+          }
+        }
+      } catch (err) {
+        console.error('Error while verifying TLS for domains:', err.message);
+        tlsStatus = { ok: false, error: err.message };
+      }
+
       return {
         success: true,
         message: 'Proxy added to Caddy configuration',
-        routeIndex: newRouteIndex
+        routeIndex: newRouteIndex,
+        tlsStatus
       };
     } catch (error) {
       console.error('Failed to add proxy to Caddy configuration:', error);
@@ -480,11 +504,33 @@ class CaddyService {
 
       // Backup the configuration
       await this.backupCurrentConfig();
-      
+      // If the proxy uses ACME for TLS, perform a short TLS verification
+      let tlsStatus = null;
+      try {
+        if (proxy.ssl_type === 'acme') {
+          const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+          tlsStatus = await this.verifyTlsForDomains(domains, 10000);
+          if (!tlsStatus.ok) {
+            console.error('TLS verification failed for proxy domains (update):', tlsStatus);
+          }
+
+          // Persist TLS status on the proxy record
+          try {
+            await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
+          } catch (err) {
+            console.error('Failed to persist TLS status on proxy record (update):', err.message);
+          }
+        }
+      } catch (err) {
+        console.error('Error while verifying TLS for domains:', err.message);
+        tlsStatus = { ok: false, error: err.message };
+      }
+
       return {
         success: true,
         message: 'Proxy updated in Caddy configuration',
-        routeIndex: proxy.caddy_route_index
+        routeIndex: proxy.caddy_route_index,
+        tlsStatus
       };
     } catch (error) {
       console.error('Failed to update proxy in Caddy configuration:', error);
@@ -638,3 +684,38 @@ class CaddyService {
 }
 
 module.exports = new CaddyService();
+
+// Helper: perform TLS verification for a list of domains
+CaddyService.prototype.verifyTlsForDomains = function(domains = [], timeoutMs = 10000) {
+  const checkDomain = (domain) => {
+    return new Promise((resolve) => {
+      const socket = tls.connect({ host: domain, port: 443, servername: domain, rejectUnauthorized: false }, () => {
+        try {
+          const cert = socket.getPeerCertificate();
+          socket.end();
+          if (cert && Object.keys(cert).length > 0) {
+            resolve({ domain, ok: true, certSubject: cert.subject, validFrom: cert.valid_from, validTo: cert.valid_to });
+          } else {
+            resolve({ domain, ok: false, error: 'No certificate presented' });
+          }
+        } catch (err) {
+          resolve({ domain, ok: false, error: err.message });
+        }
+      });
+
+      socket.setTimeout(timeoutMs, () => {
+        socket.destroy();
+        resolve({ domain, ok: false, error: 'TLS handshake timed out' });
+      });
+
+      socket.on('error', (err) => {
+        resolve({ domain, ok: false, error: err.message });
+      });
+    });
+  };
+
+  return Promise.all(domains.map(d => checkDomain(d)) ).then(results => {
+    const ok = results.every(r => r.ok === true);
+    return { ok, results };
+  });
+};

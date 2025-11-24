@@ -184,7 +184,8 @@ router.post('/', authMiddleware, async (req, res) => {
       success: true,
       message: 'Proxy created successfully',
       proxy: reloadedProxy,
-      caddy: caddyResult
+      caddy: caddyResult,
+      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
   } catch (error) {
     // Rollback the transaction if there was an error
@@ -299,7 +300,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
       success: true,
       message: 'Proxy updated successfully',
       proxy: reloadedProxy,
-      caddy: caddyResult
+      caddy: caddyResult,
+      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
   } catch (error) {
     // Rollback the transaction if there was an error
