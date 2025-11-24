@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ dev, main ]
+  push:
+    branches: [ dev, main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test --silent
+
+      - name: Build frontend
+        if: ${{ github.ref_name == 'main' }}
+        working-directory: frontend
+        run: npm run build --silent
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backend unit tests
+        working-directory: backend
+        run: npm run test:unit --silent
+
+      - name: Run backend integration tests
+        if: ${{ github.ref_name == 'main' && github.event_name == 'push' }}
+        working-directory: backend
+        run: npm run test:integration --silent
