@@ -1,4 +1,5 @@
 const AuditLog = require('../models/auditLog');
+const { User } = require('../models');
 
 /**
  * Log an audit event
@@ -12,13 +13,25 @@ const AuditLog = require('../models/auditLog');
  */
 const logAction = async ({ userId, action, resource, details, status = 'success' }, req = null) => {
     try {
-        const logData = {
-            user_id: userId,
-            action,
-            resource,
-            details,
-            status
-        };
+            // Resolve userId against DB to ensure foreign key validity
+            let creatorId = null;
+            try {
+                const candidateId = userId || (req && req.user && req.user.id);
+                if (candidateId) {
+                    const dbUser = await User.findByPk(candidateId);
+                    if (dbUser) creatorId = dbUser.id;
+                }
+            } catch (err) {
+                console.error('Failed to resolve user for audit log:', err.message);
+            }
+
+            const logData = {
+                user_id: creatorId,
+                action,
+                resource,
+                details,
+                status
+            };
 
         if (req) {
             logData.ip_address = req.ip || req.connection.remoteAddress;
