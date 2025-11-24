@@ -9,6 +9,41 @@ const { logAction } = require('../../services/auditService');
 const router = express.Router();
 
 /**
+ * @route POST /api/proxies/:id/recheck-tls
+ * @desc Re-run TLS verification for a proxy's domains (admin or owner)
+ * @access Private
+ */
+router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
+  try {
+    const proxy = await Proxy.findByPk(req.params.id);
+
+    if (!proxy) {
+      return res.status(404).json({ success: false, message: 'Proxy not found' });
+    }
+
+    // Only allow if ACME is enabled for this proxy
+    if (proxy.ssl_type !== 'acme') {
+      return res.status(400).json({ success: false, message: 'TLS recheck only applicable for ACME-managed proxies' });
+    }
+
+    const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+    const tlsStatus = await caddyService.verifyTlsForDomains(domains, 10000);
+
+    // Persist results
+    try {
+      await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
+    } catch (err) {
+      console.error('Failed to persist TLS status:', err.message);
+    }
+
+    res.status(200).json({ success: true, tlsStatus });
+  } catch (error) {
+    console.error('Recheck TLS error:', error);
+    res.status(500).json({ success: false, message: `Failed to recheck TLS: ${error.message}` });
+  }
+});
+
+/**
  * @route GET /api/proxies
  * @desc Get all proxies
  * @access Private

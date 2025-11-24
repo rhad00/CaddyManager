@@ -29,6 +29,39 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
   const { token, currentUser, csrfToken } = useAuth();
 
+  const [tlsStatus, setTlsStatus] = useState(null);
+  const [tlsChecking, setTlsChecking] = useState(false);
+
+  useEffect(() => {
+    if (proxy && proxy.tls_status) {
+      setTlsStatus(proxy.tls_status);
+    }
+  }, [proxy]);
+
+  const handleRecheckTls = async () => {
+    if (!proxy) return;
+    setTlsChecking(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/proxies/${proxy.id}/recheck-tls`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to recheck TLS');
+
+      const data = await response.json();
+      setTlsStatus(data.tlsStatus || null);
+    } catch (err) {
+      console.error('TLS recheck failed:', err);
+      setError('Failed to recheck TLS.');
+    } finally {
+      setTlsChecking(false);
+    }
+  };
+
   // Load templates on component mount
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -665,6 +698,55 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               </button>
             )}
           </div>
+          {/* TLS Details */}
+          {proxy && proxy.ssl_type === 'acme' && (
+            <div className="mt-6 p-4 bg-gray-50 rounded-md border">
+              <div className="flex justify-between items-center">
+                <h4 className="text-sm font-medium text-gray-900">TLS Status</h4>
+                <div>
+                  <button
+                    type="button"
+                    onClick={handleRecheckTls}
+                    disabled={tlsChecking}
+                    className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-yellow-700 bg-yellow-100 hover:bg-yellow-200"
+                  >
+                    {tlsChecking ? 'Checking...' : 'Recheck TLS'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 text-sm text-gray-700">
+                {!tlsStatus && (
+                  <div className="text-gray-500">No TLS check has been performed yet.</div>
+                )}
+
+                {tlsStatus && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-gray-500">Overall: {tlsStatus.ok ? 'OK' : 'Issues detected'}</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2">
+                      {tlsStatus.results && tlsStatus.results.map((r, idx) => (
+                        <div key={idx} className="p-2 bg-white rounded border flex items-center justify-between">
+                          <div>
+                            <div className="font-mono text-sm text-indigo-700">{r.domain}</div>
+                            <div className="text-xs text-gray-500">
+                              {r.ok ? `Cert valid: ${r.validFrom} - ${r.validTo}` : `Error: ${r.error}`}
+                            </div>
+                          </div>
+                          <div>
+                            {r.ok ? (
+                              <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">OK</span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Error</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>
