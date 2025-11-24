@@ -1,6 +1,9 @@
 services:
   caddy:
-    image: caddy:2
+    build:
+      context: ./caddy 
+      args:
+        - CADDY_VERSION=2.10.2
     restart: unless-stopped
     ports:
       - "80:80"
@@ -10,6 +13,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      - CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
     networks:
       - caddy_net
 

@@ -69,6 +69,51 @@ const ProxyList = ({ onEdit, onCreate }) => {
     }
   };
 
+  const getTlsBadge = (proxy) => {
+    // Prefer persisted tls_status, fallback to null
+    const tls = proxy.tls_status || null;
+    if (!tls) {
+      return (
+        <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">Unknown</span>
+      );
+    }
+
+    if (tls.ok) {
+      return (
+        <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">TLS OK</span>
+      );
+    }
+
+    return (
+      <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">TLS Error</span>
+    );
+  };
+
+  const handleRecheckTls = async (proxyId) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/proxies/${proxyId}/recheck-tls`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to recheck TLS');
+      }
+
+      // Refresh proxies list
+      await fetchProxies();
+    } catch (err) {
+      console.error('Recheck TLS failed:', err);
+      setError('Failed to recheck TLS.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async (proxyId) => {
     if (!window.confirm('Are you sure you want to delete this proxy?')) {
       return;
@@ -142,6 +187,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
                   <div className="flex items-center space-x-2">
                     <span>SSL:</span>
                     {getSslBadge(proxy.ssl_type)}
+                    <span className="ml-2">{getTlsBadge(proxy)}</span>
                   </div>
                   <div className="mt-2 flex space-x-2">
                     <button
@@ -156,6 +202,14 @@ const ProxyList = ({ onEdit, onCreate }) => {
                     >
                       Delete
                     </button>
+                    {proxy.ssl_type === 'acme' && (
+                      <button
+                        onClick={() => handleRecheckTls(proxy.id)}
+                        className="px-3 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+                      >
+                        Recheck TLS
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
