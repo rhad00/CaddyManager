@@ -41,7 +41,7 @@ const MetricsDashboard = () => {
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      const response = await get('/api/metrics', token);
+      const response = await get('/metrics', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch metrics');
@@ -61,7 +61,7 @@ const MetricsDashboard = () => {
   // Fetch historical metrics data
   const fetchHistoricalMetrics = async () => {
     try {
-      const response = await get('/api/metrics/historical?limit=24', token);
+      const response = await get('/metrics/historical?limit=24', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch historical metrics');

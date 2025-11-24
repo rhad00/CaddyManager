@@ -26,7 +26,7 @@ const PasswordResetForm = () => {
       }
 
       try {
-        const response = await post('/api/auth/password-reset/verify', { token }, null, null);
+        const response = await post('/auth/password-reset/verify', { token }, null, null);
 
         if (!response.ok) {
           const data = await response.json();
@@ -64,7 +64,7 @@ const PasswordResetForm = () => {
     setLoading(true);
 
     try {
-      const response = await post('/api/auth/password-reset/reset', {
+      const response = await post('/auth/password-reset/reset', {
         token,
         newPassword: password
       }, null, null);

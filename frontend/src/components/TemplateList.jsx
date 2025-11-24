@@ -12,7 +12,7 @@ const TemplateList = () => {
     const fetchTemplates = async () => {
       try {
         setLoading(true);
-        const response = await get('/api/templates', token);
+        const response = await get('/templates', token);
         
         if (!response.ok) {
           throw new Error('Failed to fetch templates');

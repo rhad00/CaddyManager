@@ -33,7 +33,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await get('/api/templates', token);
+        const response = await get('/templates', token);
 
         if (!response.ok) {
           throw new Error('Failed to fetch templates');
@@ -143,10 +143,10 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
       if (proxy) {
         // Update existing proxy
-        response = await put(`/api/proxies/${proxy.id}`, proxyData, token, csrfToken);
+        response = await put(`/proxies/${proxy.id}`, proxyData, token, csrfToken);
       } else {
         // Create new proxy
-        response = await post('/api/proxies', proxyData, token, csrfToken);
+        response = await post('/proxies', proxyData, token, csrfToken);
       }
 
       if (!response.ok) {
@@ -160,7 +160,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       // If a template was selected, apply it to the proxy
       if (selectedTemplate) {
         const templateResponse = await post(
-          `/api/templates/${selectedTemplate}/apply/${responseData.proxy.id}`,
+          `/templates/${selectedTemplate}/apply/${responseData.proxy.id}`,
           {},
           token,
           csrfToken
@@ -545,7 +545,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                   setSelectedTemplate(templateId);
                   if (templateId) {
                     try {
-                      const response = await get(`/api/templates/${templateId}`, token);
+                      const response = await get(`/templates/${templateId}`, token);
                       if (response.ok) {
                         const data = await response.json();
                         setSelectedTemplateDetails(data.template);

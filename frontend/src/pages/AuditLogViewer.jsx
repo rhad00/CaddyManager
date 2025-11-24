@@ -68,7 +68,7 @@ const AuditLogViewer = () => {
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const response = await get('/api/audit/stats', token);
+      const response = await get('/audit/stats', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch statistics');
@@ -84,7 +84,7 @@ const AuditLogViewer = () => {
   // Fetch available actions
   const fetchActions = async () => {
     try {
-      const response = await get('/api/audit/actions', token);
+      const response = await get('/audit/actions', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch actions');
@@ -100,7 +100,7 @@ const AuditLogViewer = () => {
   // Fetch available resources
   const fetchResources = async () => {
     try {
-      const response = await get('/api/audit/resources', token);
+      const response = await get('/audit/resources', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch resources');

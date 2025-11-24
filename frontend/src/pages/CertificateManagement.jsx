@@ -43,7 +43,7 @@ const CertificateManagement = () => {
   const fetchCertificates = async () => {
     try {
       setLoading(true);
-      const response = await get('/api/certificates', token);
+      const response = await get('/certificates', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch certificates');
@@ -64,7 +64,7 @@ const CertificateManagement = () => {
   const fetchCAs = async () => {
     try {
       setLoading(true);
-      const response = await get('/api/certificates/cas', token);
+      const response = await get('/certificates/cas', token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch certificate authorities');
@@ -204,7 +204,7 @@ const CertificateManagement = () => {
       formData.append('certificate', uploadForm.certificate);
       formData.append('privateKey', uploadForm.privateKey);
       
-      const response = await post('/api/certificates/upload', formData, token, csrfToken, true);
+      const response = await post('/certificates/upload', formData, token, csrfToken, true);
       
       if (!response.ok) {
         throw new Error('Failed to upload certificate');
@@ -237,7 +237,7 @@ const CertificateManagement = () => {
     }
     
     try {
-      const response = await post('/api/certificates/generate', generateForm, token, csrfToken);
+      const response = await post('/certificates/generate', generateForm, token, csrfToken);
       
       if (!response.ok) {
         throw new Error('Failed to generate certificate');
@@ -297,7 +297,7 @@ const CertificateManagement = () => {
       
       formData.append('trusted', caForm.trusted);
       
-      const response = await post('/api/certificates/cas', formData, token, csrfToken, true);
+      const response = await post('/certificates/cas', formData, token, csrfToken, true);
       
       if (!response.ok) {
         throw new Error('Failed to add certificate authority');
