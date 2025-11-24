@@ -38,11 +38,11 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        - VITE_API_URL=/api
     restart: unless-stopped
     ports:
       - "8080:80"
-    environment:
-      - VITE_API_URL=/api
     networks:
       - caddy_net
 
