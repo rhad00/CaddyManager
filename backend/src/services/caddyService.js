@@ -14,9 +14,7 @@ class CaddyService {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.configBackupDir = process.env.CONFIG_BACKUP_DIR || path.join(__dirname, '../../config_backups');
     this.configBackupFile = path.join(this.configBackupDir, 'caddy_config_backup.json');
-    
-    // Ensure config backup directory exists
-    this.ensureConfigBackupDir();
+    // defer any async initialization to initializeConfig
   }
 
   /**
@@ -94,6 +92,8 @@ class CaddyService {
    */
   async initializeConfig() {
     try {
+      // Ensure config backup directory exists before doing file operations
+      await this.ensureConfigBackupDir();
       console.log('Initializing Caddy configuration...');
       
       // Check if we have a saved configuration backup
