@@ -17,6 +17,10 @@ const auditRoutes = require('./api/audit/routes');
 // Create Express app
 const app = express();
 
+// Trust proxy - required when behind NGINX/reverse proxy
+// This allows Express to trust X-Forwarded-* headers from the proxy
+app.set('trust proxy', 1);
+
 // Set up middleware
 app.use(helmet()); // Security headers
 app.use(cors()); // CORS support
