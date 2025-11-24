@@ -236,6 +236,29 @@ docker-compose up -d
    - **Caddy Proxy**: http://localhost (ports 80/443)
    - **Backend API**: http://localhost:3000
 
+5. **Login with default credentials:**
+   - **Email**: `admin@caddymanager.local`
+   - **Password**: `changeme123`
+   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+
+**Customizing Admin Credentials:**
+
+To set custom admin credentials on first startup, set these environment variables:
+
+```bash
+export ADMIN_EMAIL=your-email@example.com
+export ADMIN_PASSWORD=your-secure-password
+docker-compose up -d
+```
+
+Or add them to your docker-compose.yml:
+```yaml
+backend:
+  environment:
+    - ADMIN_EMAIL=your-email@example.com
+    - ADMIN_PASSWORD=your-secure-password
+```
+
 ### 2. Development Deployment (SQLite)
 
 **Best for:** Active development, debugging, testing new features
@@ -265,6 +288,11 @@ docker-compose -f docker-compose.dev.yaml up -d
    - **Backend API**: http://localhost:3000
    - **Caddy Proxy**: http://localhost (ports 80/443)
    - **Caddy Admin API**: http://localhost:2019
+
+4. **Login with default credentials:**
+   - **Email**: `admin@caddymanager.local`
+   - **Password**: `changeme123`
+   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
 
 ### 3. Production Deployment (PostgreSQL - Recommended for Scale)
 
@@ -315,6 +343,11 @@ docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
    - **Caddy Proxy**: http://localhost (ports 80/443)
    - **Backend API**: http://localhost:3000
 
+6. **Login with default credentials:**
+   - **Email**: `admin@caddymanager.local`
+   - **Password**: `changeme123`
+   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+
 ### Port Reference
 
 All deployment configurations use consistent port mappings:
@@ -359,6 +392,8 @@ All backend environment variables can be set in `.env` files or passed directly 
 |----------|---------|-------------|----------|
 | `JWT_SECRET` | - | Secret key for JWT token signing (use long random string) | **Yes** |
 | `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`) | No |
+| `ADMIN_EMAIL` | `admin@caddymanager.local` | Initial admin user email (created on first startup if no users exist) | No |
+| `ADMIN_PASSWORD` | `changeme123` | Initial admin user password (created on first startup if no users exist) | No |
 
 #### Caddy Configuration
 
