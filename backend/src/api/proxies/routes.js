@@ -109,8 +109,23 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
 
+    // Resolve creating user's DB id if available
+    let creatorId = null;
+    try {
+      if (req.user && req.user.id) {
+        const { User } = require('../../models');
+        const dbUser = await User.findByPk(req.user.id);
+        if (dbUser) creatorId = dbUser.id;
+      }
+    } catch (err) {
+      console.error('Failed to resolve creating user:', err.message);
+    }
+
+    // Ensure created_by is set explicitly to avoid FK issues
+    const createData = { ...req.body, created_by: creatorId };
+
     // Create the proxy in the database
-    const proxy = await Proxy.create(req.body, { transaction });
+    const proxy = await Proxy.create(createData, { transaction });
     
     // Apply security headers if enabled (within transaction)
     if (req.body.security_headers_enabled) {

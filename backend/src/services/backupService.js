@@ -91,13 +91,26 @@ class BackupService {
       // Get file size
       const stats = fs.statSync(filePath);
       
+      // Resolve actual user ID from DB if possible (token may contain minimal data)
+      let creatorId = null;
+      try {
+        if (user && user.id) {
+          const dbUser = await User.findByPk(user.id);
+          if (dbUser) {
+            creatorId = dbUser.id;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve user for backup record:', err.message);
+      }
+
       // Create backup record in database
       const backup = await Backup.create({
         filename,
         size: stats.size,
         backup_type: backupType,
         status: 'complete',
-        created_by: user.id
+        created_by: creatorId
       });
       
       return {
@@ -110,13 +123,20 @@ class BackupService {
       
       // Create failed backup record if user is provided
       if (user && user.id) {
-        await Backup.create({
-          filename: `failed-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
-          size: 0,
-          backup_type: backupType,
-          status: 'failed',
-          created_by: user.id
-        });
+        try {
+          const dbUser = await User.findByPk(user.id);
+          const creatorId = dbUser ? dbUser.id : null;
+
+          await Backup.create({
+            filename: `failed-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+            size: 0,
+            backup_type: backupType,
+            status: 'failed',
+            created_by: creatorId
+          });
+        } catch (err) {
+          console.error('Failed to create failed backup record:', err.message);
+        }
       }
       
       throw new Error(`Backup creation failed: ${error.message}`);

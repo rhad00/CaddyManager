@@ -28,7 +28,7 @@ const Backup = sequelize.define('Backup', {
   },
   created_by: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: User,
       key: 'id'
