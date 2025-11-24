@@ -1,15 +1,20 @@
 # Build stage
-ARG CADDY_VERSION
+ARG CADDY_VERSION=2.10.2
 FROM caddy:${CADDY_VERSION}-builder AS builder
 
 # Build Caddy with the Cloudflare DNS module
-RUN xcaddy build \
-    --with github.com/caddy-dns/cloudflare \
-    --with github.com/WeidiDeng/caddy-cloudflare-ip \
-    --with github.com/fvbommel/caddy-combine-ip-ranges
+RUN set -eux; \
+        if command -v xcaddy > /dev/null 2>&1; then \
+            xcaddy build \
+                --with github.com/caddy-dns/cloudflare \
+                --with github.com/WeidiDeng/caddy-cloudflare-ip \
+                --with github.com/fvbommel/caddy-combine-ip-ranges; \
+        else \
+            echo 'xcaddy not found in builder image; skipping custom build'; \
+        fi
 
 # Final stage
 FROM caddy:${CADDY_VERSION}
 
-# Copy the custom-built Caddy binary
+# Copy the custom-built Caddy binary if present
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

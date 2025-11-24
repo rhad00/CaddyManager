@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { get, post, put, del } from '../utils/api';
 import { format, parseISO, differenceInDays } from 'date-fns';
+import ConfirmModal from '../components/ConfirmModal';
 
 const CertificateManagement = () => {
   const [activeTab, setActiveTab] = useState('certificates');
@@ -9,6 +10,8 @@ const CertificateManagement = () => {
   const [cas, setCAs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMessage, setConfirmMessage] = useState('Are you sure?');
   const [selectedCertificate, setSelectedCertificate] = useState(null);
   const [selectedCA, setSelectedCA] = useState(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -40,15 +43,15 @@ const CertificateManagement = () => {
   });
 
   // Fetch certificates
-  const fetchCertificates = async () => {
+  const fetchCertificates = React.useCallback(async () => {
     try {
       setLoading(true);
       const response = await get('/certificates', token);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch certificates');
       }
-      
+
       const data = await response.json();
       setCertificates(data.certificates);
       setError(null);
@@ -58,18 +61,18 @@ const CertificateManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   // Fetch certificate authorities
-  const fetchCAs = async () => {
+  const fetchCAs = React.useCallback(async () => {
     try {
       setLoading(true);
       const response = await get('/certificates/cas', token);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch certificate authorities');
       }
-      
+
       const data = await response.json();
       setCAs(data.cas);
       setError(null);
@@ -79,7 +82,7 @@ const CertificateManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   // Initial data fetch
   useEffect(() => {
@@ -88,7 +91,7 @@ const CertificateManagement = () => {
     } else if (activeTab === 'cas') {
       fetchCAs();
     }
-  }, [activeTab, token]);
+  }, [activeTab, fetchCertificates, fetchCAs]);
 
   // Handle certificate selection
   const handleCertificateSelect = (certificate) => {
@@ -104,20 +107,16 @@ const CertificateManagement = () => {
 
   // Handle certificate deletion
   const handleDeleteCertificate = async (id) => {
-    if (!confirm('Are you sure you want to delete this certificate?')) {
-      return;
-    }
-    
     try {
       const response = await del(`certificates/${id}`, token, csrfToken);
-      
+
       if (!response.ok) {
         throw new Error('Failed to delete certificate');
       }
-      
+
       // Refresh certificates
       fetchCertificates();
-      
+
       // Clear selection if the deleted certificate was selected
       if (selectedCertificate && selectedCertificate.id === id) {
         setSelectedCertificate(null);
@@ -130,20 +129,16 @@ const CertificateManagement = () => {
 
   // Handle CA deletion
   const handleDeleteCA = async (id) => {
-    if (!confirm('Are you sure you want to delete this certificate authority?')) {
-      return;
-    }
-    
     try {
       const response = await del(`/certificates/cas/${id}`, token, csrfToken);
-      
+
       if (!response.ok) {
         throw new Error('Failed to delete certificate authority');
       }
-      
+
       // Refresh CAs
       fetchCAs();
-      
+
       // Clear selection if the deleted CA was selected
       if (selectedCA && selectedCA.id === id) {
         setSelectedCA(null);
@@ -152,6 +147,22 @@ const CertificateManagement = () => {
       console.error('Error deleting CA:', error);
       setError('Failed to delete certificate authority. Please try again later.');
     }
+  };
+
+  const openConfirm = (message, action) => {
+    setConfirmMessage(message);
+    setConfirmAction(() => action);
+  };
+
+  const onConfirm = async () => {
+    if (typeof confirmAction === 'function') {
+      await confirmAction();
+    }
+    setConfirmAction(null);
+  };
+
+  const onCancel = () => {
+    setConfirmAction(null);
   };
 
   // Handle certificate renewal
@@ -580,7 +591,7 @@ const CertificateManagement = () => {
               </button>
             )}
             <button
-              onClick={() => handleDeleteCertificate(selectedCertificate.id)}
+              onClick={() => openConfirm('Are you sure you want to delete this certificate?', () => handleDeleteCertificate(selectedCertificate.id))}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
               <svg className="-ml-0.5 mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -681,7 +692,7 @@ const CertificateManagement = () => {
               )}
             </button>
             <button
-              onClick={() => handleDeleteCA(selectedCA.id)}
+              onClick={() => openConfirm('Are you sure you want to delete this certificate authority?', () => handleDeleteCA(selectedCA.id))}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
               <svg className="-ml-0.5 mr-1 h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -1169,6 +1180,13 @@ const CertificateManagement = () => {
       {renderUploadForm()}
       {renderGenerateForm()}
       {renderAddCAForm()}
+      <ConfirmModal
+        open={!!confirmAction}
+        title="Confirm"
+        message={confirmMessage}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
     </div>
   );
 };
