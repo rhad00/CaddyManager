@@ -1,0 +1,87 @@
+# Cocogitto Configuration
+# https://docs.cocogitto.io/config/
+
+# Branch whitelist - only allow releases from main
+branch_whitelist = ["main"]
+
+# Tag prefix for releases
+tag_prefix = "v"
+
+# Ignore merge commits in changelog
+ignore_merge_commits = true
+
+# Pre-bump hooks (run before version bump)
+# pre_bump_hooks = [
+#   "cargo test",
+# ]
+
+# Post-bump hooks (run after version bump)
+# These hooks update package.json versions across all microservices and frontend
+post_bump_hooks = [
+  # Update frontend package.json
+  "cd frontend && npm version {{version}} --no-git-tag-version --allow-same-version",
+  # Update backend package.json files
+  "cd backend && npm version {{version}} --no-git-tag-version --allow-same-version",
+  # Stage all updated package.json files
+  "git add */package.json */*/package.json",
+]
+
+# Changelog configuration
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+repository = "CaddyManager"
+owner = "rhad00"
+
+# Commit types that trigger version bumps
+[commit_types]
+
+[commit_types.feat]
+changelog_title = "Features"
+bump = "minor"
+
+[commit_types.fix]
+changelog_title = "Bug Fixes"
+bump = "patch"
+
+[commit_types.perf]
+changelog_title = "Performance Improvements"
+bump = "patch"
+
+[commit_types.refactor]
+changelog_title = "Code Refactoring"
+bump = "patch"
+
+[commit_types.docs]
+changelog_title = "Documentation"
+bump = "patch"
+
+[commit_types.style]
+changelog_title = "Styling"
+bump = "patch"
+
+[commit_types.test]
+changelog_title = "Tests"
+bump = "patch"
+
+[commit_types.build]
+changelog_title = "Build System"
+bump = "patch"
+
+[commit_types.ci]
+changelog_title = "Continuous Integration"
+bump = "patch"
+
+[commit_types.chore]
+changelog_title = "Miscellaneous Chores"
+bump = "patch"
+
+[commit_types.revert]
+changelog_title = "Reverts"
+bump = "patch"
+
+# Breaking changes always trigger major version bump
+[commit_types."BREAKING CHANGE"]
+changelog_title = "BREAKING CHANGES"
+bump = "major"

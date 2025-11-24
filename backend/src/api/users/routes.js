@@ -2,6 +2,7 @@ const express = require('express');
 const User = require('../../models/user');
 const { generateToken } = require('../../services/authService');
 const { userValidation } = require('../../middleware/validation');
+const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
@@ -76,6 +77,42 @@ router.get('/', async (req, res) => {
       success: false,
       message: 'Server error while retrieving users'
     });
+  }
+});
+
+/**
+ * @route DELETE /api/users/:id
+ * @desc Delete a user by id
+ * @access Private (Admin only)
+ */
+router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Don't allow deleting self via this endpoint to avoid accidental lockout
+    if (req.user && req.user.id === userId) {
+      return res.status(400).json({ success: false, message: 'Cannot delete your own user account via this endpoint' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // If user is an admin, ensure at least one other admin remains
+    if (user.role === 'admin') {
+      const adminCount = await User.count({ where: { role: 'admin' } });
+      if (adminCount <= 1) {
+        return res.status(400).json({ success: false, message: 'Cannot delete the last admin user' });
+      }
+    }
+
+    await user.destroy();
+
+    res.status(200).json({ success: true, message: 'User deleted' });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ success: false, message: 'Server error while deleting user' });
   }
 });
 
