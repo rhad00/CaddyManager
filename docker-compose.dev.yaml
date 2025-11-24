@@ -14,7 +14,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
     networks:
       - caddy_net
 
@@ -28,6 +28,7 @@ services:
       - DB_TYPE=sqlite
       - SQLITE_PATH=/app/data/caddymanager.db
       - CADDY_API_URL=http://caddy:2019
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - JWT_SECRET=dev_secret_key_123_2316492642314
       - JWT_EXPIRES_IN=24h
       - LOG_LEVEL=debug

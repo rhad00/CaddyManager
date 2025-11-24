@@ -13,7 +13,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
     networks:
       - app-network
     depends_on:
@@ -52,6 +52,7 @@ services:
       - DB_SSL=false
       - DB_URL=postgresql://${DB_USER:-caddyuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-caddymanager}
       - CADDY_API_URL=http://caddy:2019
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - LOG_LEVEL=${LOG_LEVEL:-info}
