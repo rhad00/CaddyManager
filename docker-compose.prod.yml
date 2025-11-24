@@ -62,7 +62,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=/api
+        - VITE_API_URL=http://backend:3000/api
     restart: unless-stopped
     ports:
       - "8080:80"

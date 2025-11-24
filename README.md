@@ -364,13 +364,13 @@ All backend environment variables can be set in `.env` files or passed directly 
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `CADDY_API_URL` | `http://localhost:2019` | Caddy Admin API endpoint | No |
+| `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint (use `http://caddy:2019` in Docker, `http://localhost:2019` for local dev) | No |
 
 ### Frontend Environment Variables
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `VITE_API_URL` | `http://localhost:3000/api` | Backend API URL | No |
+| `VITE_API_URL` | `http://backend:3000/api` | Backend API URL (use `http://backend:3000/api` in Docker, `http://localhost:3000/api` for local dev) | No |
 
 ### Example Configurations
 
@@ -430,10 +430,16 @@ PORT=3000
 DB_TYPE=sqlite
 SQLITE_PATH=./database.sqlite
 JWT_SECRET=dev_secret_key_change_in_production
-CADDY_API_URL=http://localhost:2019
+CADDY_API_URL=http://localhost:2019  # Use localhost for manual installation
 ```
 
-5. Start development servers:
+5. Edit `frontend/.env` with required values:
+```bash
+# Frontend configuration for local development
+VITE_API_URL=http://localhost:3000/api  # Use localhost for manual installation
+```
+
+6. Start development servers:
 ```bash
 # Backend (in backend directory)
 npm run dev
@@ -441,6 +447,8 @@ npm run dev
 # Frontend (in frontend directory, separate terminal)
 npm run dev
 ```
+
+**Note:** For Docker deployments, use container service names (`http://backend:3000/api`, `http://caddy:2019`). For manual/local development, use `localhost`.
 
 ## 📝 Documentation
 
