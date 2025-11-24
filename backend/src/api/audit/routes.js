@@ -61,7 +61,7 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'email', 'name', 'role'],
+          attributes: ['id', 'email', 'role'],
         },
       ],
       order: [['createdAt', 'DESC']],
@@ -100,7 +100,7 @@ router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req, r
         {
           model: User,
           as: 'user',
-          attributes: ['id', 'email', 'name', 'role'],
+          attributes: ['id', 'email', 'role'],
         },
       ],
     });
