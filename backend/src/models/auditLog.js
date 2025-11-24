@@ -8,7 +8,7 @@ const AuditLog = sequelize.define('AuditLog', {
         autoIncrement: true
     },
     user_id: {
-        type: DataTypes.INTEGER,
+        type: DataTypes.UUID,
         allowNull: true, // Can be null for system events or failed logins where user is unknown
         references: {
             model: 'Users',
