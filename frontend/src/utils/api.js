@@ -2,11 +2,11 @@
  * API utility functions for making authenticated requests with CSRF protection
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 /**
  * Make an authenticated API request with CSRF token
- * @param {string} endpoint - API endpoint (e.g., '/api/proxies')
+ * @param {string} endpoint - API endpoint (e.g., '/proxies')
  * @param {object} options - Fetch options
  * @param {string} token - JWT token
  * @param {string} csrfToken - CSRF token

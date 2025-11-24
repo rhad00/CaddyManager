@@ -44,7 +44,7 @@ services:
     ports:
       - "8080:80"
     environment:
-      - VITE_API_URL=http://backend:3000/api
+      - VITE_API_URL=/api
     volumes:
       - ./frontend:/app  # Mount source code for development
       - /app/node_modules  # Prevent overwriting node_modules

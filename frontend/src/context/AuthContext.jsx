@@ -18,13 +18,13 @@ export const AuthProvider = ({ children }) => {
   const [csrfToken, setCsrfToken] = useState(null);
 
   // API URL from environment
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
   // Fetch CSRF Token
   useEffect(() => {
     const fetchCsrfToken = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/csrf-token`);
+        const response = await fetch(`${API_URL}/csrf-token`);
         if (response.ok) {
           const data = await response.json();
           setCsrfToken(data.csrfToken);
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
     const checkLoggedIn = async () => {
       if (token) {
         try {
-          const response = await fetch(`${API_URL}/api/auth/me`, {
+          const response = await fetch(`${API_URL}/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -80,7 +80,7 @@ export const AuthProvider = ({ children }) => {
         headers['CSRF-Token'] = csrfToken;
       }
 
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ email, password })
@@ -117,7 +117,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       // Call logout endpoint (optional, as JWT is stateless)
-      await fetch(`${API_URL}/api/auth/logout`, {
+      await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
         headers
       });

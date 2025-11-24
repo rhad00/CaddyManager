@@ -405,7 +405,7 @@ All backend environment variables can be set in `.env` files or passed directly 
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `VITE_API_URL` | `http://backend:3000/api` | Backend API URL (use `http://backend:3000/api` in Docker, `http://localhost:3000/api` for local dev) | No |
+| `VITE_API_URL` | `/api` | Backend API URL (use `/api` for Docker deployments as NGINX proxies to backend, `http://localhost:3000/api` for local dev without Docker) | No |
 
 ### Example Configurations
 
@@ -471,7 +471,7 @@ CADDY_API_URL=http://localhost:2019  # Use localhost for manual installation
 5. Edit `frontend/.env` with required values:
 ```bash
 # Frontend configuration for local development
-VITE_API_URL=http://localhost:3000/api  # Use localhost for manual installation
+VITE_API_URL=http://localhost:3000/api  # Use full URL for manual installation (no NGINX proxy)
 ```
 
 6. Start development servers:
@@ -483,7 +483,9 @@ npm run dev
 npm run dev
 ```
 
-**Note:** For Docker deployments, use container service names (`http://backend:3000/api`, `http://caddy:2019`). For manual/local development, use `localhost`.
+**Note:** 
+- **Docker deployments**: Frontend uses `VITE_API_URL=/api` (NGINX proxies `/api` to backend container). Backend uses `CADDY_API_URL=http://caddy:2019` (container name).
+- **Manual/local development**: Frontend uses `VITE_API_URL=http://localhost:3000/api` (direct connection). Backend uses `CADDY_API_URL=http://localhost:2019` (localhost).
 
 ## 📝 Documentation
 
