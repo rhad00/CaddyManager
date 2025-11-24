@@ -43,7 +43,7 @@ const AuditLogViewer = () => {
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
       
-      const response = await get(`/api/audit/logs?${params.toString()}`, token);
+      const response = await get(`/audit/logs?${params.toString()}`, token);
       
       if (!response.ok) {
         throw new Error('Failed to fetch audit logs');
