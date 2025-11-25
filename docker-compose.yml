@@ -3,37 +3,41 @@ services:
     build:
       context: ./caddy 
       args:
-        - CADDY_VERSION=2.10.2
+        - CADDY_VERSION=${CADDY_VERSION:-2.10.2}
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+      - "2019:2019"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
       - caddy_net
-    environment:
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-
+    env_file:
+      - .env
 
   backend:
     build:
       context: ./backend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
-      - DB_TYPE=sqlite
-      - SQLITE_PATH=/app/data/caddymanager.db
-      - CADDY_API_URL=http://caddy:2019
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - SQLITE_PATH=${SQLITE_PATH:-/app/data/caddymanager.db}
+      - CADDY_API_URL=${CADDY_API_URL:-http://caddy:2019}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET:-changeme_in_production_29341294612398764231987446}
-      - JWT_EXPIRES_IN=24h
-      - LOG_LEVEL=info
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme123}
     volumes:
       - backend_data:/app/data
       - backend_logs:/app/logs
@@ -46,7 +50,7 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_URL=/api
+        - VITE_API_URL=${VITE_API_URL:-/api}
     restart: unless-stopped
     ports:
       - "8080:80"

@@ -24,11 +24,17 @@ class CaddyService {
    * Caddy process can read it at runtime.
    * @param {Object} config - The Caddy JSON config to modify
    * @param {string[]} domains - The domains this policy should cover
+   * @param {boolean} force - Whether to add the policy even if CLOUDFLARE_API_TOKEN is not detected in backend env
    */
-  ensureCloudflarePolicy(config, domains = []) {
+  ensureCloudflarePolicy(config, domains = [], force = false) {
     try {
       const tokenPresent = !!process.env.CLOUDFLARE_API_TOKEN;
-      if (!tokenPresent) return config;
+      console.log(`[CaddyService] ensureCloudflarePolicy: Token present? ${tokenPresent}, Force? ${force}`);
+
+      if (!tokenPresent && !force) {
+        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CLOUDFLARE_API_TOKEN is missing and force is false');
+        return config;
+      }
 
       config.apps = config.apps || {};
       config.apps.tls = config.apps.tls || {};
@@ -73,7 +79,7 @@ class CaddyService {
       return config;
     }
   }
-  
+
   /**
    * Ensure config backup directory exists
    */
@@ -85,7 +91,7 @@ class CaddyService {
       console.error('Failed to create config backup directory:', error);
     }
   }
-  
+
   /**
    * Initialize Caddy configuration on startup
    * This should be called when the application starts
@@ -95,7 +101,7 @@ class CaddyService {
       // Ensure config backup directory exists before doing file operations
       await this.ensureConfigBackupDir();
       console.log('Initializing Caddy configuration...');
-      
+
       // Check if we have a saved configuration backup
       let configExists = false;
       try {
@@ -104,13 +110,13 @@ class CaddyService {
       } catch (error) {
         // File doesn't exist, will use default config
       }
-      
+
       if (configExists) {
         // Load configuration from backup file
         console.log('Loading configuration from backup file...');
         const configData = await fs.readFile(this.configBackupFile, 'utf8');
         const config = JSON.parse(configData);
-        
+
         // Apply the configuration to Caddy
         await this.loadConfig(config);
         console.log('Configuration loaded from backup file');
@@ -123,7 +129,7 @@ class CaddyService {
             { model: Middleware, as: 'middlewares' }
           ]
         });
-        
+
         if (proxies.length > 0) {
           // We have proxies in the database, rebuild the configuration
           console.log(`Found ${proxies.length} proxies in database, rebuilding configuration...`);
@@ -136,14 +142,14 @@ class CaddyService {
           await this.backupCurrentConfig();
         }
       }
-      
+
       console.log('Caddy configuration initialization complete');
     } catch (error) {
       console.error('Failed to initialize Caddy configuration:', error);
       throw new Error(`Failed to initialize Caddy configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Rebuild Caddy configuration from database
    */
@@ -151,7 +157,7 @@ class CaddyService {
     try {
       // Get current config as a starting point
       const currentConfig = await this.getConfig();
-      
+
       // Get all proxies from database
       const proxies = await Proxy.findAll({
         include: [
@@ -159,14 +165,14 @@ class CaddyService {
           { model: Middleware, as: 'middlewares' }
         ]
       });
-      
+
       // Ensure the HTTP server exists in the config
       if (!currentConfig.apps || !currentConfig.apps.http || !currentConfig.apps.http.servers) {
         currentConfig.apps = currentConfig.apps || {};
         currentConfig.apps.http = currentConfig.apps.http || {};
         currentConfig.apps.http.servers = currentConfig.apps.http.servers || {};
       }
-      
+
       // Ensure the default server exists
       if (!currentConfig.apps.http.servers.srv0) {
         currentConfig.apps.http.servers.srv0 = {
@@ -174,7 +180,7 @@ class CaddyService {
           routes: []
         };
       }
-      
+
       // Filter out duplicate routes and keep track of unique domains
       const uniqueDomains = new Set();
       const uniqueProxies = proxies.filter(proxy => {
@@ -188,44 +194,45 @@ class CaddyService {
       });
 
       // Clear existing routes (except for the CaddyManager routes)
-      const caddyManagerRoutes = currentConfig.apps.http.servers.srv0.routes.filter(route => 
-        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" && 
-         (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("backend:3000"))))
+      const caddyManagerRoutes = currentConfig.apps.http.servers.srv0.routes.filter(route =>
+        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
+          (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("backend:3000"))))
         ||
-        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" && 
-         (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("frontend:80"))))
+        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
+          (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("frontend:80"))))
       );
-      
+
       currentConfig.apps.http.servers.srv0.routes = caddyManagerRoutes;
-      
+
       // Add routes for each unique proxy
       for (const proxy of uniqueProxies) {
         const route = this.createRouteFromProxy(proxy);
         currentConfig.apps.http.servers.srv0.routes.push(route);
-        
+
         // Update the proxy with its route index
         const routeIndex = currentConfig.apps.http.servers.srv0.routes.length - 1;
         await proxy.update({
           caddy_route_index: routeIndex
         });
       }
-      
+
       // Load the updated configuration
       // Ensure Cloudflare automation policy exists for any ACME/cloudflare proxies
       const allDomains = proxies.flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains]);
-      this.ensureCloudflarePolicy(currentConfig, allDomains);
+      const hasCloudflareProxy = proxies.some(p => p.ssl_type === 'cloudflare');
+      this.ensureCloudflarePolicy(currentConfig, allDomains, hasCloudflareProxy);
       await this.loadConfig(currentConfig);
-      
+
       // Backup the configuration
       await this.backupConfig(currentConfig);
-      
+
       console.log(`Rebuilt configuration with ${proxies.length} proxies from database`);
     } catch (error) {
       console.error('Failed to rebuild configuration from database:', error);
       throw new Error(`Failed to rebuild configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Get the current Caddy configuration
    * @returns {Promise<Object>} The current configuration
@@ -239,7 +246,7 @@ class CaddyService {
       throw new Error(`Failed to get configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Load a complete configuration into Caddy
    * @param {Object} config - The configuration to load
@@ -256,7 +263,7 @@ class CaddyService {
       throw new Error(`Failed to load configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Backup the current Caddy configuration
    */
@@ -269,7 +276,7 @@ class CaddyService {
       throw new Error(`Failed to backup configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Backup a Caddy configuration
    * @param {Object} config - The configuration to backup
@@ -287,7 +294,7 @@ class CaddyService {
       throw new Error(`Failed to backup configuration: ${error.message}`);
     }
   }
-  
+
   /**
    * Create a route configuration from a proxy
    * @param {Object} proxy - The proxy object from the database
@@ -328,8 +335,8 @@ class CaddyService {
         }
       });
     }
-    
-    
+
+
     // Add compression if enabled
     if (proxy.compression_enabled) {
       handlers.push({
@@ -342,7 +349,7 @@ class CaddyService {
     }
 
     let reverseProxyHandler;
-    
+
     // Handle path-based routing or default reverse proxy
     if (proxy.path_routing && proxy.path_routing.enabled && proxy.path_routing.routes && proxy.path_routing.routes.length > 0) {
       // For path-based routing, we'll create a subroute handler
@@ -390,13 +397,13 @@ class CaddyService {
         // Add headers to reverse proxy configuration
         if (Object.keys(requestHeaders).length > 0 || Object.keys(responseHeaders).length > 0) {
           reverseProxyHandler.headers = {};
-          
+
           if (Object.keys(requestHeaders).length > 0) {
             reverseProxyHandler.headers.request = {
               set: requestHeaders
             };
           }
-          
+
           if (Object.keys(responseHeaders).length > 0) {
             reverseProxyHandler.headers.response = {
               set: responseHeaders
@@ -431,7 +438,7 @@ class CaddyService {
       console.error('Route is missing terminal handler:', route);
       throw new Error('Invalid route configuration: missing terminal handler');
     }
-    
+
     return route;
   }
 
@@ -443,7 +450,7 @@ class CaddyService {
   shouldUseHTTPSTransport(upstreamUrl) {
     return upstreamUrl.includes(':443') || upstreamUrl.startsWith('https://');
   }
-  
+
   /**
    * Add a proxy to Caddy configuration
    * @param {Object} proxy - The proxy object from the database
@@ -453,7 +460,7 @@ class CaddyService {
     try {
       // Get current config
       const config = await this.getConfig();
-      
+
       // Ensure the HTTP server exists
       if (!config.apps || !config.apps.http || !config.apps.http.servers || !config.apps.http.servers.srv0) {
         throw new Error('Invalid Caddy configuration: HTTP server not found');
@@ -466,8 +473,8 @@ class CaddyService {
 
       const existingRoute = existingRoutes.find(route => {
         if (route.match && route.match[0] && route.match[0].host &&
-            route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
-            route.handle[0].upstreams && route.handle[0].upstreams[0]) {
+          route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
+          route.handle[0].upstreams && route.handle[0].upstreams[0]) {
           const routeDomains = route.match[0].host;
           const routeDomainKey = Array.isArray(routeDomains) ? routeDomains.sort().join(',') : routeDomains;
           const routeUpstream = route.handle[0].upstreams[0].dial;
@@ -480,10 +487,10 @@ class CaddyService {
       if (existingRoute) {
         throw new Error('A proxy with the same domain and upstream URL already exists');
       }
-      
+
       // Create the route for this proxy
       const route = this.createRouteFromProxy(proxy);
-      
+
       // Use POST to add the route
       await axios.post(
         `${this.apiUrl}/config/apps/http/servers/srv0/routes`,
@@ -494,16 +501,16 @@ class CaddyService {
           }
         }
       );
-      
+
       // Get updated config to find the new route's index
       const updatedConfig = await this.getConfig();
       const newRouteIndex = updatedConfig.apps.http.servers.srv0.routes.length - 1;
-      
+
       // Update the proxy with its route index
       await proxy.update({
         caddy_route_index: newRouteIndex
       });
-      
+
       // Backup the updated configuration
       await this.backupCurrentConfig();
 
@@ -515,7 +522,8 @@ class CaddyService {
           try {
             // Ensure the Cloudflare policy is present on current config before verifying
             const config = await this.getConfig();
-            this.ensureCloudflarePolicy(config, domains);
+            const force = proxy.ssl_type === 'cloudflare';
+            this.ensureCloudflarePolicy(config, domains, force);
             await this.loadConfig(config);
           } catch (err) {
             console.error('Failed to ensure Cloudflare policy before TLS verification:', err.message);
@@ -548,7 +556,7 @@ class CaddyService {
       throw new Error(`Failed to add proxy: ${error.message}`);
     }
   }
-  
+
   /**
    * Update a proxy in Caddy configuration
    * @param {Object} proxy - The updated proxy object from the database
@@ -561,16 +569,17 @@ class CaddyService {
         // No route index, treat as a new proxy
         return await this.addProxy(proxy);
       }
-      
+
       // Get current config
       const config = await this.getConfig();
-      
+
       // Create and apply the updated route
       const route = this.createRouteFromProxy(proxy);
       config.apps.http.servers.srv0.routes[proxy.caddy_route_index] = route;
       // Ensure Cloudflare policy for this proxy's domains if needed
       if (proxy.ssl_type === 'cloudflare' || proxy.ssl_type === 'acme') {
-        this.ensureCloudflarePolicy(config, Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]);
+        const force = proxy.ssl_type === 'cloudflare';
+        this.ensureCloudflarePolicy(config, Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains], force);
       }
       await this.loadConfig(config);
 
@@ -609,7 +618,7 @@ class CaddyService {
       throw new Error(`Failed to update proxy: ${error.message}`);
     }
   }
-  
+
   /**
    * Delete a proxy from Caddy configuration
    * @param {Object} proxy - The proxy object to delete
@@ -624,7 +633,7 @@ class CaddyService {
           await axios.delete(
             `${this.apiUrl}/config/apps/http/servers/srv0/routes/${proxy.caddy_route_index}`
           );
-          
+
           // Get all proxies with higher route indices
           const proxiesToUpdate = await Proxy.findAll({
             where: {
@@ -633,24 +642,24 @@ class CaddyService {
               }
             }
           });
-          
+
           // Update their route indices
           for (const p of proxiesToUpdate) {
             await p.update({
               caddy_route_index: p.caddy_route_index - 1
             });
           }
-          
+
           // Backup the updated configuration
           await this.backupCurrentConfig();
         } catch (error) {
           console.error('Failed to delete proxy from Caddy (continuing anyway):', error);
         }
       }
-      
+
       // Always delete the proxy from the database
       await proxy.destroy();
-      
+
       return {
         success: true,
         message: 'Proxy deleted from Caddy configuration'
@@ -660,7 +669,7 @@ class CaddyService {
       throw new Error(`Failed to delete proxy: ${error.message}`);
     }
   }
-  
+
   /**
    * Apply a template to a proxy in Caddy configuration
    * @param {Object} proxy - The proxy object
@@ -680,10 +689,10 @@ class CaddyService {
           where: { proxy_id: proxy.id },
           transaction
         });
-        
+
         // Add template headers
         if (template.headers && template.headers.length > 0) {
-          await Promise.all(template.headers.map(header => 
+          await Promise.all(template.headers.map(header =>
             Header.create({
               proxy_id: proxy.id,
               header_type: header.header_type,
@@ -694,7 +703,7 @@ class CaddyService {
           ));
         }
       });
-      
+
       // Reload proxy with new headers and update Caddy
       await proxy.reload({ include: [{ model: Header, as: 'headers' }] });
       return await this.updateProxy(proxy);
@@ -703,7 +712,7 @@ class CaddyService {
       throw new Error(`Failed to apply template: ${error.message}`);
     }
   }
-  
+
   /**
    * Include Caddy configuration in a backup
    * @param {Object} backupData - The backup data object
@@ -713,10 +722,10 @@ class CaddyService {
     try {
       // Get current config
       const config = await this.getConfig();
-      
+
       // Add to backup data
       backupData.caddy_config = config;
-      
+
       return backupData;
     } catch (error) {
       console.error('Failed to include Caddy configuration in backup:', error);
@@ -725,7 +734,7 @@ class CaddyService {
       return backupData;
     }
   }
-  
+
   /**
    * Restore Caddy configuration from a backup
    * @param {Object} backupData - The backup data object
@@ -737,13 +746,13 @@ class CaddyService {
       if (!backupData.caddy_config) {
         throw new Error('No Caddy configuration found in backup data');
       }
-      
+
       // Load the configuration
       await this.loadConfig(backupData.caddy_config);
-      
+
       // Backup the restored configuration
       await this.backupConfig(backupData.caddy_config);
-      
+
       return {
         success: true,
         message: 'Caddy configuration restored from backup'
@@ -758,7 +767,7 @@ class CaddyService {
 module.exports = new CaddyService();
 
 // Helper: perform TLS verification for a list of domains
-CaddyService.prototype.verifyTlsForDomains = function(domains = [], timeoutMs = 10000) {
+CaddyService.prototype.verifyTlsForDomains = function (domains = [], timeoutMs = 10000) {
   const checkDomain = (domain) => {
     return new Promise((resolve) => {
       const socket = tls.connect({ host: domain, port: 443, servername: domain, rejectUnauthorized: false }, () => {
@@ -786,7 +795,7 @@ CaddyService.prototype.verifyTlsForDomains = function(domains = [], timeoutMs = 
     });
   };
 
-  return Promise.all(domains.map(d => checkDomain(d)) ).then(results => {
+  return Promise.all(domains.map(d => checkDomain(d))).then(results => {
     const ok = results.every(r => r.ok === true);
     return { ok, results };
   });
