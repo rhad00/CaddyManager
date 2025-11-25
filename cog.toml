@@ -8,7 +8,7 @@ branch_whitelist = ["main"]
 tag_prefix = "v"
 
 # Ignore merge commits in changelog
-ignore_merge_commits = true
+ignore_merge_commits = false
 
 # Pre-bump hooks (run before version bump)
 # pre_bump_hooks = [
@@ -23,7 +23,7 @@ post_bump_hooks = [
   # Update backend package.json files
   "cd backend && npm version {{version}} --no-git-tag-version --allow-same-version",
   # Stage all updated package.json files
-  "git add */package.json */*/package.json",
+  "git add frontend/package.json backend/package.json",
 ]
 
 # Changelog configuration
