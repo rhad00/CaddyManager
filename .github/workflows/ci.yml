@@ -1,10 +1,10 @@
-name: CI
+name: CI - Lint and Test
 
 on:
   pull_request:
     branches: [ dev, main ]
   push:
-    branches: [ dev, main ]
+    branches: [ dev ]
 
 jobs:
   lint-and-test:
@@ -18,12 +18,13 @@ jobs:
         with:
           fetch-depth: 0      
           fetch-tags: true   
+
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Install frontend deps
+      - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
@@ -36,11 +37,10 @@ jobs:
         run: npm run test --silent
 
       - name: Build frontend
-        if: ${{ github.ref_name == 'main' }}
         working-directory: frontend
         run: npm run build --silent
 
-      - name: Install backend deps
+      - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
@@ -49,6 +49,5 @@ jobs:
         run: npm run test:unit --silent
 
       - name: Run backend integration tests
-        if: ${{ github.ref_name == 'main' && github.event_name == 'push' }}
         working-directory: backend
         run: npm run test:integration --silent
