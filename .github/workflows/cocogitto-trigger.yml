@@ -13,12 +13,17 @@ permissions:
 jobs:
   run-cog:
     runs-on: ubuntu-latest
+    permissions:
+    contents: write
+    pull-requests: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0      
-          fetch-tags: true    
 
       - name: Cocogitto release
         id: release
@@ -27,6 +32,11 @@ jobs:
           check: true
           check-latest-tag-only: true
           release: true
-          push: true
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
+      - name: Generate Changelog
+        if: steps.release.outputs.version != ''
+        run: |
+          echo "New version: ${{ steps.release.outputs.version }}"
+          echo "Changelog has been updated"
+
