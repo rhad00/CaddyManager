@@ -27,5 +27,8 @@ jobs:
           check: true
           check-latest-tag-only: true
           release: true
+          push: true
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
+      - name: Push tags just in case
+        run: git push --follow-tags
