@@ -14,8 +14,8 @@ jobs:
   run-cog:
     runs-on: ubuntu-latest
     permissions:
-    contents: write
-    pull-requests: write
+      contents: write
+      pull-requests: write
     outputs:
       version: ${{ steps.release.outputs.version }}
 
