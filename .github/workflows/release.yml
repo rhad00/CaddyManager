@@ -16,23 +16,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Cocogitto release
-        id: cocogitto
-        uses: cocogitto/cocogitto-action@v3
         with:
-          check: true
-          check-latest-tag-only: true
-          release: true
-          git-user: 'github-actions[bot]'
-          git-user-email: 'github-actions[bot]@users.noreply.github.com'
+          fetch-depth: 0
 
       - name: Save changelog
         run: |
           mkdir -p .github/release
           # Try to get changelog from cocogitto outputs or generate one with cog if available
+          # Since we are on a tag, we might want to generate the changelog for this tag specifically if not present.
+          # But cocogitto-trigger should have pushed the changelog update to main.
+          # For the release body, we usually want the changes for *this* version.
+          # Let's assume cog is available or we can install it to generate the changelog for the tag.
+          # Alternatively, we can just use the CHANGELOG.md from the repo if it was updated.
           if [ -f CHANGELOG.md ]; then cp CHANGELOG.md .github/release/CHANGELOG.md; fi
-          if [ -f .changelog ]; then cp .changelog .github/release/CHANGELOG.md; fi
 
       - name: Log in to GHCR
         uses: docker/login-action@v2
