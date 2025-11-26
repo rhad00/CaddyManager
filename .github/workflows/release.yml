@@ -43,39 +43,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Build and push backend image (multi-platform, cached)
+      - name: Build and push backend image (amd64 only, cached)
         uses: docker/build-push-action@v4
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository_owner }}/caddymanager-backend:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/caddymanager-backend:latest
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache,mode=max
 
-      - name: Build and push caddy image (multi-platform, cached)
+      - name: Build and push caddy image (amd64 only, cached)
         uses: docker/build-push-action@v4
         with:
           context: ./caddy
           file: ./caddy/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:latest
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache,mode=max
 
-      - name: Build and push frontend image (multi-platform, cached)
+      - name: Build and push frontend image (amd64 only, cached)
         uses: docker/build-push-action@v4
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:latest
