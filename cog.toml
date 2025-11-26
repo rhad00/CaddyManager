@@ -75,7 +75,8 @@ bump = "patch"
 
 [commit_types.chore]
 changelog_title = "Miscellaneous Chores"
-bump = "patch"
+# Don't bump version for chore commits (like dependency updates)
+omit_from_changelog = true
 
 [commit_types.revert]
 changelog_title = "Reverts"
