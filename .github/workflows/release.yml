@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Save changelog
+        run: |
+          mkdir -p .github/release
+          # Try to get changelog from cocogitto outputs or generate one with cog if available
+          # Since we are on a tag, we might want to generate the changelog for this tag specifically if not present.
+          # But cocogitto-trigger should have pushed the changelog update to main.
+          # For the release body, we usually want the changes for *this* version.
+          # Let's assume cog is available or we can install it to generate the changelog for the tag.
+          # Alternatively, we can just use the CHANGELOG.md from the repo if it was updated.
+          if [ -f CHANGELOG.md ]; then cp CHANGELOG.md .github/release/CHANGELOG.md; fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and push backend image (amd64 only, cached)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/caddymanager-backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/caddymanager-backend:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache,mode=max
+
+      - name: Build and push caddy image (amd64 only, cached)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./caddy
+          file: ./caddy/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache,mode=max
+
+      - name: Build and push frontend image (amd64 only, cached)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:buildcache,mode=max
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          body_path: .github/release/CHANGELOG.md
+
+      - name: Upload changelog asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: .github/release/CHANGELOG.md
+          asset_name: CHANGELOG.md
+          asset_content_type: text/markdown
