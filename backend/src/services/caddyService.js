@@ -14,7 +14,7 @@ class CaddyService {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.configBackupDir = process.env.CONFIG_BACKUP_DIR || path.join(__dirname, '../../config_backups');
     this.configBackupFile = path.join(this.configBackupDir, 'caddy_config_backup.json');
-    // defer any async initialization to initializeConfig
+     // defer any async initialization to initializeConfig
   }
 
   /**
