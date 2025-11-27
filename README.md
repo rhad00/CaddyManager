@@ -5,7 +5,52 @@
 [![GitHub stars](https://img.shields.io/github/stars/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/stargazers)
 [![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://hub.docker.com/r/rhad00/CaddyManager)
 
-CaddyManager is a powerful, open-source reverse proxy manager built on top of Caddy Server. It provides a feature-rich web-based UI and REST API backend for managing Caddy configurations, with a self-contained login system, initial admin setup, and advanced features similar to NPMPlus.
+**CaddyManager** is the modern, hassle-free way to manage your reverse proxy. Built on the powerful **Caddy Server**, it gives you a beautiful UI to manage domains, SSL certificates, and complex headers without touching a single config file.
+
+**Stop debugging Nginx syntax. Start deploying services.**
+
+![CaddyManager Dashboard](.github/images/dashboard.png)
+
+> [!NOTE]
+> This project is currently in **Alpha**. While we use it daily, please test thoroughly in your environment.
+
+## ✨ Why CaddyManager?
+
+### 🔌 "One-Click" Service Templates
+Deploying complex apps like **Authelia**, **Keycloak**, or **Nextcloud**? Forget about manually configuring `X-Forwarded-*` headers or debugging infinite redirect loops.
+
+CaddyManager includes **battle-tested templates** for these services. Just select "Authelia" from the dropdown, and we apply the perfect configuration automatically.
+*   **Supported Templates:** Authelia, Keycloak, Amazon S3 (MinIO/Ceph), Nextcloud, Cloudflare Tunnel, Grafana, Kibana.
+
+### 🔒 Zero-Config Cloudflare DNS Challenges
+Want wildcard certificates or need to secure internal services without opening port 80?
+
+Just provide your **Cloudflare API Token**. CaddyManager automatically configures Caddy's **DNS-01 challenge**.
+*   No plugins to install.
+*   No scripts to run.
+*   **It just works.**
+
+### 🛡️ Enterprise-Grade Security
+Security shouldn't be optional. Enable industry-standard security headers with a single toggle:
+*   **HSTS** (Strict-Transport-Security)
+*   **CSP** (Content-Security-Policy)
+*   **X-Frame-Options** & **X-Content-Type-Options**
+*   **IP Filtering** (Allow/Block lists) & **Rate Limiting**
+
+### 💾 Automatic Backups
+Your configuration is precious. CaddyManager automatically backs up your proxy settings, routes, and certificates.
+*   **Auto-Backup**: Scheduled backups of your entire config.
+*   **Instant Restore**: Rollback to any previous state directly from the UI.
+*   **Portable**: Export your config and move to a new server in seconds.
+
+## 🚀 Features Overview
+
+| Feature | Description |
+|---------|-------------|
+| **User Management** | JWT-based auth, Role-based access (Admin/ReadOnly), Brute-force protection. |
+| **Proxy Management** | Multi-domain support, Auto-SSL (Let's Encrypt), Custom Certs, HTTP->HTTPS redirects. |
+| **Advanced Routing** | Path-based routing, Compression (Gzip/Zstd), WebSocket support. |
+| **Monitoring** | System health checks, Real-time status updates. |
 
 ## How It Works
 
@@ -72,10 +117,7 @@ Example header configurations:
 }
 ```
 
-![CaddyManager Dashboard](.github/images/dashboard.png)
 
-
-## NOTE: this project is in very Alpha stage, and it might not work as expected.
 
 ## 🚀 Features
 
@@ -530,18 +572,6 @@ Add the API token to your `.env` file or docker-compose configuration:
 ```bash
 # .env file
 CF_API_TOKEN=your_40_character_api_token_here
-```
-
-Or in `docker-compose.yml`:
-
-```yaml
-backend:
-  environment:
-    - CF_API_TOKEN=your_40_character_api_token_here
-
-caddy:
-  environment:
-    - CF_API_TOKEN=your_40_character_api_token_here
 ```
 
 **Step 3: Restart Services**
