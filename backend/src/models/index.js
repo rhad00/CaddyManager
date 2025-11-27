@@ -8,6 +8,7 @@ const Backup = require('./backup');
 const Certificate = require('./certificate');
 const CertificateAuthority = require('./certificateAuthority');
 const AuditLog = require('./auditLog');
+const Metric = require('./metric');
 
 // Define associations after all models are loaded
 const setupAssociations = () => {
@@ -50,4 +51,5 @@ module.exports = {
   Certificate,
   CertificateAuthority,
   AuditLog,
+  Metric,
 };

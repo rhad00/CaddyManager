@@ -1,9 +1,5 @@
 const request = require('supertest');
-let app;
-
-beforeAll(() => {
-  app = require('../../src/app');
-});
+const { app } = require('../../src/app');
 
 describe('Auth API', () => {
   test('GET /api/auth should return 404 or relevant response', async () => {

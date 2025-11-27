@@ -6,10 +6,11 @@ import BackupManagement from './BackupManagement';
 import MetricsDashboard from './MetricsDashboard';
 import AuditLogViewer from './AuditLogViewer';
 import Users from './Users';
+import Footer from '../components/Footer';
 
-const Dashboard = () => {
+const Dashboard = ({ initialTab = 'proxies' }) => {
   const { currentUser, logout } = useAuth();
-  const [activeTab, setActiveTab] = React.useState('proxies');
+  const [activeTab, setActiveTab] = React.useState(initialTab);
 
   const handleLogout = async () => {
     await logout();
@@ -117,6 +118,11 @@ const Dashboard = () => {
           {activeTab === 'audit' && <AuditLogViewer />}
           {activeTab === 'users' && <Users />}
         </main>
+      </div>
+      
+      {/* Footer included site-wide */}
+      <div>
+        <Footer />
       </div>
     </div>
   );

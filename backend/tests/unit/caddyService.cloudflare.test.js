@@ -1,14 +1,14 @@
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService Cloudflare policy injection', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
   });
 
   test('ensureCloudflarePolicy adds policy when token present', () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'dummy-token-for-test';
+    process.env.CF_API_TOKEN = 'dummy-token-for-test';
 
     const service = caddyService; // singleton instance
     const config = {};
@@ -26,17 +26,20 @@ describe('CaddyService Cloudflare policy injection', () => {
 
     const p = policies.find(pol => Array.isArray(pol.subjects) && pol.subjects.includes('example.com'));
     expect(p).toBeDefined();
-    expect(p.issuer).toBeDefined();
-    expect(p.issuer.module).toBe('acme');
-    expect(p.issuer.challenges).toBeDefined();
-    expect(p.issuer.challenges.dns).toBeDefined();
-    expect(p.issuer.challenges.dns.provider).toBeDefined();
-    expect(p.issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(p.issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(p.issuers).toBeDefined();
+    expect(Array.isArray(p.issuers)).toBe(true);
+    expect(p.issuers.length).toBeGreaterThan(0);
+    const issuer = p.issuers[0];
+    expect(issuer.module).toBe('acme');
+    expect(issuer.challenges).toBeDefined();
+    expect(issuer.challenges.dns).toBeDefined();
+    expect(issuer.challenges.dns.provider).toBeDefined();
+    expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CF_API_TOKEN}');
   });
 
   test('ensureCloudflarePolicy is a no-op when token missing', () => {
-    delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.CF_API_TOKEN;
 
     const service = caddyService;
     const config = {};

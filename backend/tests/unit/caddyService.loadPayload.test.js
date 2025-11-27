@@ -13,15 +13,15 @@ const { Proxy } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService /load payload includes Cloudflare policy', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
     jest.clearAllMocks();
   });
 
   test('rebuildConfigFromDatabase posts config with Cloudflare policy to /load', async () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'itoken';
+    process.env.CF_API_TOKEN = 'itoken';
 
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [ { handle: [ { handler: 'reverse_proxy', upstreams: [{ dial: 'backend:3000' }] } ] } ] } } } } };
 
@@ -47,7 +47,10 @@ describe('CaddyService /load payload includes Cloudflare policy', () => {
     expect(Array.isArray(payload.apps.tls.automation.policies)).toBe(true);
     const policy = payload.apps.tls.automation.policies.find(p => Array.isArray(p.subjects) && p.subjects.includes('site.example.com'));
     expect(policy).toBeDefined();
-    expect(policy.issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(policy.issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(policy.issuers).toBeDefined();
+    expect(Array.isArray(policy.issuers)).toBe(true);
+    const issuer = policy.issuers[0];
+    expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CF_API_TOKEN}');
   });
 });

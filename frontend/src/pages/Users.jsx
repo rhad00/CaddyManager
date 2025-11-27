@@ -72,45 +72,50 @@ const Users = () => {
   }
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-semibold mb-4">User Management</h2>
-      {error && <div className="text-red-600 mb-2">{error}</div>}
-      <UserForm onCreate={handleCreate} />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="bg-white shadow-sm rounded-md p-6">
+        <h2 className="text-2xl font-semibold mb-4">User Management</h2>
+        {error && <div className="text-red-600 mb-2">{error}</div>}
+        <UserForm onCreate={handleCreate} />
 
-      {loading ? (
-        <div>Loading users...</div>
-      ) : (
-        <div className="mt-4">
-          {users.length === 0 ? (
-            <div>No users found.</div>
-          ) : (
-            <table className="min-w-full bg-white">
-              <thead>
-                <tr>
-                  <th className="py-2">Email</th>
-                  <th className="py-2">Role</th>
-                  <th className="py-2">Status</th>
-                  <th className="py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id} className="border-t">
-                    <td className="py-2">{u.email}</td>
-                    <td className="py-2">{u.role}</td>
-                    <td className="py-2">{u.status}</td>
-                    <td className="py-2">
-                      {u.id !== currentUser.id && (
-                        <button onClick={() => confirmDelete(u)} className="text-red-600">Delete</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+        {loading ? (
+          <div className="mt-4 text-gray-600">Loading users...</div>
+        ) : (
+          <div className="mt-4">
+            {users.length === 0 ? (
+              <div className="text-gray-600">No users found.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Email</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Role</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Status</th>
+                      <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map(u => (
+                      <tr key={u.id}>
+                        <td className="px-4 py-3 text-sm text-gray-900">{u.email}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{u.role}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{u.status}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {u.id !== currentUser.id && (
+                            <button onClick={() => confirmDelete(u)} className="text-red-600 hover:underline">Delete</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <ConfirmModal
         open={confirmOpen}
         title={`Delete user ${targetUserToDelete ? targetUserToDelete.email : ''}`}

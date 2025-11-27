@@ -176,8 +176,7 @@ describe('CaddyService', () => {
     const route = caddyService.createRouteFromProxy(proxy);
     expect(route.handle.some(h => h.handler === 'rate_limit')).toBe(true);
     const rl = route.handle.find(h => h.handler === 'rate_limit');
-    expect(rl.rate).toBe(5);
-    expect(rl.burst).toBe(10);
+    expect(rl.rate_limits.default.max_events).toBe(10);
   });
 
   test('createRouteFromProxy sets transport.tls for https upstreams', () => {
@@ -226,18 +225,21 @@ describe('CaddyService', () => {
     // Inspect the route that would have been created
     const route = caddyService.createRouteFromProxy(combinedProxy);
 
-    // Handler order: rate_limit, request_filter (ip_filtering), basic_auth, encode (compression), subroute
+    // Handler order: rate_limit, subroute (ip_filtering), basic_auth, encode (compression), subroute (path_routing)
     const handlers = route.handle;
     expect(handlers[0].handler).toBe('rate_limit');
-    expect(handlers[1].handler).toBe('request_filter');
+    expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
     expect(handlers[2].handler).toBe('basic_auth');
     // compression encode may appear before reverse_proxy/subroute
     expect(handlers.some(h => h.handler === 'encode')).toBe(true);
-    // subroute must exist and contain the path routing
-    expect(handlers.some(h => h.handler === 'subroute')).toBe(true);
-
-    const sub = handlers.find(h => h.handler === 'subroute');
-    expect(sub.routes[0].match[0].path).toEqual(['/a']);
+    // subroute must exist for path routing (there will be 2 subroutes: one for IP filtering, one for path routing)
+    const subroutes = handlers.filter(h => h.handler === 'subroute');
+    expect(subroutes.length).toBeGreaterThanOrEqual(1);
+    
+    // Find the path routing subroute (it should have routes with path matchers)
+    const pathRoutingSub = subroutes.find(s => s.routes && s.routes[0] && s.routes[0].match && s.routes[0].match[0].path);
+    expect(pathRoutingSub).toBeDefined();
+    expect(pathRoutingSub.routes[0].match[0].path).toEqual(['/a']);
   });
 
   test('rebuildConfigFromDatabase sends route with reverse_proxy terminal and headers inside reverse_proxy when no path_routing', async () => {
@@ -272,9 +274,9 @@ describe('CaddyService', () => {
     const route = routes[routes.length - 1];
     const handlers = route.handle;
 
-    // Exact order expected: rate_limit, request_filter, basic_auth, encode, reverse_proxy
+    // Exact order expected: rate_limit, subroute (ip_filtering), basic_auth, encode, reverse_proxy
     expect(handlers[0].handler).toBe('rate_limit');
-    expect(handlers[1].handler).toBe('request_filter');
+    expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
     expect(handlers[2].handler).toBe('basic_auth');
     expect(handlers[3].handler).toBe('encode');
     const rp = handlers[4];

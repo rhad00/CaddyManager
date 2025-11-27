@@ -1,10 +1,6 @@
 const axios = require('axios');
-const { promisify } = require('util');
-const fs = require('fs');
-const path = require('path');
-const writeFileAsync = promisify(fs.writeFile);
-const readFileAsync = promisify(fs.readFile);
-const mkdirAsync = promisify(fs.mkdir);
+const { Metric } = require('../models');
+const { Op } = require('sequelize');
 require('dotenv').config();
 
 /**
@@ -13,29 +9,11 @@ require('dotenv').config();
 class MetricsService {
   constructor() {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
-    this.metricsDir = process.env.METRICS_DIR || path.join(__dirname, '../../metrics');
     this.cacheTime = 10000; // 10 seconds cache
     this.metricsCache = {
       data: null,
       timestamp: 0
     };
-    
-    // Ensure metrics directory exists
-    this.ensureMetricsDir();
-  }
-  
-  /**
-   * Ensure metrics directory exists
-   */
-  async ensureMetricsDir() {
-    try {
-      if (!fs.existsSync(this.metricsDir)) {
-        await mkdirAsync(this.metricsDir, { recursive: true });
-        console.log(`Created metrics directory: ${this.metricsDir}`);
-      }
-    } catch (error) {
-      console.error('Failed to create metrics directory:', error);
-    }
   }
   
   /**
@@ -204,24 +182,24 @@ class MetricsService {
   }
   
   /**
-   * Save current metrics to a file for historical data
+   * Save current metrics to database for historical data
    * @returns {Promise<Object>} Save result
    */
   async saveMetricsSnapshot() {
     try {
       const metrics = await this.getMetrics();
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filePath = path.join(this.metricsDir, `metrics-${timestamp}.json`);
+      const summary = await this.getMetricsSummary();
       
-      await writeFileAsync(filePath, JSON.stringify({
-        timestamp: new Date().toISOString(),
-        metrics
-      }, null, 2));
+      const snapshot = await Metric.create({
+        timestamp: new Date(),
+        metrics_data: metrics,
+        summary: summary
+      });
       
       return {
         success: true,
-        filePath,
-        timestamp
+        id: snapshot.id,
+        timestamp: snapshot.timestamp
       };
     } catch (error) {
       console.error('Failed to save metrics snapshot:', error);
@@ -230,31 +208,54 @@ class MetricsService {
   }
   
   /**
-   * Get historical metrics data
+   * Get historical metrics data from database
    * @param {number} limit - Maximum number of snapshots to retrieve
    * @returns {Promise<Array>} Historical metrics data
    */
   async getHistoricalMetrics(limit = 10) {
     try {
-      // Get list of metric files
-      const files = fs.readdirSync(this.metricsDir)
-        .filter(file => file.startsWith('metrics-') && file.endsWith('.json'))
-        .sort()
-        .reverse()
-        .slice(0, limit);
+      const metrics = await Metric.findAll({
+        order: [['timestamp', 'DESC']],
+        limit: limit,
+        attributes: ['id', 'timestamp', 'metrics_data', 'summary', 'createdAt']
+      });
       
-      // Read each file
-      const historicalData = [];
-      for (const file of files) {
-        const filePath = path.join(this.metricsDir, file);
-        const content = await readFileAsync(filePath, 'utf8');
-        historicalData.push(JSON.parse(content));
-      }
-      
-      return historicalData;
+      return metrics.map(m => ({
+        id: m.id,
+        timestamp: m.timestamp,
+        metrics: m.metrics_data,
+        summary: m.summary,
+        createdAt: m.createdAt
+      }));
     } catch (error) {
       console.error('Failed to get historical metrics:', error);
       throw new Error(`Failed to get historical metrics: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Delete old metrics snapshots to prevent database bloat
+   * @param {number} daysToKeep - Number of days of metrics to keep
+   * @returns {Promise<number>} Number of deleted records
+   */
+  async cleanupOldMetrics(daysToKeep = 30) {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+      
+      const deletedCount = await Metric.destroy({
+        where: {
+          timestamp: {
+            [Op.lt]: cutoffDate
+          }
+        }
+      });
+      
+      console.log(`Cleaned up ${deletedCount} old metrics snapshots older than ${daysToKeep} days`);
+      return deletedCount;
+    } catch (error) {
+      console.error('Failed to cleanup old metrics:', error);
+      throw new Error(`Failed to cleanup old metrics: ${error.message}`);
     }
   }
   
@@ -365,6 +366,28 @@ class MetricsService {
     }, intervalMs);
     
     console.log(`Scheduled metrics snapshots every ${intervalMinutes} minutes`);
+  }
+  
+  /**
+   * Schedule periodic cleanup of old metrics
+   * @param {number} cleanupIntervalHours - Interval in hours between cleanup runs
+   * @param {number} daysToKeep - Number of days of metrics to keep
+   */
+  scheduleMetricsCleanup(cleanupIntervalHours = 24, daysToKeep = 30) {
+    // Run cleanup at startup
+    this.cleanupOldMetrics(daysToKeep).catch(error => {
+      console.error('Failed to run initial metrics cleanup:', error);
+    });
+    
+    // Schedule periodic cleanup
+    const intervalMs = cleanupIntervalHours * 60 * 60 * 1000;
+    setInterval(() => {
+      this.cleanupOldMetrics(daysToKeep).catch(error => {
+        console.error('Failed to run scheduled metrics cleanup:', error);
+      });
+    }, intervalMs);
+    
+    console.log(`Scheduled metrics cleanup every ${cleanupIntervalHours} hours (keeping ${daysToKeep} days)`);
   }
 }
 

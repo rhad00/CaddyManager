@@ -14,7 +14,7 @@ class CaddyService {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.configBackupDir = process.env.CONFIG_BACKUP_DIR || path.join(__dirname, '../../config_backups');
     this.configBackupFile = path.join(this.configBackupDir, 'caddy_config_backup.json');
-    // defer any async initialization to initializeConfig
+     // defer any async initialization to initializeConfig
   }
 
   /**
@@ -24,15 +24,15 @@ class CaddyService {
    * Caddy process can read it at runtime.
    * @param {Object} config - The Caddy JSON config to modify
    * @param {string[]} domains - The domains this policy should cover
-   * @param {boolean} force - Whether to add the policy even if CLOUDFLARE_API_TOKEN is not detected in backend env
+   * @param {boolean} force - Whether to add the policy even if CF_API_TOKEN is not detected in backend env
    */
   ensureCloudflarePolicy(config, domains = [], force = false) {
     try {
-      const tokenPresent = !!process.env.CLOUDFLARE_API_TOKEN;
+      const tokenPresent = !!process.env.CF_API_TOKEN;
       console.log(`[CaddyService] ensureCloudflarePolicy: Token present? ${tokenPresent}, Force? ${force}`);
 
       if (!tokenPresent && !force) {
-        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CLOUDFLARE_API_TOKEN is missing and force is false');
+        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CF_API_TOKEN is missing and force is false');
         return config;
       }
 
@@ -45,19 +45,20 @@ class CaddyService {
       const subjects = Array.isArray(domains) ? domains : [domains];
       const policy = {
         subjects,
-        issuer: {
+        issuers: [{
           module: 'acme',
           // Challenges configuration for DNS provider
           challenges: {
             dns: {
               provider: {
                 name: 'cloudflare',
+                // Cloudflare DNS provider expects 'api_token' field
                 // Use env placeholder so token is read from Caddy's environment
-                api_token: '{env.CLOUDFLARE_API_TOKEN}'
+                api_token: '{env.CF_API_TOKEN}'
               }
             }
           }
-        }
+        }]
       };
 
       // Append policy — avoid duplicate exact subjects
@@ -308,22 +309,57 @@ class CaddyService {
     if (proxy.rate_limit && proxy.rate_limit.enabled) {
       handlers.push({
         handler: "rate_limit",
-        rate: proxy.rate_limit.requests_per_second,
-        burst: proxy.rate_limit.burst,
-        window: "1s"
+        rate_limits: {
+          default: {
+            key: "{http.request.remote.host}",
+            window: "1s",
+            max_events: proxy.rate_limit.burst || proxy.rate_limit.requests_per_second
+          }
+        }
       });
     }
 
-    // Add IP filtering if enabled
-    if (proxy.ip_filtering && proxy.ip_filtering.enabled) {
-      handlers.push({
-        handler: "request_filter",
-        paths: ["/*"],
-        filters: [{
-          type: "remote_ip",
-          [proxy.ip_filtering.mode === "allow" ? "allow" : "deny"]: proxy.ip_filtering.ip_list
-        }]
-      });
+    // Add IP filtering if enabled using Caddy's built-in remote_ip matcher
+    if (proxy.ip_filtering && proxy.ip_filtering.enabled && proxy.ip_filtering.ip_list && proxy.ip_filtering.ip_list.length > 0) {
+      const ipRanges = proxy.ip_filtering.ip_list.slice(0, 10); // Maximum 10 IPs/ranges
+      
+      if (proxy.ip_filtering.mode === "deny") {
+        // Deny mode: block specified IPs
+        handlers.push({
+          handler: "subroute",
+          routes: [{
+            match: [{
+              remote_ip: {
+                ranges: ipRanges
+              }
+            }],
+            handle: [{
+              handler: "static_response",
+              status_code: 403,
+              body: "Access denied"
+            }]
+          }]
+        });
+      } else {
+        // Allow mode: only allow specified IPs (deny all others)
+        handlers.push({
+          handler: "subroute",
+          routes: [{
+            match: [{
+              not: [{
+                remote_ip: {
+                  ranges: ipRanges
+                }
+              }]
+            }],
+            handle: [{
+              handler: "static_response",
+              status_code: 403,
+              body: "Access denied"
+            }]
+          }]
+        });
+      }
     }
 
     // Add basic authentication if enabled

@@ -1,14 +1,14 @@
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService Cloudflare policy deduplication', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
   });
 
   test('does not duplicate policy for identical domain sets', () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'dup-token';
+    process.env.CF_API_TOKEN = 'dup-token';
     const baseConfig = { apps: { tls: { automation: { policies: [] } } } };
 
     const cfg1 = caddyService.ensureCloudflarePolicy(baseConfig, ['a.example.com', 'b.example.com']);
@@ -20,7 +20,7 @@ describe('CaddyService Cloudflare policy deduplication', () => {
   });
 
   test('adds new policy for different domain sets', () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'dup-token';
+    process.env.CF_API_TOKEN = 'dup-token';
     const baseConfig = { apps: { tls: { automation: { policies: [] } } } };
 
     const cfg1 = caddyService.ensureCloudflarePolicy(baseConfig, ['a.example.com']);

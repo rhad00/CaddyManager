@@ -13,22 +13,22 @@ const { Proxy } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService token removal and non-cloudflare behavior', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
     jest.clearAllMocks();
   });
 
   test('existing policies remain when token removed (no-op)', () => {
     // Start with a config that already contains a policy
-    process.env.CLOUDFLARE_API_TOKEN = 'temp';
+    process.env.CF_API_TOKEN = 'temp';
     const baseConfig = { apps: { tls: { automation: { policies: [] } } } };
     const cfgWithPolicy = caddyService.ensureCloudflarePolicy(baseConfig, ['keep.example.com']);
     expect(cfgWithPolicy.apps.tls.automation.policies.length).toBe(1);
 
     // Remove token and call ensureCloudflarePolicy again with new domains
-    delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.CF_API_TOKEN;
     const cfgAfter = caddyService.ensureCloudflarePolicy(cfgWithPolicy, ['new.example.com']);
 
     // Since token is missing, ensureCloudflarePolicy should be a no-op and not add new policy
@@ -36,7 +36,7 @@ describe('CaddyService token removal and non-cloudflare behavior', () => {
   });
 
   test('addProxy/updateProxy do not inject policy for non-cloudflare ssl_type', async () => {
-    delete process.env.CLOUDFLARE_API_TOKEN; // token absent
+    delete process.env.CF_API_TOKEN; // token absent
 
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [] } } } } };
     axios.get.mockResolvedValue({ data: baseConfig });
