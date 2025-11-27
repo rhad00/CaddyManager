@@ -45,7 +45,7 @@ class CaddyService {
       const subjects = Array.isArray(domains) ? domains : [domains];
       const policy = {
         subjects,
-        issuer: {
+        issuers: [{
           module: 'acme',
           // Challenges configuration for DNS provider
           challenges: {
@@ -57,7 +57,7 @@ class CaddyService {
               }
             }
           }
-        }
+        }]
       };
 
       // Append policy — avoid duplicate exact subjects
