@@ -318,16 +318,47 @@ class CaddyService {
       });
     }
 
-    // Add IP filtering if enabled
-    if (proxy.ip_filtering && proxy.ip_filtering.enabled) {
-      handlers.push({
-        handler: "request_filter",
-        paths: ["/*"],
-        filters: [{
-          type: "remote_ip",
-          [proxy.ip_filtering.mode === "allow" ? "allow" : "deny"]: proxy.ip_filtering.ip_list
-        }]
-      });
+    // Add IP filtering if enabled using Caddy's built-in remote_ip matcher
+    if (proxy.ip_filtering && proxy.ip_filtering.enabled && proxy.ip_filtering.ip_list && proxy.ip_filtering.ip_list.length > 0) {
+      const ipRanges = proxy.ip_filtering.ip_list.slice(0, 10); // Maximum 10 IPs/ranges
+      
+      if (proxy.ip_filtering.mode === "deny") {
+        // Deny mode: block specified IPs
+        handlers.push({
+          handler: "subroute",
+          routes: [{
+            match: [{
+              remote_ip: {
+                ranges: ipRanges
+              }
+            }],
+            handle: [{
+              handler: "static_response",
+              status_code: 403,
+              body: "Access denied"
+            }]
+          }]
+        });
+      } else {
+        // Allow mode: only allow specified IPs (deny all others)
+        handlers.push({
+          handler: "subroute",
+          routes: [{
+            match: [{
+              not: [{
+                remote_ip: {
+                  ranges: ipRanges
+                }
+              }]
+            }],
+            handle: [{
+              handler: "static_response",
+              status_code: 403,
+              body: "Access denied"
+            }]
+          }]
+        });
+      }
     }
 
     // Add basic authentication if enabled
