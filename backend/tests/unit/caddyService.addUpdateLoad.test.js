@@ -14,15 +14,15 @@ const { Proxy } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService add/update load payload assertions', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
     jest.clearAllMocks();
   });
 
   test('addProxy leads to load payload containing Cloudflare policy', async () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'itoken';
+    process.env.CF_API_TOKEN = 'itoken';
 
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [] } } } } };
     axios.get.mockResolvedValue({ data: baseConfig });
@@ -43,7 +43,7 @@ describe('CaddyService add/update load payload assertions', () => {
   });
 
   test('updateProxy leads to load payload containing Cloudflare policy', async () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'itoken';
+    process.env.CF_API_TOKEN = 'itoken';
 
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [ {}, {} ] } } } } };
     axios.get.mockResolvedValue({ data: baseConfig });

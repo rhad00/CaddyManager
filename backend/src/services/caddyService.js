@@ -24,15 +24,15 @@ class CaddyService {
    * Caddy process can read it at runtime.
    * @param {Object} config - The Caddy JSON config to modify
    * @param {string[]} domains - The domains this policy should cover
-   * @param {boolean} force - Whether to add the policy even if CLOUDFLARE_API_TOKEN is not detected in backend env
+   * @param {boolean} force - Whether to add the policy even if CF_API_TOKEN is not detected in backend env
    */
   ensureCloudflarePolicy(config, domains = [], force = false) {
     try {
-      const tokenPresent = !!process.env.CLOUDFLARE_API_TOKEN;
+      const tokenPresent = !!process.env.CF_API_TOKEN;
       console.log(`[CaddyService] ensureCloudflarePolicy: Token present? ${tokenPresent}, Force? ${force}`);
 
       if (!tokenPresent && !force) {
-        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CLOUDFLARE_API_TOKEN is missing and force is false');
+        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CF_API_TOKEN is missing and force is false');
         return config;
       }
 
@@ -54,7 +54,7 @@ class CaddyService {
                 name: 'cloudflare',
                 // Cloudflare DNS provider expects 'api_token' field
                 // Use env placeholder so token is read from Caddy's environment
-                api_token: '{env.CLOUDFLARE_API_TOKEN}'
+                api_token: '{env.CF_API_TOKEN}'
               }
             }
           }

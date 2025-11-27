@@ -1,14 +1,14 @@
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService Cloudflare policy injection', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
   });
 
   test('ensureCloudflarePolicy adds policy when token present', () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'dummy-token-for-test';
+    process.env.CF_API_TOKEN = 'dummy-token-for-test';
 
     const service = caddyService; // singleton instance
     const config = {};
@@ -35,11 +35,11 @@ describe('CaddyService Cloudflare policy injection', () => {
     expect(issuer.challenges.dns).toBeDefined();
     expect(issuer.challenges.dns.provider).toBeDefined();
     expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CF_API_TOKEN}');
   });
 
   test('ensureCloudflarePolicy is a no-op when token missing', () => {
-    delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.CF_API_TOKEN;
 
     const service = caddyService;
     const config = {};

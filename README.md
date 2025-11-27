@@ -400,7 +400,7 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint (use `http://caddy:2019` in Docker, `http://localhost:2019` for local dev) | No |
-| `CLOUDFLARE_API_TOKEN` | - | Cloudflare API token used for DNS-01 challenges when issuing certificates via Cloudflare DNS. Set this to enable Cloudflare DNS challenge support in Caddy and to surface the Cloudflare option in the frontend UI. | No |
+| `CF_API_TOKEN` | - | Cloudflare API token used for DNS-01 challenges when issuing certificates via Cloudflare DNS. Set this to enable Cloudflare DNS challenge support in Caddy and to surface the Cloudflare option in the frontend UI. | No |
 
 ### Frontend Environment Variables
 
@@ -497,14 +497,14 @@ You can enable Cloudflare DNS-01 challenge support so Caddy can obtain/renew cer
 How to enable:
 
 - Create a Cloudflare API token with permissions to edit DNS zones for the domains you plan to manage.
-- Set the `CLOUDFLARE_API_TOKEN` environment variable for the `backend` service and rebuild the Caddy image with the Cloudflare DNS plugin (the repository includes a Caddy build that already contains the Cloudflare module in the Docker configuration).
+- Set the `CF_API_TOKEN` environment variable for the `backend` service and rebuild the Caddy image with the Cloudflare DNS plugin (the repository includes a Caddy build that already contains the Cloudflare module in the Docker configuration).
 
 Example `docker-compose` snippet (add to your backend service or `.env` file):
 
 ```yaml
 backend:
   environment:
-    - CLOUDFLARE_API_TOKEN=your_cloudflare_api_token_here
+    - CF_API_TOKEN=your_cloudflare_api_token_here
 ```
 
 Notes:

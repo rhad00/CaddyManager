@@ -14,18 +14,18 @@ const { Proxy } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
 
 describe('CaddyService integration - Cloudflare policy injection on add/update', () => {
-  const originalToken = process.env.CLOUDFLARE_API_TOKEN;
+  const originalToken = process.env.CF_API_TOKEN;
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   afterEach(() => {
-    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+    process.env.CF_API_TOKEN = originalToken;
   });
 
   test('addProxy injects Cloudflare policy when token present and proxy ssl_type=cloudflare', async () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'itoken';
+    process.env.CF_API_TOKEN = 'itoken';
 
     // Mock getConfig initial call
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [] } } } } };
@@ -57,11 +57,11 @@ describe('CaddyService integration - Cloudflare policy injection on add/update',
     expect(Array.isArray(policy.issuers)).toBe(true);
     const issuer = policy.issuers[0];
     expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CF_API_TOKEN}');
   });
 
   test('updateProxy injects Cloudflare policy when ssl_type=cloudflare', async () => {
-    process.env.CLOUDFLARE_API_TOKEN = 'itoken';
+    process.env.CF_API_TOKEN = 'itoken';
 
     // Mock getConfig for updateProxy
     const baseConfig = { apps: { http: { servers: { srv0: { routes: [ {}, {} ] } } } } };

@@ -323,7 +323,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             >
               <option value="acme">Let's Encrypt (ACME)</option>
               <option value="cloudflare">
-                Let's Encrypt via Cloudflare DNS {!features.cloudflare ? '(Requires CLOUDFLARE_API_TOKEN)' : ''}
+                Let's Encrypt via Cloudflare DNS {!features.cloudflare ? '(Requires CF_API_TOKEN)' : ''}
               </option>
               <option value="custom">Custom Certificate</option>
               <option value="none">None</option>
@@ -332,10 +332,10 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
           {sslType === 'cloudflare' && (
             <div className="mt-2 text-sm text-gray-500">
-              Cloudflare DNS challenge selected. Ensure the server has `CLOUDFLARE_API_TOKEN` set so Caddy can use Cloudflare to complete ACME challenges.
+              Cloudflare DNS challenge selected. Ensure the server has `CF_API_TOKEN` set so Caddy can use Cloudflare to complete ACME challenges.
               {!features.cloudflare && (
                 <span className="block mt-1 text-yellow-600 font-medium">
-                  Note: CLOUDFLARE_API_TOKEN is not detected on the backend. Ensure it is set for the Caddy service.
+                  Note: CF_API_TOKEN is not detected on the backend. Ensure it is set for the Caddy service.
                 </span>
               )}
             </div>

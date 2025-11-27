@@ -8,7 +8,7 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const cloudflareEnabled = !!process.env.CLOUDFLARE_API_TOKEN;
+    const cloudflareEnabled = !!process.env.CF_API_TOKEN;
     res.status(200).json({ success: true, features: { cloudflare: cloudflareEnabled } });
   } catch (err) {
     console.error('Failed to fetch features:', err);

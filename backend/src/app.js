@@ -100,11 +100,11 @@ const startServer = async () => {
       process.exit(1);
     }
 
-    // Warn if CLOUDFLARE_API_TOKEN is not set — helpful for deployments
+    // Warn if CF_API_TOKEN is not set — helpful for deployments
     // where Caddy has the token but the backend was not given it.
-    if (!process.env.CLOUDFLARE_API_TOKEN) {
-      console.warn('CLOUDFLARE_API_TOKEN is not set in the backend environment.');
-      console.warn('If you intend to use Cloudflare DNS challenges, set CLOUDFLARE_API_TOKEN for the backend (for example in docker-compose or .env).');
+    if (!process.env.CF_API_TOKEN) {
+      console.warn('CF_API_TOKEN is not set in the backend environment.');
+      console.warn('If you intend to use Cloudflare DNS challenges, set CF_API_TOKEN for the backend (for example in docker-compose or .env).');
     }
 
     // Start listening
