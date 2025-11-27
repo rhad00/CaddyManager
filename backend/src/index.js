@@ -3,6 +3,7 @@ const { initializeAdmin } = require('./services/setupService');
 const templateService = require('./services/templateService');
 const backupService = require('./services/backupService');
 const metricsService = require('./services/metricsService');
+const migrationService = require('./services/migrationService');
 const { app, startServer } = require('./app');
 
 // Update app.js to include the routes
@@ -11,9 +12,13 @@ const { app, startServer } = require('./app');
 // Initialize database, admin user, and default templates
 const initialize = async () => {
   try {
-    // Sync database models
-    await sequelize.sync({ alter: true });
+    // Sync database models - only create tables if they don't exist
+    // Use migrations for schema changes instead of alter: true
+    await sequelize.sync();
     console.log('Database synchronized');
+
+    // Run any pending migrations
+    await migrationService.runMigrations();
 
     // Initialize admin user
     const adminInitialized = await initializeAdmin();
