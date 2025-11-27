@@ -17,6 +17,8 @@ services:
       - caddy_net
     env_file:
       - .env
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
 
   backend:
     build:

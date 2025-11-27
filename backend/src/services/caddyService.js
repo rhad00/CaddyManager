@@ -52,6 +52,7 @@ class CaddyService {
             dns: {
               provider: {
                 name: 'cloudflare',
+                // Cloudflare DNS provider expects 'api_token' field
                 // Use env placeholder so token is read from Caddy's environment
                 api_token: '{env.CLOUDFLARE_API_TOKEN}'
               }
