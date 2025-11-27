@@ -42,7 +42,7 @@ const App = () => {
             path="/users"
             element={
               <ProtectedRoute>
-                <Users />
+                <Dashboard initialTab="users" />
               </ProtectedRoute>
             }
           />
