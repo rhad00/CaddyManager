@@ -26,13 +26,16 @@ describe('CaddyService Cloudflare policy injection', () => {
 
     const p = policies.find(pol => Array.isArray(pol.subjects) && pol.subjects.includes('example.com'));
     expect(p).toBeDefined();
-    expect(p.issuer).toBeDefined();
-    expect(p.issuer.module).toBe('acme');
-    expect(p.issuer.challenges).toBeDefined();
-    expect(p.issuer.challenges.dns).toBeDefined();
-    expect(p.issuer.challenges.dns.provider).toBeDefined();
-    expect(p.issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(p.issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(p.issuers).toBeDefined();
+    expect(Array.isArray(p.issuers)).toBe(true);
+    expect(p.issuers.length).toBeGreaterThan(0);
+    const issuer = p.issuers[0];
+    expect(issuer.module).toBe('acme');
+    expect(issuer.challenges).toBeDefined();
+    expect(issuer.challenges.dns).toBeDefined();
+    expect(issuer.challenges.dns.provider).toBeDefined();
+    expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
   });
 
   test('ensureCloudflarePolicy is a no-op when token missing', () => {

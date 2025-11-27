@@ -312,9 +312,9 @@ class CaddyService {
           zone: "default",
           key: "{http.request.remote.host}",
           events: proxy.rate_limit.requests_per_second,
-          window: "1s"
-        },
-        max_events: proxy.rate_limit.burst
+          window: "1s",
+          max_events: proxy.rate_limit.burst
+        }
       });
     }
 

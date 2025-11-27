@@ -176,8 +176,8 @@ describe('CaddyService', () => {
     const route = caddyService.createRouteFromProxy(proxy);
     expect(route.handle.some(h => h.handler === 'rate_limit')).toBe(true);
     const rl = route.handle.find(h => h.handler === 'rate_limit');
-    expect(rl.rate).toBe(5);
-    expect(rl.burst).toBe(10);
+    expect(rl.rate_limit.events).toBe(5);
+    expect(rl.rate_limit.max_events).toBe(10);
   });
 
   test('createRouteFromProxy sets transport.tls for https upstreams', () => {

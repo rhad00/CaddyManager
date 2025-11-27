@@ -47,7 +47,10 @@ describe('CaddyService /load payload includes Cloudflare policy', () => {
     expect(Array.isArray(payload.apps.tls.automation.policies)).toBe(true);
     const policy = payload.apps.tls.automation.policies.find(p => Array.isArray(p.subjects) && p.subjects.includes('site.example.com'));
     expect(policy).toBeDefined();
-    expect(policy.issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(policy.issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(policy.issuers).toBeDefined();
+    expect(Array.isArray(policy.issuers)).toBe(true);
+    const issuer = policy.issuers[0];
+    expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
   });
 });

@@ -53,8 +53,11 @@ describe('CaddyService integration - Cloudflare policy injection on add/update',
     expect(cfg.apps.tls).toBeDefined();
     expect(cfg.apps.tls.automation.policies.length).toBeGreaterThan(0);
     const policy = cfg.apps.tls.automation.policies[0];
-    expect(policy.issuer.challenges.dns.provider.name).toBe('cloudflare');
-    expect(policy.issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
+    expect(policy.issuers).toBeDefined();
+    expect(Array.isArray(policy.issuers)).toBe(true);
+    const issuer = policy.issuers[0];
+    expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
+    expect(issuer.challenges.dns.provider.api_token).toBe('{env.CLOUDFLARE_API_TOKEN}');
   });
 
   test('updateProxy injects Cloudflare policy when ssl_type=cloudflare', async () => {
