@@ -494,23 +494,95 @@ npm run dev
 
 You can enable Cloudflare DNS-01 challenge support so Caddy can obtain/renew certificates using Cloudflare's DNS API. When enabled, the frontend UI will show a `Cloudflare DNS` option in the SSL type dropdown for proxies.
 
-How to enable:
+#### Important: API Token vs API Key
 
-- Create a Cloudflare API token with permissions to edit DNS zones for the domains you plan to manage.
-- Set the `CF_API_TOKEN` environment variable for the `backend` service and rebuild the Caddy image with the Cloudflare DNS plugin (the repository includes a Caddy build that already contains the Cloudflare module in the Docker configuration).
+**⚠️ CRITICAL:** Caddy's Cloudflare DNS provider **only supports API Tokens**, not the legacy Global API Keys.
 
-Example `docker-compose` snippet (add to your backend service or `.env` file):
+**Authentication Methods Comparison:**
+
+| Method | Caddy Support | Traefik Support | Security | Recommended |
+|--------|---------------|-----------------|----------|-------------|
+| **API Token** (Modern) | ✅ Yes | ✅ Yes | ✅ Scoped permissions | ✅ **Use This** |
+| **Global API Key** (Legacy) | ❌ No | ✅ Yes | ⚠️ Full account access | ❌ Don't Use |
+
+**Why This Matters:**
+- If you're migrating from Traefik or another reverse proxy that uses `CF_API_KEY` + `CF_API_EMAIL`, you **must** generate a new API Token
+- Using a Global API Key will result in the error: `Invalid format for Authorization header`
+- Caddy uses the `libdns/cloudflare` library which explicitly does not support legacy API keys
+
+#### How to Enable Cloudflare DNS Challenge
+
+**Step 1: Generate a Cloudflare API Token**
+
+1. Go to https://dash.cloudflare.com/profile/api-tokens
+2. Click **"Create Token"**
+3. Use the **"Edit zone DNS"** template
+4. Configure permissions:
+   - **Zone - Zone - Read** (for all zones)
+   - **Zone - DNS - Edit** (for all zones OR specific zones you want to manage)
+5. Click **"Continue to summary"** → **"Create Token"**
+6. **COPY THE TOKEN IMMEDIATELY** (40 characters, shown only once)
+
+**Step 2: Set the Environment Variable**
+
+Add the API token to your `.env` file or docker-compose configuration:
+
+```bash
+# .env file
+CF_API_TOKEN=your_40_character_api_token_here
+```
+
+Or in `docker-compose.yml`:
 
 ```yaml
 backend:
   environment:
-    - CF_API_TOKEN=your_cloudflare_api_token_here
+    - CF_API_TOKEN=your_40_character_api_token_here
+
+caddy:
+  environment:
+    - CF_API_TOKEN=your_40_character_api_token_here
 ```
 
-Notes:
-- The backend exposes a small `GET /api/features` endpoint used by the frontend to detect whether Cloudflare support is available. If the token is present in the environment, the frontend will surface the Cloudflare option automatically.
-- Treat `ssl_type: cloudflare` the same as `acme` for certificate issuance; the actual DNS challenge handling is performed by Caddy using the token you provide.
-- After enabling Cloudflare, create or update a proxy and choose the `Cloudflare DNS` SSL option for automatic certificate issuance.
+**Step 3: Restart Services**
+
+```bash
+docker-compose restart caddy backend
+```
+
+#### Verification
+
+After setting up the API token:
+
+1. The frontend UI will automatically show the `Cloudflare DNS` option in the SSL type dropdown
+2. When creating/editing a proxy, select `Cloudflare DNS` as the SSL type
+3. Caddy will use DNS-01 challenge to obtain certificates automatically
+4. Monitor logs for successful certificate acquisition:
+   ```bash
+   docker-compose logs -f caddy
+   ```
+
+#### Troubleshooting
+
+**Error: `Invalid format for Authorization header`**
+- **Cause:** You're using a Global API Key instead of an API Token
+- **Solution:** Generate a new API Token following the steps above
+
+**Error: `timed out waiting for record to fully propagate`**
+- **Cause:** DNS resolver caching or network issues
+- **Solution:** Add custom DNS resolvers in your Caddy configuration (e.g., `1.1.1.1`)
+
+**Error: `expected 1 zone, got 0`**
+- **Cause:** Domain not publicly resolvable or incorrect token permissions
+- **Solution:** Verify domain is publicly accessible and token has correct zone permissions
+
+#### Notes
+
+- The backend exposes a `GET /api/features` endpoint to detect Cloudflare support availability
+- If `CF_API_TOKEN` is present in the environment, the frontend will surface the Cloudflare option automatically
+- Treat `ssl_type: cloudflare` the same as `acme` for certificate issuance
+- The actual DNS challenge handling is performed by Caddy using the token you provide
+- API Tokens are more secure than Global API Keys as they have scoped permissions and can be revoked independently
 
 
 - [Deployment Guide](./docs/DEPLOYMENT.md) - Complete deployment and troubleshooting guide
