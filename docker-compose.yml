@@ -18,7 +18,7 @@ services:
     env_file:
       - .env
     environment:
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CF_API_TOKEN=${CF_API_TOKEN}
 
   backend:
     build:
@@ -34,7 +34,7 @@ services:
       - DB_TYPE=${DB_TYPE:-sqlite}
       - SQLITE_PATH=${SQLITE_PATH:-/app/data/caddymanager.db}
       - CADDY_API_URL=${CADDY_API_URL:-http://caddy:2019}
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET:-changeme_in_production_29341294612398764231987446}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - LOG_LEVEL=${LOG_LEVEL:-info}
