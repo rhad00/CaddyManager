@@ -308,12 +308,12 @@ class CaddyService {
     if (proxy.rate_limit && proxy.rate_limit.enabled) {
       handlers.push({
         handler: "rate_limit",
-        rate_limit: {
-          zone: "default",
-          key: "{http.request.remote.host}",
-          events: proxy.rate_limit.requests_per_second,
-          window: "1s",
-          max_events: proxy.rate_limit.burst
+        rate_limits: {
+          default: {
+            key: "{http.request.remote.host}",
+            window: "1s",
+            max_events: proxy.rate_limit.burst || proxy.rate_limit.requests_per_second
+          }
         }
       });
     }
