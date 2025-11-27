@@ -9,6 +9,9 @@ describe('Auth Endpoints', () => {
     let csrfToken;
 
     beforeAll(async () => {
+        // Ensure clean state - delete any existing test user
+        await User.destroy({ where: { email: 'test@example.com' } });
+        
         // Create a test user
         // Note: User model hook will hash the password
         testUser = await User.create({
@@ -25,6 +28,13 @@ describe('Auth Endpoints', () => {
         // Get CSRF token
         const res = await agent.get('/api/csrf-token');
         csrfToken = res.body.csrfToken;
+    });
+
+    afterAll(async () => {
+        // Clean up test user
+        if (testUser) {
+            await User.destroy({ where: { id: testUser.id } });
+        }
     });
 
     describe('POST /api/auth/login', () => {

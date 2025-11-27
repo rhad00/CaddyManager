@@ -1,3 +1,7 @@
+// Set test environment to use in-memory database
+process.env.SQLITE_PATH = ':memory:';
+process.env.NODE_ENV = 'test';
+
 const { sequelize } = require('../src/config/database');
 
 beforeAll(async () => {

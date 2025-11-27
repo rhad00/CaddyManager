@@ -6,6 +6,20 @@ const path = require('path');
 jest.mock('axios');
 jest.mock('child_process');
 
+// Mock the models to avoid database dependencies
+jest.mock('../../src/models', () => ({
+  Certificate: {},
+  CertificateAuthority: {},
+  Proxy: {},
+  User: {},
+  Template: {},
+  Header: {},
+  Middleware: {},
+  Backup: {},
+  AuditLog: {},
+  Metric: {}
+}));
+
 const certificateService = require('../../src/services/certificateService');
 
 describe('CertificateService real tests', () => {
