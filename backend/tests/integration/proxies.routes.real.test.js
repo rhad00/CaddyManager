@@ -11,9 +11,21 @@ jest.mock('../../src/models/proxy', () => ({
 
 jest.mock('../../src/models/header', () => ({ create: jest.fn(), destroy: jest.fn() }));
 jest.mock('../../src/models/middleware', () => ({ create: jest.fn(), destroy: jest.fn() }));
+
+// Mock the models index to prevent setupAssociations from running
+jest.mock('../../src/models', () => ({
+  GitRepository: { findAll: jest.fn() },
+  Proxy: { findAll: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
+  User: {},
+  Header: {},
+  Middleware: {},
+  sequelize: {}
+}));
+
 jest.mock('../../src/services/caddyService', () => ({ addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) }));
 jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
+jest.mock('../../src/services/gitService', () => ({ commitConfigChange: jest.fn().mockResolvedValue(null) }));
 
 const Proxy = require('../../src/models/proxy');
 const Header = require('../../src/models/header');
