@@ -40,11 +40,16 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme123}
+      - ENABLE_DOCKER_DISCOVERY=${ENABLE_DOCKER_DISCOVERY:-false}
+      - ENABLE_K8S_DISCOVERY=${ENABLE_K8S_DISCOVERY:-false}
+      - DOCKER_LABEL_PREFIX=${DOCKER_LABEL_PREFIX:-caddymanager}
+      - AUTO_REMOVE_STOPPED=${AUTO_REMOVE_STOPPED:-false}
     volumes:
       - backend_data:/app/data
       - backend_logs:/app/logs
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - caddy_net
 

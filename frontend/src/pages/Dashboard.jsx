@@ -6,6 +6,8 @@ import BackupManagement from './BackupManagement';
 import MetricsDashboard from './MetricsDashboard';
 import AuditLogViewer from './AuditLogViewer';
 import Users from './Users';
+import DiscoveredServicesManagement from './DiscoveredServicesManagement';
+import GitIntegration from './GitIntegration';
 import Footer from '../components/Footer';
 
 const Dashboard = ({ initialTab = 'proxies' }) => {
@@ -76,6 +78,26 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                 >
                   Audit Logs
                 </button>
+                <button
+                  onClick={() => setActiveTab('discovery')}
+                  className={`${
+                    activeTab === 'discovery'
+                      ? 'border-indigo-500 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Discovery
+                </button>
+                <button
+                  onClick={() => setActiveTab('git')}
+                  className={`${
+                    activeTab === 'git'
+                      ? 'border-indigo-500 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Git & GitOps
+                </button>
                 {currentUser?.role === 'admin' && (
                   <button
                     onClick={() => setActiveTab('users')}
@@ -116,6 +138,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
           {activeTab === 'backups' && <BackupManagement />}
           {activeTab === 'metrics' && <MetricsDashboard />}
           {activeTab === 'audit' && <AuditLogViewer />}
+          {activeTab === 'discovery' && <DiscoveredServicesManagement />}
+          {activeTab === 'git' && <GitIntegration />}
           {activeTab === 'users' && <Users />}
         </main>
       </div>

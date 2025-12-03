@@ -14,6 +14,8 @@ const backupRoutes = require('./api/backups/routes');
 const metricsRoutes = require('./api/metrics/routes');
 const auditRoutes = require('./api/audit/routes');
 const featuresRoutes = require('./api/features/routes');
+const discoveryRoutes = require('./api/discovery/routes');
+const gitRoutes = require('./api/git/routes');
 
 // Create Express app
 const app = express();
@@ -76,6 +78,8 @@ app.use('/api/backups', backupRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/features', featuresRoutes);
+app.use('/api/discovery', discoveryRoutes);
+app.use('/api/git', gitRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

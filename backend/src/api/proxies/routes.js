@@ -6,6 +6,8 @@ const caddyService = require('../../services/caddyService');
 const securityHeadersService = require('../../services/securityHeadersService');
 const { authMiddleware } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
+const gitService = require('../../services/gitService');
+const { GitRepository } = require('../../models');
 const router = express.Router();
 
 /**
@@ -214,7 +216,29 @@ router.post('/', authMiddleware, async (req, res) => {
       },
       status: 'success'
     }, req);
-    
+
+    // Commit to Git if enabled
+    try {
+      const gitRepos = await GitRepository.findAll({
+        where: { enabled: true, auto_commit: true }
+      });
+
+      for (const repo of gitRepos) {
+        await gitService.commitConfigChange(
+          repo.id,
+          'proxy_create',
+          'proxy',
+          reloadedProxy.id,
+          req.user.id,
+          null,
+          reloadedProxy.toJSON()
+        );
+      }
+    } catch (gitError) {
+      console.error('Git commit error:', gitError);
+      // Don't fail the request if Git commit fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Proxy created successfully',
@@ -250,7 +274,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         { model: Middleware, as: 'middlewares' }
       ]
     });
-    
+
     if (!proxy) {
       await transaction.rollback();
       return res.status(404).json({
@@ -258,7 +282,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
         message: 'Proxy not found'
       });
     }
-    
+
+    // Capture old values for Git history
+    const oldValues = proxy.toJSON();
+
     // Update the proxy
     await proxy.update(req.body, { transaction });
     
@@ -330,7 +357,29 @@ router.put('/:id', authMiddleware, async (req, res) => {
       },
       status: 'success'
     }, req);
-    
+
+    // Commit to Git if enabled
+    try {
+      const gitRepos = await GitRepository.findAll({
+        where: { enabled: true, auto_commit: true }
+      });
+
+      for (const repo of gitRepos) {
+        await gitService.commitConfigChange(
+          repo.id,
+          'proxy_update',
+          'proxy',
+          reloadedProxy.id,
+          req.user.id,
+          oldValues,
+          reloadedProxy.toJSON()
+        );
+      }
+    } catch (gitError) {
+      console.error('Git commit error:', gitError);
+      // Don't fail the request if Git commit fails
+    }
+
     res.status(200).json({
       success: true,
       message: 'Proxy updated successfully',
@@ -359,9 +408,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
-    // Find the proxy
-    const proxy = await Proxy.findByPk(req.params.id);
-    
+    // Find the proxy with all associations
+    const proxy = await Proxy.findByPk(req.params.id, {
+      include: [
+        { model: Header, as: 'headers' },
+        { model: Middleware, as: 'middlewares' }
+      ]
+    });
+
     if (!proxy) {
       await transaction.rollback();
       return res.status(404).json({
@@ -369,7 +423,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         message: 'Proxy not found'
       });
     }
-    
+
+    // Capture proxy data for Git history before deletion
+    const proxyData = proxy.toJSON();
+
     // Delete the proxy from Caddy configuration first
     const caddyResult = await caddyService.deleteProxy(proxy);
     
@@ -402,7 +459,29 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       },
       status: 'success'
     }, req);
-    
+
+    // Commit to Git if enabled
+    try {
+      const gitRepos = await GitRepository.findAll({
+        where: { enabled: true, auto_commit: true }
+      });
+
+      for (const repo of gitRepos) {
+        await gitService.commitConfigChange(
+          repo.id,
+          'proxy_delete',
+          'proxy',
+          proxy.id,
+          req.user.id,
+          proxyData,
+          null
+        );
+      }
+    } catch (gitError) {
+      console.error('Git commit error:', gitError);
+      // Don't fail the request if Git commit fails
+    }
+
     res.status(200).json({
       success: true,
       message: 'Proxy deleted successfully',

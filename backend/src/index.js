@@ -42,6 +42,34 @@ const initialize = async () => {
     const caddyService = require('./services/caddyService');
     await caddyService.initializeConfig();
 
+    // Initialize Docker discovery service if enabled
+    if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {
+      console.log('Docker discovery enabled, initializing...');
+      const dockerDiscoveryService = require('./services/dockerDiscoveryService');
+      const dockerInitialized = await dockerDiscoveryService.initialize();
+      if (dockerInitialized) {
+        await dockerDiscoveryService.startWatching();
+        console.log('Docker discovery service started successfully');
+      } else {
+        console.warn('Docker discovery service failed to initialize');
+      }
+    } else {
+      console.log('Docker discovery is disabled (set ENABLE_DOCKER_DISCOVERY=true to enable)');
+    }
+
+    // Initialize Git service for GitOps and version control
+    console.log('Initializing Git service...');
+    const gitService = require('./services/gitService');
+    await gitService.initialize();
+    console.log('Git service initialized successfully');
+
+    // TODO: Initialize Kubernetes discovery service if enabled
+    // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {
+    //   const k8sDiscoveryService = require('./services/kubernetesDiscoveryService');
+    //   await k8sDiscoveryService.initialize();
+    //   await k8sDiscoveryService.startWatching();
+    // }
+
     // Start the server
     startServer();
   } catch (error) {

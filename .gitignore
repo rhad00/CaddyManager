@@ -63,3 +63,4 @@ backend/config/
 backend/backups/
 *.sh
 docs
+CLAUDE.md
