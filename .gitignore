@@ -63,3 +63,5 @@ backend/config/
 backend/backups/
 *.sh
 docs
+CLAUDE.md
+FEATURE_IMPLEMENTATION.md
