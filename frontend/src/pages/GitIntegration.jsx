@@ -12,7 +12,7 @@ const GitIntegration = () => {
   const [actionMessage, setActionMessage] = useState(null);
   const [showRepoForm, setShowRepoForm] = useState(false);
   const [editingRepo, setEditingRepo] = useState(null);
-  const { token, csrfToken, currentUser } = useAuth();
+  const { token, csrfToken } = useAuth();
 
   const [repoForm, setRepoForm] = useState({
     name: '',
