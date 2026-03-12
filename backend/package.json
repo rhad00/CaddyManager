@@ -32,6 +32,7 @@
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
+    "nodemailer": "^8.0.2",
     "pg": "^8.16.0",
     "sequelize": "^6.37.7",
     "simple-git": "^3.25.0",

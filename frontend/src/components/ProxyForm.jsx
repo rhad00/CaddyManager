@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { get, post, put } from '../utils/api';
 
@@ -230,10 +231,12 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
       // Only call onSave if there's no config preview to show
       if (!configPreview) {
+        toast.success(proxy ? 'Proxy updated' : 'Proxy created');
         onSave(responseData.proxy);
       }
     } catch (error) {
       console.error('Error saving proxy:', error);
+      toast.error(error.message || 'Failed to save proxy');
       setError(error.message || 'Failed to save proxy. Please try again.');
     } finally {
       setLoading(false);

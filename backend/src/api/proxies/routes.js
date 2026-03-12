@@ -165,6 +165,38 @@ router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    const { page, limit } = req.query;
+
+    // If pagination params provided, use paginated query
+    if (page || limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows: proxies } = await Proxy.findAndCountAll({
+        include: [
+          { model: Header, as: 'headers' },
+          { model: Middleware, as: 'middlewares' }
+        ],
+        limit: limitNum,
+        offset,
+        distinct: true,
+        order: [['createdAt', 'DESC']],
+      });
+
+      return res.status(200).json({
+        success: true,
+        proxies,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
+
+    // Default: return all (backward compatible)
     // Get all proxy IDs first
     const proxyIds = await Proxy.findAll({
       attributes: ['id'],

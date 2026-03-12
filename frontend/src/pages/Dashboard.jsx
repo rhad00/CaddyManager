@@ -20,15 +20,20 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow-sm">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-indigo-600 focus:text-white">
+        Skip to content
+      </a>
+      <nav className="bg-white shadow-sm" aria-label="Main navigation">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
               <div className="shrink-0 flex items-center">
                 <h1 className="text-xl font-bold text-indigo-600">CaddyManager</h1>
               </div>
-              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+              <div className="hidden sm:ml-6 sm:flex sm:space-x-8" role="tablist" aria-label="Dashboard sections">
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'proxies'}
                   onClick={() => setActiveTab('proxies')}
                   className={`${
                     activeTab === 'proxies'
@@ -39,6 +44,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Proxies
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'templates'}
                   onClick={() => setActiveTab('templates')}
                   className={`${
                     activeTab === 'templates'
@@ -49,6 +56,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Templates
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'backups'}
                   onClick={() => setActiveTab('backups')}
                   className={`${
                     activeTab === 'backups'
@@ -59,6 +68,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Backup & Restore
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'metrics'}
                   onClick={() => setActiveTab('metrics')}
                   className={`${
                     activeTab === 'metrics'
@@ -69,6 +80,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Metrics
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'audit'}
                   onClick={() => setActiveTab('audit')}
                   className={`${
                     activeTab === 'audit'
@@ -79,6 +92,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Audit Logs
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'discovery'}
                   onClick={() => setActiveTab('discovery')}
                   className={`${
                     activeTab === 'discovery'
@@ -89,6 +104,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                   Discovery
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'git'}
                   onClick={() => setActiveTab('git')}
                   className={`${
                     activeTab === 'git'
@@ -100,6 +117,8 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                 </button>
                 {currentUser?.role === 'admin' && (
                   <button
+                    role="tab"
+                    aria-selected={activeTab === 'users'}
                     onClick={() => setActiveTab('users')}
                     className={`${
                       activeTab === 'users'
@@ -132,7 +151,7 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
       </nav>
 
       <div className="py-10">
-        <main>
+        <main id="main-content" role="tabpanel" aria-label={activeTab}>
           {activeTab === 'proxies' && <ProxyManagement />}
           {activeTab === 'templates' && <TemplateManagement />}
           {activeTab === 'backups' && <BackupManagement />}

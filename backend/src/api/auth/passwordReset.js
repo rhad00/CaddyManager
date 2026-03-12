@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { User } = require('../../models');
 const { logAction } = require('../../services/auditService');
+const { sendPasswordResetEmail } = require('../../services/emailService');
 const { body, validationResult } = require('express-validator');
 const { passwordResetLimiter } = require('../../middleware/rateLimiter');
 
@@ -56,15 +57,12 @@ router.post(
           status: 'success',
         }, req);
 
-        // In production, send email with reset link
-        // For now, we'll return the token in development mode
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Password reset token for ${email}: ${resetToken}`);
-          return res.status(200).json({
-            success: true,
-            message: 'Password reset instructions sent to email',
-            resetToken, // Only in development
-          });
+        // Send password reset email (falls back to console logging if SMTP not configured)
+        try {
+          await sendPasswordResetEmail(email, resetToken);
+        } catch (emailError) {
+          console.error('Failed to send password reset email:', emailError);
+          // Don't fail the request — token is stored and can be resent
         }
       }
 
