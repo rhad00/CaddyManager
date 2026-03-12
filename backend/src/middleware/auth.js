@@ -11,22 +11,31 @@ const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-
 
 /**
  * Authentication middleware to protect routes
- * Verifies the JWT token from the Authorization header
+ * Reads JWT from httpOnly cookie first, falls back to Authorization header
  */
 const authMiddleware = (req, res, next) => {
   try {
-    // Get token from header
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token = null;
+
+    // Prefer httpOnly cookie
+    if (req.cookies && req.cookies.auth_token) {
+      token = req.cookies.auth_token;
+    }
+
+    // Fall back to Authorization header (for API clients)
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
       return res.status(401).json({
         success: false,
         message: 'No token provided'
       });
     }
-    
-    // Extract token
-    const token = authHeader.split(' ')[1];
     
     // Verify token
     const decoded = jwt.verify(token, EFFECTIVE_JWT_SECRET);

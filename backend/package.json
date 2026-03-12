@@ -22,7 +22,7 @@
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "csurf": "^1.11.0",
+    "csrf-csrf": "^4.0.3",
     "dockerode": "^4.0.2",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",

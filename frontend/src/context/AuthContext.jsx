@@ -25,7 +25,9 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchCsrfToken = async () => {
       try {
-        const response = await fetch(`${API_URL}/csrf-token`);
+        const response = await fetch(`${API_URL}/csrf-token`, {
+          credentials: 'include'
+        });
         if (response.ok) {
           const data = await response.json();
           setCsrfToken(data.csrfToken);
@@ -43,6 +45,7 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const response = await fetch(`${API_URL}/auth/me`, {
+            credentials: 'include',
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -78,11 +81,12 @@ export const AuthProvider = ({ children }) => {
         'Content-Type': 'application/json'
       };
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers,
         body: JSON.stringify({ email, password })
       });
@@ -114,12 +118,13 @@ export const AuthProvider = ({ children }) => {
         'Authorization': `Bearer ${token}`
       };
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
-      // Call logout endpoint (optional, as JWT is stateless)
+      // Call logout endpoint to clear httpOnly cookie
       await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
+        credentials: 'include',
         headers
       });
     } catch (error) {

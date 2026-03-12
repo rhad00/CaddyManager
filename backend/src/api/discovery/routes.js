@@ -136,7 +136,7 @@ router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, 
     console.error('Sync discovered service error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error while syncing service'
+      message: 'Server error while syncing service'
     });
   }
 });

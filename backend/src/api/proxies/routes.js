@@ -78,6 +78,48 @@ const validateProxyInput = (body) => {
     }
   }
 
+  // Validate custom headers
+  if (body.headers && Array.isArray(body.headers)) {
+    const validHeaderNameRegex = /^[a-zA-Z0-9\-]+$/;
+    for (const header of body.headers) {
+      if (header.header_name && !validHeaderNameRegex.test(header.header_name)) {
+        return { valid: false, message: `Invalid header name: ${header.header_name}` };
+      }
+      if (header.header_name && header.header_name.length > 256) {
+        return { valid: false, message: `Header name too long: ${header.header_name}` };
+      }
+      if (header.header_value && header.header_value.length > 8192) {
+        return { valid: false, message: 'Header value too long (max 8192 characters)' };
+      }
+    }
+  }
+
+  // Validate middleware configurations
+  if (body.middlewares && Array.isArray(body.middlewares)) {
+    for (const mw of body.middlewares) {
+      // Validate rate limit values
+      if (mw.type === 'rate_limit') {
+        if (mw.requests_per_second !== undefined) {
+          const rps = Number(mw.requests_per_second);
+          if (!Number.isFinite(rps) || rps <= 0 || rps > 100000) {
+            return { valid: false, message: 'Rate limit requests_per_second must be a positive number (max 100000)' };
+          }
+        }
+      }
+
+      // Validate IP filter values
+      if (mw.type === 'ip_filter' && mw.allowed_ips) {
+        const ips = Array.isArray(mw.allowed_ips) ? mw.allowed_ips : [mw.allowed_ips];
+        const ipCidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        for (const ip of ips) {
+          if (!ipCidrRegex.test(ip)) {
+            return { valid: false, message: `Invalid IP address or CIDR range: ${ip}` };
+          }
+        }
+      }
+    }
+  }
+
   return { valid: true };
 };
 
@@ -112,7 +154,7 @@ router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
     res.status(200).json({ success: true, tlsStatus });
   } catch (error) {
     console.error('Recheck TLS error:', error);
-    res.status(500).json({ success: false, message: `Failed to recheck TLS: ${error.message}` });
+    res.status(500).json({ success: false, message: 'Failed to recheck TLS' });
   }
 });
 
@@ -331,7 +373,7 @@ router.post('/', authMiddleware, async (req, res) => {
     console.error('Create proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while creating proxy: ${error.message}` 
+      message: 'Server error while creating proxy' 
     });
   }
 });
@@ -479,7 +521,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     console.error('Update proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while updating proxy: ${error.message}` 
+      message: 'Server error while updating proxy' 
     });
   }
 });
@@ -579,7 +621,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     console.error('Delete proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while deleting proxy: ${error.message}` 
+      message: 'Server error while deleting proxy' 
     });
   }
 });

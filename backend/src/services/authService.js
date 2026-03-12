@@ -64,7 +64,15 @@ const authenticateUser = async (email, password) => {
     
     // Check if account is locked
     if (user.status === 'locked') {
-      return { success: false, message: 'Account is locked' };
+      // Auto-unlock if lockout period has passed (30 minutes)
+      if (user.lockout_until && new Date() > new Date(user.lockout_until)) {
+        user.status = 'active';
+        user.failed_login_attempts = 0;
+        user.lockout_until = null;
+        await user.save();
+      } else {
+        return { success: false, message: 'Account is locked. Please try again later.' };
+      }
     }
     
     // Check password
@@ -77,6 +85,7 @@ const authenticateUser = async (email, password) => {
       // Lock account after 5 failed attempts
       if (user.failed_login_attempts >= 5) {
         user.status = 'locked';
+        user.lockout_until = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
       }
       
       await user.save();

@@ -25,9 +25,13 @@ class GitService {
     this.repoDir = process.env.GIT_REPO_DIR || path.join(__dirname, '../../git-repos');
     this.algorithm = 'aes-256-gcm';
     // Use provided secret or generate one (should be consistent across restarts)
-    this.secretKey = process.env.GIT_SECRET_KEY
-      ? Buffer.from(process.env.GIT_SECRET_KEY, 'hex')
-      : crypto.randomBytes(32);
+    if (process.env.GIT_SECRET_KEY) {
+      this.secretKey = Buffer.from(process.env.GIT_SECRET_KEY, 'hex');
+    } else if (process.env.NODE_ENV === 'production') {
+      throw new Error('GIT_SECRET_KEY is required in production. Generate with: openssl rand -hex 32');
+    } else {
+      this.secretKey = crypto.randomBytes(32);
+    }
 
     this.initialized = false;
   }

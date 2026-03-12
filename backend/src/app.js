@@ -43,33 +43,39 @@ app.use(morgan('dev')); // Request logging
 const { apiLimiter } = require('./middleware/rateLimiter');
 app.use('/api', apiLimiter); // Apply to all API routes
 
-// CSRF Protection
+// CSRF Protection (double-submit cookie pattern)
 const cookieParser = require('cookie-parser');
-const csurf = require('csurf');
+const { doubleCsrf } = require('csrf-csrf');
 
 app.use(cookieParser());
 
-// Configure CSRF
 const isProduction = process.env.NODE_ENV === 'production';
-const csrfProtection = csurf({
-  cookie: {
+const csrfCookieName = isProduction ? '__Host-x-csrf-token' : 'x-csrf-token';
+const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
+  getSecret: () => process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-csrf-secret',
+  getSessionIdentifier: (req) => req.cookies?.auth_token || req.headers?.authorization || 'anonymous',
+  cookieName: csrfCookieName,
+  cookieOptions: {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax'
-  }
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/',
+  },
+  getTokenFromRequest: (req) => req.headers['x-csrf-token'] || req.headers['csrf-token'],
 });
 
 // Apply CSRF protection to all API routes that mutate state
-app.use('/api', csrfProtection);
+app.use('/api', doubleCsrfProtection);
 
 // Endpoint to get CSRF token
 app.get('/api/csrf-token', (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
+  const csrfToken = generateCsrfToken(req, res);
+  res.json({ csrfToken });
 });
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {
-  if (err.code !== 'EBADCSRFTOKEN') return next(err);
+  if (err.code !== 'EBADCSRFTOKEN' && err.message !== 'invalid csrf token' && err.message !== 'misconfigured csrf') return next(err);
   res.status(403).json({
     error: {
       message: 'Invalid CSRF token',
@@ -100,7 +106,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     error: {
-      message: err.message || 'Internal Server Error',
+      message: 'Internal Server Error',
       status: err.status || 500
     }
   });

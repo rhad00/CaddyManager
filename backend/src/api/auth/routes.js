@@ -56,7 +56,17 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
       status: 'success'
     }, req);
 
-    // Return user and token
+    // Set JWT as httpOnly cookie
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('auth_token', result.token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'strict' : 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    // Return user info (token still in body for backward compatibility with API clients)
     res.status(200).json({
       success: true,
       user: result.user,
@@ -77,8 +87,14 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
  * @access Public
  */
 router.post('/logout', (req, res) => {
-  // JWT is stateless, so logout is handled client-side
-  // This endpoint exists for consistency and future extensions
+  // Clear the httpOnly auth cookie
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: '/'
+  });
+
   res.status(200).json({
     success: true,
     message: 'Logout successful'

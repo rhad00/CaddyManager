@@ -255,7 +255,7 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     console.error('Apply template error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while applying template: ${error.message}` 
+      message: 'Server error while applying template' 
     });
   }
 });
