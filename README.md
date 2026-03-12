@@ -750,10 +750,12 @@ Automatically create reverse proxy configurations for your Docker containers usi
 
 When Docker Auto-Discovery is enabled, CaddyManager monitors Docker events and automatically:
 1. Detects containers with `caddymanager.enable=true` label
-2. Creates proxy configuration from container labels
-3. Updates Caddy configuration in real-time
+2. Creates a **disabled** proxy configuration from container labels
+3. Notifies the admin via the Discovery page — no traffic is proxied yet
 4. Optionally removes proxies when containers stop
 5. Applies service templates automatically if specified
+
+> **Important:** Discovered proxies are always created in a **disabled** state. An administrator must review them in the UI and explicitly enable each one. This prevents unexpected exposure of services to the internet.
 
 #### Quick Start
 
@@ -772,20 +774,22 @@ docker-compose restart backend
 
 **Step 2: Label Your Containers**
 
-Add labels to any container you want to proxy:
+Add labels to any container you want CaddyManager to discover:
 
 ```bash
 docker run -d \
   --name my-app \
   --label caddymanager.enable=true \
-  --label caddymanager.domain=myapp.local \
+  --label caddymanager.domain=myapp.example.com \
   --label caddymanager.port=3000 \
   --label caddymanager.ssl=none \
   --network caddy_net \
   my-awesome-app:latest
 ```
 
-**That's it!** The proxy is created automatically at `http://myapp.local`.
+**Step 3: Enable the proxy in CaddyManager UI**
+
+Go to **Discovery** in the sidebar. You will see the container listed with status `disabled`. Review the settings (especially the domain) and click **Enable** to activate it. Only then will Caddy start routing traffic.
 
 #### Available Labels
 
@@ -802,24 +806,44 @@ docker run -d \
 
 #### Docker Compose Integration
 
+For a typical app with a public-facing backend and frontend (DB excluded):
+
 ```yaml
-version: '3.8'
 services:
-  myapp:
-    image: myapp:latest
+  db:
+    image: postgres:16
+    # No caddymanager labels — DB should never be exposed publicly
+    networks:
+      - internal
+
+  backend:
+    image: myapp-backend:latest
     labels:
       caddymanager.enable: "true"
-      caddymanager.domain: "myapp.example.com"
-      caddymanager.port: "8080"
+      caddymanager.domain: "api.example.com"
+      caddymanager.port: "3000"
       caddymanager.ssl: "cloudflare"
-      caddymanager.template: "authelia"
     networks:
-      - caddy_net
+      - internal
+      - caddy_net  # Must be on caddy_net so Caddy can reach it
+
+  frontend:
+    image: myapp-frontend:latest
+    labels:
+      caddymanager.enable: "true"
+      caddymanager.domain: "app.example.com"
+      caddymanager.port: "80"
+      caddymanager.ssl: "cloudflare"
+    networks:
+      - caddy_net  # Must be on caddy_net so Caddy can reach it
 
 networks:
+  internal:    # DB ↔ backend communication, not reachable by Caddy
   caddy_net:
-    external: true
+    external: true  # Shared with the CaddyManager stack
 ```
+
+CaddyManager will detect `backend` and `frontend`, create **disabled** proxies for both, and leave `db` alone. The admin then enables each proxy from the Discovery page.
 
 #### Advanced Configuration
 

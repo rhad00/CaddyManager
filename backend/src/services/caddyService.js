@@ -219,8 +219,10 @@ class CaddyService {
       }
 
       // Filter out duplicate routes and keep track of unique domains
+      // Disabled proxies are excluded from Caddy config
       const uniqueDomains = new Set();
       const uniqueProxies = proxies.filter(proxy => {
+        if (proxy.status != null && proxy.status !== 'active') return false;
         const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
         const domainKey = domains.sort().join(',');
         if (uniqueDomains.has(domainKey)) {
