@@ -2,8 +2,17 @@ const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 require('dotenv').config();
 
-// JWT secret key from environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-development-only';
+// JWT secret key from environment variables (REQUIRED - no fallback for security)
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is required. Set it to a strong random string.');
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  } else {
+    console.warn('WARNING: Using insecure default JWT secret for development only.');
+  }
+}
+const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-in-production';
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '24h';
 
 /**
@@ -18,7 +27,7 @@ const generateToken = (user) => {
       email: user.email,
       role: user.role 
     },
-    JWT_SECRET,
+    EFFECTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRATION }
   );
 };
@@ -30,7 +39,7 @@ const generateToken = (user) => {
  */
 const verifyToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, EFFECTIVE_JWT_SECRET);
   } catch (error) {
     console.error('Token verification failed:', error.message);
     return null;

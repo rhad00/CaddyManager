@@ -450,10 +450,11 @@ class CaddyService {
 
       // Add transport config if using HTTPS
       if (this.shouldUseHTTPSTransport(proxy.upstream_url)) {
+        const skipVerify = proxy.skip_tls_verify !== undefined ? proxy.skip_tls_verify : false;
         reverseProxyHandler.transport = {
           protocol: "http",
           tls: {
-            insecure_skip_verify: true
+            insecure_skip_verify: skipVerify
           }
         };
       }

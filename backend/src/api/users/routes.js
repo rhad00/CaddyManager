@@ -10,7 +10,7 @@ const router = express.Router();
  * @desc Create a new user
  * @access Private (Admin only)
  */
-router.post('/', userValidation, async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin')], userValidation, async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
@@ -61,7 +61,7 @@ router.post('/', userValidation, async (req, res) => {
  * @desc Get all users
  * @access Private (Admin only)
  */
-router.get('/', async (req, res) => {
+router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
     const users = await User.findAll({
       attributes: ['id', 'email', 'role', 'status', 'last_login', 'createdAt', 'updatedAt']

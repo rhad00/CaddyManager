@@ -1,8 +1,13 @@
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-// JWT secret key from environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-development-only';
+// JWT secret key from environment variables (REQUIRED - no fallback for security)
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: JWT_SECRET environment variable is required in production.');
+  process.exit(1);
+}
+const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-in-production';
 
 /**
  * Authentication middleware to protect routes
@@ -24,7 +29,7 @@ const authMiddleware = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     
     // Verify token
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, EFFECTIVE_JWT_SECRET);
     
     // Add user data to request
     req.user = decoded;

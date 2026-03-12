@@ -26,8 +26,17 @@ app.set('trust proxy', 1);
 
 // Set up middleware
 app.use(helmet()); // Security headers
-app.use(cors()); // CORS support
-app.use(express.json()); // Parse JSON bodies
+
+// CORS - restrict to explicit origins
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://localhost:8080']);
+app.use(cors({
+  origin: corsOrigins.length > 0 ? corsOrigins : false,
+  credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with size limit
 app.use(morgan('dev')); // Request logging
 
 // Rate limiting
@@ -41,9 +50,14 @@ const csurf = require('csurf');
 app.use(cookieParser());
 
 // Configure CSRF
-// Note: In a real production environment with a separate frontend, 
-// you might need to adjust cookie settings (secure: true, sameSite: 'strict')
-const csrfProtection = csurf({ cookie: true });
+const isProduction = process.env.NODE_ENV === 'production';
+const csrfProtection = csurf({
+  cookie: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax'
+  }
+});
 
 // Apply CSRF protection to all API routes that mutate state
 app.use('/api', csrfProtection);

@@ -11,6 +11,77 @@ const { GitRepository } = require('../../models');
 const router = express.Router();
 
 /**
+ * Validate a domain name (RFC 1035 compliant, allows wildcards)
+ * @param {string} domain - Domain to validate
+ * @returns {boolean}
+ */
+const isValidDomain = (domain) => {
+  if (!domain || typeof domain !== 'string') return false;
+  // Allow wildcard prefix (*.example.com) and standard domains
+  const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
+  return domainRegex.test(domain) && domain.length <= 253;
+};
+
+/**
+ * Validate an upstream URL (prevents SSRF)
+ * @param {string} url - URL to validate
+ * @returns {{ valid: boolean, message?: string }}
+ */
+const validateUpstreamUrl = (url) => {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, message: 'Upstream URL is required' };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, message: 'Invalid upstream URL format' };
+  }
+
+  // Only allow http and https schemes
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { valid: false, message: 'Upstream URL must use http or https protocol' };
+  }
+
+  // Block file://, ftp://, gopher://, etc.
+  // Block common metadata endpoints (cloud SSRF targets)
+  const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'metadata.internal'];
+  if (blockedHosts.includes(parsed.hostname)) {
+    return { valid: false, message: 'Upstream URL points to a restricted address' };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Validate proxy input (domains and upstream URL)
+ * @param {Object} body - Request body
+ * @returns {{ valid: boolean, message?: string }}
+ */
+const validateProxyInput = (body) => {
+  // Validate domains
+  if (body.domains) {
+    const domains = Array.isArray(body.domains) ? body.domains : [body.domains];
+    for (const domain of domains) {
+      if (!isValidDomain(domain)) {
+        return { valid: false, message: `Invalid domain name: ${domain}` };
+      }
+    }
+  }
+
+  // Validate upstream URL
+  if (body.upstream_url) {
+    const urlCheck = validateUpstreamUrl(body.upstream_url);
+    if (!urlCheck.valid) {
+      return urlCheck;
+    }
+  }
+
+  return { valid: true };
+};
+
+/**
  * @route POST /api/proxies/:id/recheck-tls
  * @desc Re-run TLS verification for a proxy's domains (admin or owner)
  * @access Private
@@ -125,6 +196,13 @@ router.post('/', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
+    // Validate domains and upstream URL
+    const validation = validateProxyInput(req.body);
+    if (!validation.valid) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
     // Format domains consistently as arrays
     const newDomains = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
     const sortedNewDomains = JSON.stringify(newDomains.sort());
@@ -267,6 +345,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
+    // Validate domains and upstream URL
+    const validation = validateProxyInput(req.body);
+    if (!validation.valid) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
     // Find the proxy
     const proxy = await Proxy.findByPk(req.params.id, {
       include: [

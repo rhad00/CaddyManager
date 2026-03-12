@@ -189,6 +189,19 @@ describe('CaddyService', () => {
     const rp = route.handle.find(h => h.handler === 'reverse_proxy');
     expect(rp.transport).toBeDefined();
     expect(rp.transport.tls).toBeDefined();
+    // Default is false (secure by default); set skip_tls_verify on proxy to override
+    expect(rp.transport.tls.insecure_skip_verify).toBe(false);
+  });
+
+  test('createRouteFromProxy respects skip_tls_verify flag', () => {
+    const proxy = {
+      domains: ['secure.example.com'],
+      upstream_url: 'https://secure-upstream:443',
+      skip_tls_verify: true
+    };
+
+    const route = caddyService.createRouteFromProxy(proxy);
+    const rp = route.handle.find(h => h.handler === 'reverse_proxy');
     expect(rp.transport.tls.insecure_skip_verify).toBe(true);
   });
 
