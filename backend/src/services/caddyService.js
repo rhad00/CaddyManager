@@ -82,6 +82,42 @@ class CaddyService {
   }
 
   /**
+   * Ensure Caddy access logging is configured in the given config object.
+   * Writes structured JSON access logs to a file readable by the backend log service.
+   */
+  ensureAccessLogging(config) {
+    try {
+      const logFile = process.env.CADDY_ACCESS_LOG || '/app/logs/access.log';
+
+      // Add server-level log reference
+      config.apps = config.apps || {};
+      config.apps.http = config.apps.http || {};
+      config.apps.http.servers = config.apps.http.servers || {};
+      config.apps.http.servers.srv0 = config.apps.http.servers.srv0 || {};
+      config.apps.http.servers.srv0.logs = {
+        default_logger_name: 'access'
+      };
+
+      // Add top-level logging configuration
+      config.logging = config.logging || {};
+      config.logging.logs = config.logging.logs || {};
+      config.logging.logs.access = {
+        writer: {
+          output: 'file',
+          filename: logFile,
+        },
+        encoder: { format: 'json' },
+        include: ['http.log.access.srv0'],
+      };
+
+      return config;
+    } catch (err) {
+      console.error('Failed to ensure access logging config:', err.message);
+      return config;
+    }
+  }
+
+  /**
    * Ensure config backup directory exists
    */
   async ensureConfigBackupDir() {
@@ -222,6 +258,7 @@ class CaddyService {
       const allDomains = proxies.flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains]);
       const hasCloudflareProxy = proxies.some(p => p.ssl_type === 'cloudflare');
       this.ensureCloudflarePolicy(currentConfig, allDomains, hasCloudflareProxy);
+      this.ensureAccessLogging(currentConfig);
       await this.loadConfig(currentConfig);
 
       // Backup the configuration
@@ -405,12 +442,43 @@ class CaddyService {
       });
     } else {
       // Create the default reverse proxy handler
+      // Determine upstreams: load balancing multi-upstream takes priority over single url
+      let upstreams;
+      let lbPolicy = null;
+
+      if (proxy.load_balancing && proxy.load_balancing.enabled && proxy.load_balancing.upstreams && proxy.load_balancing.upstreams.length > 0) {
+        upstreams = proxy.load_balancing.upstreams.map(u => {
+          const entry = { dial: u.url };
+          if (u.weight !== undefined && u.weight !== null) entry.max_requests = u.weight; // weight maps to max_requests for weighted round-robin
+          return entry;
+        });
+        const policy = proxy.load_balancing.policy || 'round_robin';
+        lbPolicy = { selection_policy: { policy } };
+      } else {
+        upstreams = [{ dial: proxy.upstream_url }];
+      }
+
       reverseProxyHandler = {
         handler: "reverse_proxy",
-        upstreams: [{
-          dial: proxy.upstream_url
-        }]
+        upstreams
       };
+
+      // Add load balancing policy if multiple upstreams
+      if (lbPolicy) {
+        reverseProxyHandler.load_balancing = lbPolicy;
+      }
+
+      // Add active health checks if enabled
+      if (proxy.health_checks && proxy.health_checks.enabled) {
+        reverseProxyHandler.health_checks = {
+          active: {
+            path: proxy.health_checks.path || '/health',
+            interval: proxy.health_checks.interval || '30s',
+            timeout: proxy.health_checks.timeout || '5s',
+            max_fails: proxy.health_checks.max_fails || 3
+          }
+        };
+      }
 
       // Process headers
       if (proxy.headers && proxy.headers.length > 0) {

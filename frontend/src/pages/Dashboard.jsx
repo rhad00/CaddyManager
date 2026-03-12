@@ -8,6 +8,10 @@ import AuditLogViewer from './AuditLogViewer';
 import Users from './Users';
 import DiscoveredServicesManagement from './DiscoveredServicesManagement';
 import GitIntegration from './GitIntegration';
+import LogViewer from './LogViewer';
+import AlertManagement from './AlertManagement';
+import TwoFactorSettings from '../components/TwoFactorSettings';
+import ApiKeyManagement from './ApiKeyManagement';
 import Footer from '../components/Footer';
 
 const Dashboard = ({ initialTab = 'proxies' }) => {
@@ -115,6 +119,42 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
                 >
                   Git & GitOps
                 </button>
+                <button
+                  role="tab"
+                  aria-selected={activeTab === 'logs'}
+                  onClick={() => setActiveTab('logs')}
+                  className={`${
+                    activeTab === 'logs'
+                      ? 'border-indigo-500 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Access Logs
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={activeTab === 'alerts'}
+                  onClick={() => setActiveTab('alerts')}
+                  className={`${
+                    activeTab === 'alerts'
+                      ? 'border-indigo-500 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Alerts
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={activeTab === 'account'}
+                  onClick={() => setActiveTab('account')}
+                  className={`${
+                    activeTab === 'account'
+                      ? 'border-indigo-500 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  My Account
+                </button>
                 {currentUser?.role === 'admin' && (
                   <button
                     role="tab"
@@ -159,6 +199,27 @@ const Dashboard = ({ initialTab = 'proxies' }) => {
           {activeTab === 'audit' && <AuditLogViewer />}
           {activeTab === 'discovery' && <DiscoveredServicesManagement />}
           {activeTab === 'git' && <GitIntegration />}
+          {activeTab === 'logs' && (
+            <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+              <LogViewer />
+            </div>
+          )}
+          {activeTab === 'alerts' && (
+            <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+              <AlertManagement />
+            </div>
+          )}
+          {activeTab === 'account' && (
+            <div className="max-w-2xl mx-auto sm:px-6 lg:px-8 space-y-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6">My Account</h2>
+                <TwoFactorSettings />
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <ApiKeyManagement />
+              </div>
+            </div>
+          )}
           {activeTab === 'users' && <Users />}
         </main>
       </div>

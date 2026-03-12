@@ -78,6 +78,10 @@ const initialize = async () => {
     await gitService.initialize();
     console.log('Git service initialized successfully');
 
+    // Start alert scheduler
+    const { startAlertScheduler } = require('./services/alertService');
+    startAlertScheduler(15); // check every 15 minutes
+
     // TODO: Initialize Kubernetes discovery service if enabled
     // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {
     //   const k8sDiscoveryService = require('./services/kubernetesDiscoveryService');

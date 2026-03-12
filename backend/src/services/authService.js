@@ -33,6 +33,26 @@ const generateToken = (user) => {
 };
 
 /**
+ * Generate a short-lived TOTP session token (5 min) used as a challenge ticket.
+ */
+const generateTotpSession = (userId) => {
+  return jwt.sign({ sub: userId, purpose: 'totp_challenge' }, EFFECTIVE_JWT_SECRET, { expiresIn: '5m' });
+};
+
+/**
+ * Verify a TOTP session token. Returns userId if valid, null otherwise.
+ */
+const verifyTotpSession = (token) => {
+  try {
+    const payload = jwt.verify(token, EFFECTIVE_JWT_SECRET);
+    if (payload.purpose !== 'totp_challenge') return null;
+    return payload.sub;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Verify a JWT token
  * @param {String} token - JWT token
  * @returns {Object|null} Decoded token payload or null if invalid
@@ -93,6 +113,15 @@ const authenticateUser = async (email, password) => {
       return { success: false, message: 'Invalid password' };
     }
     
+    // If 2FA is enabled, issue a challenge ticket instead of the full token
+    if (user.totp_enabled) {
+      // Reset failure counter but don't update last_login yet
+      user.failed_login_attempts = 0;
+      await user.save();
+      const totpSession = generateTotpSession(user.id);
+      return { success: true, require_2fa: true, totp_session: totpSession };
+    }
+
     // Reset failed login attempts and update last login
     user.failed_login_attempts = 0;
     user.last_login = new Date();
@@ -120,5 +149,7 @@ const authenticateUser = async (email, password) => {
 module.exports = {
   generateToken,
   verifyToken,
+  generateTotpSession,
+  verifyTotpSession,
   authenticateUser
 };

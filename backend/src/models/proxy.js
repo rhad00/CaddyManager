@@ -78,6 +78,18 @@ const Proxy = sequelize.define('Proxy', {
     defaultValue: null,
     comment: 'Path routing configuration: {enabled: boolean, routes: [{path: string, upstream_url: string}]}'
   },
+  load_balancing: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Load balancing config: {enabled: boolean, policy: "round_robin"|"least_conn"|"ip_hash"|"random"|"first", upstreams: [{url: string, weight?: number}]}'
+  },
+  health_checks: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    comment: 'Active health check config: {enabled: boolean, path: string, interval: string, timeout: string, max_fails: number}'
+  },
   caddy_route_index: {
     type: DataTypes.INTEGER,
     allowNull: true

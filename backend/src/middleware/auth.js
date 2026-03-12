@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // JWT secret key from environment variables (REQUIRED - no fallback for security)
@@ -10,58 +11,81 @@ if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-in-production';
 
 /**
- * Authentication middleware to protect routes
- * Reads JWT from httpOnly cookie first, falls back to Authorization header
+ * Lazily loads ApiKey model to avoid circular-require issues at startup.
  */
-const authMiddleware = (req, res, next) => {
-  try {
-    let token = null;
+let _ApiKey;
+const getApiKey = () => {
+  if (!_ApiKey) _ApiKey = require('../models').ApiKey;
+  return _ApiKey;
+};
 
-    // Prefer httpOnly cookie
+/**
+ * Authentication middleware to protect routes.
+ * Priority: httpOnly cookie → Bearer token → X-API-Key header → ?token query param (SSE).
+ */
+const authMiddleware = async (req, res, next) => {
+  try {
+    // ── 1. X-API-Key header ───────────────────────────────────────────────
+    const rawApiKey = req.headers['x-api-key'];
+    if (rawApiKey) {
+      const ApiKey = getApiKey();
+      const keyHash = crypto.createHash('sha256').update(rawApiKey).digest('hex');
+      const apiKey = await ApiKey.findOne({ where: { key_hash: keyHash, enabled: true } });
+
+      if (!apiKey) {
+        return res.status(401).json({ success: false, message: 'Invalid API key' });
+      }
+      if (apiKey.expires_at && new Date() > new Date(apiKey.expires_at)) {
+        return res.status(401).json({ success: false, message: 'API key expired' });
+      }
+
+      // Update last_used_at asynchronously (don't block the request)
+      apiKey.update({ last_used_at: new Date() }).catch(() => {});
+
+      // Map API key permissions to a req.user-like object
+      const perms = apiKey.permissions || ['read'];
+      req.user = {
+        id: apiKey.created_by,
+        // Use 'admin' role if key has admin permission, else 'read-only'
+        role: perms.includes('admin') ? 'admin' : (perms.includes('write') ? 'admin' : 'read-only'),
+        api_key_id: apiKey.id,
+        api_key_permissions: perms,
+      };
+      return next();
+    }
+
+    // ── 2. JWT (cookie → Authorization header → ?token query param) ───────
+    let token = null;
     if (req.cookies && req.cookies.auth_token) {
       token = req.cookies.auth_token;
     }
-
-    // Fall back to Authorization header (for API clients)
     if (!token) {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         token = authHeader.split(' ')[1];
       }
     }
+    // SSE clients can't set headers; allow ?token= query param
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token provided'
-      });
+      return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    
-    // Verify token
+
     const decoded = jwt.verify(token, EFFECTIVE_JWT_SECRET);
-    
-    // Add user data to request
+    // Reject TOTP challenge tokens from being used as full auth
+    if (decoded.purpose === 'totp_challenge') {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
     req.user = decoded;
-    
-    // Proceed to next middleware
     next();
   } catch (error) {
     console.error('Authentication error:', error.message);
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired'
-      });
-    }
-    
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid token'
-    });
+    return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 };
-
 /**
  * Role-based authorization middleware
  * Checks if the user has the required role

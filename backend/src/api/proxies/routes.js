@@ -78,6 +78,39 @@ const validateProxyInput = (body) => {
     }
   }
 
+  // Validate load balancing configuration
+  if (body.load_balancing && body.load_balancing.enabled) {
+    const validPolicies = ['round_robin', 'least_conn', 'ip_hash', 'random', 'first'];
+    if (body.load_balancing.policy && !validPolicies.includes(body.load_balancing.policy)) {
+      return { valid: false, message: `Invalid load balancing policy. Use one of: ${validPolicies.join(', ')}` };
+    }
+    if (!body.load_balancing.upstreams || !Array.isArray(body.load_balancing.upstreams) || body.load_balancing.upstreams.length < 1) {
+      return { valid: false, message: 'Load balancing requires at least one upstream URL' };
+    }
+    for (const upstream of body.load_balancing.upstreams) {
+      if (!upstream.url) {
+        return { valid: false, message: 'Each load balancing upstream must have a url field' };
+      }
+      const upstreamCheck = validateUpstreamUrl(upstream.url);
+      if (!upstreamCheck.valid) {
+        return { valid: false, message: `Invalid load balancing upstream URL: ${upstream.url}` };
+      }
+    }
+  }
+
+  // Validate health check configuration
+  if (body.health_checks && body.health_checks.enabled) {
+    if (body.health_checks.interval && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.interval)) {
+      return { valid: false, message: 'health_checks.interval must be a duration string e.g. "30s", "1m"' };
+    }
+    if (body.health_checks.timeout && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.timeout)) {
+      return { valid: false, message: 'health_checks.timeout must be a duration string e.g. "5s"' };
+    }
+    if (body.health_checks.max_fails !== undefined && (typeof body.health_checks.max_fails !== 'number' || body.health_checks.max_fails < 1)) {
+      return { valid: false, message: 'health_checks.max_fails must be a positive integer' };
+    }
+  }
+
   // Validate custom headers
   if (body.headers && Array.isArray(body.headers)) {
     const validHeaderNameRegex = /^[a-zA-Z0-9\-]+$/;
@@ -162,6 +195,35 @@ router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
  * @route GET /api/proxies
  * @desc Get all proxies
  * @access Private
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: Proxies
+ *   description: Reverse proxy configuration management
+ *
+ * /proxies:
+ *   get:
+ *     summary: List all proxies
+ *     tags: [Proxies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of proxy objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 proxies:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Proxy'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -265,6 +327,35 @@ router.get('/:id', authMiddleware, async (req, res) => {
  * @route POST /api/proxies
  * @desc Create a new proxy
  * @access Private
+ *
+ * @swagger
+ * /proxies:
+ *   post:
+ *     summary: Create a new proxy
+ *     tags: [Proxies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, domains, upstream_url]
+ *             properties:
+ *               name: { type: string }
+ *               domains: { type: array, items: { type: string } }
+ *               upstream_url: { type: string }
+ *               ssl_type: { type: string, enum: [acme, cloudflare, custom, none] }
+ *               enabled: { type: boolean, default: true }
+ *     responses:
+ *       201:
+ *         description: Proxy created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();

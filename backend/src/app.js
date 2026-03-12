@@ -16,6 +16,10 @@ const auditRoutes = require('./api/audit/routes');
 const featuresRoutes = require('./api/features/routes');
 const discoveryRoutes = require('./api/discovery/routes');
 const gitRoutes = require('./api/git/routes');
+const logsRoutes = require('./api/logs/routes');
+const alertsRoutes = require('./api/alerts/routes');
+const keysRoutes = require('./api/keys/routes');
+const { setupSwagger } = require('./config/swagger');
 
 // Create Express app
 const app = express();
@@ -63,6 +67,9 @@ const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
   },
   getTokenFromRequest: (req) => req.headers['x-csrf-token'] || req.headers['csrf-token'],
 });
+
+// Mount Swagger UI (must be before CSRF middleware, no auth required)
+setupSwagger(app);
 
 // Apply CSRF protection to all API routes that mutate state
 app.use('/api', doubleCsrfProtection);
@@ -117,6 +124,9 @@ apiRouter.use('/audit', auditRoutes);
 apiRouter.use('/features', featuresRoutes);
 apiRouter.use('/discovery', discoveryRoutes);
 apiRouter.use('/git', gitRoutes);
+apiRouter.use('/logs', logsRoutes);
+apiRouter.use('/alerts', alertsRoutes);
+apiRouter.use('/keys', keysRoutes);
 
 app.use('/api/v1', apiRouter);
 app.use('/api', apiRouter); // backward compatible

@@ -94,6 +94,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (response.ok) {
+        // 2FA required — return challenge ticket to Login page
+        if (data.require_2fa) {
+          return { success: true, require_2fa: true, totp_session: data.totp_session };
+        }
         localStorage.setItem('token', data.token);
         setToken(data.token);
         setCurrentUser(data.user);
@@ -146,6 +150,8 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     logout,
+    setToken,
+    setCurrentUser,
     isAuthenticated: !!currentUser
   };
 
