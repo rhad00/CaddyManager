@@ -7,8 +7,30 @@ const { runAlertChecks, sendToChannel } = require('../../services/alertService')
 const router = express.Router();
 const adminOnly = [authMiddleware, roleMiddleware('admin')];
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Alerts
+ *     description: Alert rules and notification channels
+ */
+
 // ── Notification Channels ─────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /alerts/channels:
+ *   get:
+ *     summary: List notification channels
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of notification channels (sensitive fields redacted)
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.get('/channels', authMiddleware, async (req, res) => {
   try {
     const channels = await NotificationChannel.findAll({ order: [['createdAt', 'DESC']] });
@@ -24,6 +46,35 @@ router.get('/channels', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/channels:
+ *   post:
+ *     summary: Create notification channel
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, type, config]
+ *             properties:
+ *               name: { type: string }
+ *               type: { type: string, enum: [email, slack, discord, webhook] }
+ *               config: { type: object }
+ *               enabled: { type: boolean, default: true }
+ *     responses:
+ *       201:
+ *         description: Channel created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.post('/channels', adminOnly, async (req, res) => {
   try {
     const { name, type, config, enabled } = req.body;
@@ -42,6 +93,37 @@ router.post('/channels', adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/channels/{id}:
+ *   put:
+ *     summary: Update notification channel
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               type: { type: string, enum: [email, slack, discord, webhook] }
+ *               config: { type: object }
+ *               enabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Channel updated
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.put('/channels/:id', adminOnly, async (req, res) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
@@ -54,6 +136,26 @@ router.put('/channels/:id', adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/channels/{id}:
+ *   delete:
+ *     summary: Delete notification channel
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Channel deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.delete('/channels/:id', adminOnly, async (req, res) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
@@ -65,7 +167,26 @@ router.delete('/channels/:id', adminOnly, async (req, res) => {
   }
 });
 
-/** Test a notification channel by sending a test message */
+/**
+ * @swagger
+ * /alerts/channels/{id}/test:
+ *   post:
+ *     summary: Send a test notification to a channel
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Test notification sent
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.post('/channels/:id/test', adminOnly, async (req, res) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
@@ -80,6 +201,21 @@ router.post('/channels/:id/test', adminOnly, async (req, res) => {
 
 // ── Alert Rules ───────────────────────────────────────────────────────────────
 
+/**
+ * @swagger
+ * /alerts/rules:
+ *   get:
+ *     summary: List alert rules
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of alert rules
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.get('/rules', authMiddleware, async (req, res) => {
   try {
     const rules = await AlertRule.findAll({ order: [['createdAt', 'DESC']] });
@@ -89,6 +225,36 @@ router.get('/rules', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/rules:
+ *   post:
+ *     summary: Create alert rule
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, condition_type]
+ *             properties:
+ *               name: { type: string }
+ *               condition_type: { type: string, enum: [cert_expiry, upstream_down, error_rate, no_traffic] }
+ *               threshold: { type: number }
+ *               proxy_id: { type: string, format: uuid }
+ *               channel_ids: { type: array, items: { type: string, format: uuid } }
+ *               cooldown_minutes: { type: integer, default: 60 }
+ *               enabled: { type: boolean, default: true }
+ *     responses:
+ *       201:
+ *         description: Alert rule created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.post('/rules', adminOnly, async (req, res) => {
   try {
     const { name, condition_type, threshold, proxy_id, channel_ids, cooldown_minutes, enabled } = req.body;
@@ -111,6 +277,40 @@ router.post('/rules', adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/rules/{id}:
+ *   put:
+ *     summary: Update alert rule
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               condition_type: { type: string }
+ *               threshold: { type: number }
+ *               proxy_id: { type: string, format: uuid }
+ *               channel_ids: { type: array, items: { type: string } }
+ *               cooldown_minutes: { type: integer }
+ *               enabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Alert rule updated
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.put('/rules/:id', adminOnly, async (req, res) => {
   try {
     const rule = await AlertRule.findByPk(req.params.id);
@@ -123,6 +323,26 @@ router.put('/rules/:id', adminOnly, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /alerts/rules/{id}:
+ *   delete:
+ *     summary: Delete alert rule
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Alert rule deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.delete('/rules/:id', adminOnly, async (req, res) => {
   try {
     const rule = await AlertRule.findByPk(req.params.id);
@@ -134,7 +354,21 @@ router.delete('/rules/:id', adminOnly, async (req, res) => {
   }
 });
 
-/** Manually trigger all alert checks */
+/**
+ * @swagger
+ * /alerts/run:
+ *   post:
+ *     summary: Manually trigger all alert checks
+ *     tags: [Alerts]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Alert checks completed
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.post('/run', adminOnly, async (req, res) => {
   try {
     await runAlertChecks();

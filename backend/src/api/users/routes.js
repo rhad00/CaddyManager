@@ -6,9 +6,34 @@ const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
- * @route POST /api/users
- * @desc Create a new user
- * @access Private (Admin only)
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: User management (admin only)
+ *
+ * /users:
+ *   post:
+ *     summary: Create a new user
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *               role: { type: string, enum: [admin, read-only], default: read-only }
+ *     responses:
+ *       201:
+ *         description: User created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', [authMiddleware, roleMiddleware('admin')], userValidation, async (req, res) => {
   try {
@@ -57,9 +82,28 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], userValidation, asyn
 });
 
 /**
- * @route GET /api/users
- * @desc Get all users
- * @access Private (Admin only)
+ * @swagger
+ * /users:
+ *   get:
+ *     summary: List all users
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 25 }
+ *     responses:
+ *       200:
+ *         description: Array of user objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -107,9 +151,36 @@ router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
 });
 
 /**
- * @route PUT /api/users/:id
- * @desc Update a user (role, status/unlock, password)
- * @access Private (Admin only)
+ * @swagger
+ * /users/{id}:
+ *   put:
+ *     summary: "Update user (role, status, or password)"
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               role: { type: string, enum: [admin, read-only] }
+ *               status: { type: string, enum: [active, locked] }
+ *               password: { type: string, format: password }
+ *     responses:
+ *       200:
+ *         description: User updated
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -167,9 +238,26 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
 });
 
 /**
- * @route DELETE /api/users/:id
- * @desc Delete a user by id
- * @access Private (Admin only)
+ * @swagger
+ * /users/{id}:
+ *   delete:
+ *     summary: Delete a user
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: User deleted
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {

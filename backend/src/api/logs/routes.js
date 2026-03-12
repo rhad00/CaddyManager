@@ -5,17 +5,56 @@ const { getLogs, streamLogs, getLogStats } = require('../../services/logService'
 const router = express.Router();
 
 /**
- * @route GET /api/logs
- * @desc Query access log entries with optional filters
- * @access Private
- * @query {number} limit - Max entries (default 500, max 2000)
- * @query {string} status - HTTP status code filter
- * @query {string} method - HTTP method filter (GET, POST, etc.)
- * @query {string} host - Hostname filter (partial match)
- * @query {string} ip - Remote IP filter (partial match)
- * @query {string} search - Full-text search on URI, host, IP
- * @query {string} from - ISO8601 start time
- * @query {string} to - ISO8601 end time
+ * @swagger
+ * tags:
+ *   name: Logs
+ *   description: Caddy access log viewer
+ *
+ * /logs:
+ *   get:
+ *     summary: Query access log entries
+ *     tags: [Logs]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 500, maximum: 2000 }
+ *         description: "Maximum entries to return (default: 500, max: 2000)"
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *         description: HTTP status code filter
+ *       - in: query
+ *         name: method
+ *         schema: { type: string }
+ *         description: "HTTP method filter (GET, POST, etc.)"
+ *       - in: query
+ *         name: host
+ *         schema: { type: string }
+ *         description: Hostname partial-match filter
+ *       - in: query
+ *         name: ip
+ *         schema: { type: string }
+ *         description: Remote IP partial-match filter
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *         description: "Full-text search on URI, host, IP"
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date-time }
+ *         description: ISO 8601 start time
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date-time }
+ *         description: ISO 8601 end time
+ *     responses:
+ *       200:
+ *         description: Array of access log entries
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -29,18 +68,47 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/logs/stream
- * @desc Server-Sent Events stream of new access log lines (live tail)
- * @access Private (token passed as query param for SSE compatibility)
+ * @swagger
+ * /logs/stream:
+ *   get:
+ *     summary: "Server-Sent Events live log tail"
+ *     description: "Real-time stream of new access log lines via SSE. Pass the JWT as a query parameter since EventSource does not support custom headers."
+ *     tags: [Logs]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         schema: { type: string }
+ *         description: JWT token for SSE authentication
+ *     responses:
+ *       200:
+ *         description: Server-Sent Events stream
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/stream', authMiddleware, (req, res) => {
   streamLogs(req, res);
 });
 
 /**
- * @route GET /api/logs/stats
- * @desc Get log file statistics
- * @access Private
+ * @swagger
+ * /logs/stats:
+ *   get:
+ *     summary: Get access log file statistics
+ *     tags: [Logs]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Log file stats
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/stats', authMiddleware, async (req, res) => {
   try {

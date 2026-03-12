@@ -5,9 +5,50 @@ const { Op } = require('sequelize');
 const router = express.Router();
 
 /**
- * @route GET /api/audit/logs
- * @desc Get audit logs with filtering and pagination
- * @access Private (Admin only)
+ * @swagger
+ * tags:
+ *   name: Audit
+ *   description: Audit log viewer (admin only)
+ *
+ * /audit/logs:
+ *   get:
+ *     summary: List audit logs with filtering and pagination
+ *     tags: [Audit]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *       - in: query
+ *         name: action
+ *         schema: { type: string }
+ *       - in: query
+ *         name: resource
+ *         schema: { type: string }
+ *       - in: query
+ *         name: userId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: Paginated list of audit log entries
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -89,9 +130,24 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
 });
 
 /**
- * @route GET /api/audit/logs/:id
- * @desc Get a specific audit log entry
- * @access Private (Admin only)
+ * @swagger
+ * /audit/logs/{id}:
+ *   get:
+ *     summary: Get a specific audit log entry
+ *     tags: [Audit]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Audit log entry
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -126,9 +182,24 @@ router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req, r
 });
 
 /**
- * @route GET /api/audit/stats
- * @desc Get audit log statistics
- * @access Private (Admin only)
+ * @swagger
+ * /audit/stats:
+ *   get:
+ *     summary: Get audit log statistics
+ *     tags: [Audit]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: startDate
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: endDate
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: Statistics grouped by action, resource, and status
  */
 router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -200,9 +271,17 @@ router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res)
 });
 
 /**
- * @route GET /api/audit/actions
- * @desc Get list of all unique actions
- * @access Private (Admin only)
+ * @swagger
+ * /audit/actions:
+ *   get:
+ *     summary: Get all unique action types in the audit log
+ *     tags: [Audit]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of distinct action strings
  */
 router.get('/actions', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -225,9 +304,17 @@ router.get('/actions', [authMiddleware, roleMiddleware('admin')], async (req, re
 });
 
 /**
- * @route GET /api/audit/resources
- * @desc Get list of all unique resources
- * @access Private (Admin only)
+ * @swagger
+ * /audit/resources:
+ *   get:
+ *     summary: Get all unique resource types in the audit log
+ *     tags: [Audit]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of distinct resource strings
  */
 router.get('/resources', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {

@@ -37,9 +37,23 @@ const validatePemFile = (filePath, expectedType) => {
 };
 
 /**
- * @route GET /api/certificates
- * @desc Get all certificates
- * @access Private
+ * @swagger
+ * tags:
+ *   name: Certificates
+ *   description: TLS certificate management
+ *
+ * /certificates:
+ *   get:
+ *     summary: List all certificates
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of certificate objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -61,9 +75,24 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/certificates/:id
- * @desc Get certificate details
- * @access Private
+ * @swagger
+ * /certificates/{id}:
+ *   get:
+ *     summary: Get certificate details
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate object
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
@@ -92,9 +121,24 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/certificates/domains/:domain
- * @desc Get certificates for a specific domain
- * @access Private
+ * @swagger
+ * /certificates/domains/{domain}:
+ *   get:
+ *     summary: Get certificates covering a specific domain
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: domain
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Array of matching certificates
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/domains/:domain', authMiddleware, async (req, res) => {
   try {
@@ -115,9 +159,35 @@ router.get('/domains/:domain', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/certificates/upload
- * @desc Upload custom certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/upload:
+ *   post:
+ *     summary: Upload a custom certificate and private key
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [certificate, privateKey, name, domains]
+ *             properties:
+ *               certificate:
+ *                 type: string
+ *                 format: binary
+ *               privateKey:
+ *                 type: string
+ *                 format: binary
+ *               name: { type: string }
+ *               domains: { type: string }
+ *     responses:
+ *       201:
+ *         description: Certificate uploaded
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
   { name: 'certificate', maxCount: 1 },
@@ -185,9 +255,24 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
 });
 
 /**
- * @route DELETE /api/certificates/:id
- * @desc Delete a certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/{id}:
+ *   delete:
+ *     summary: Delete a certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -229,9 +314,32 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
 });
 
 /**
- * @route POST /api/certificates/generate
- * @desc Generate a self-signed certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/generate:
+ *   post:
+ *     summary: Generate a self-signed certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, domains]
+ *             properties:
+ *               name: { type: string }
+ *               domains:
+ *                 type: array
+ *                 items: { type: string }
+ *               validityDays: { type: integer, default: 365 }
+ *     responses:
+ *       201:
+ *         description: Self-signed certificate generated
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -280,9 +388,24 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
 });
 
 /**
- * @route POST /api/certificates/:id/renew
- * @desc Renew a certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/{id}/renew:
+ *   post:
+ *     summary: Renew a certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate renewed
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
