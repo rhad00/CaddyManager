@@ -11,11 +11,41 @@ const router = express.Router();
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { source_type, status } = req.query;
+    const { source_type, status, page, limit } = req.query;
 
     const where = {};
     if (source_type) where.source_type = source_type;
     if (status) where.status = status;
+
+    if (page || limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows: services } = await DiscoveredService.findAndCountAll({
+        where,
+        include: [{
+          model: Proxy,
+          as: 'proxy',
+          attributes: ['id', 'name', 'domains', 'upstream_url', 'status']
+        }],
+        order: [['last_seen', 'DESC']],
+        limit: limitNum,
+        offset,
+        distinct: true,
+      });
+
+      return res.status(200).json({
+        success: true,
+        services,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
 
     const services = await DiscoveredService.findAll({
       where,
@@ -136,7 +166,7 @@ router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, 
     console.error('Sync discovered service error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error while syncing service'
+      message: 'Server error while syncing service'
     });
   }
 });

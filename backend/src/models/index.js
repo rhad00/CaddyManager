@@ -12,6 +12,9 @@ const Metric = require('./metric');
 const DiscoveredService = require('./discoveredService');
 const GitRepository = require('./gitRepository');
 const ConfigChange = require('./configChange');
+const AlertRule = require('./alertRule');
+const NotificationChannel = require('./notificationChannel');
+const ApiKey = require('./apiKey');
 
 // Define associations after all models are loaded
 const setupAssociations = () => {
@@ -48,6 +51,10 @@ const setupAssociations = () => {
   // ConfigChange - GitRepository associations
   ConfigChange.belongsTo(GitRepository, { foreignKey: 'git_repository_id', as: 'repository' });
   GitRepository.hasMany(ConfigChange, { foreignKey: 'git_repository_id', as: 'changes' });
+
+  // ApiKey - User associations
+  ApiKey.belongsTo(User, { foreignKey: 'created_by', as: 'owner' });
+  User.hasMany(ApiKey, { foreignKey: 'created_by', as: 'apiKeys' });
 };
 
 // Call setupAssociations after models are defined
@@ -68,4 +75,7 @@ module.exports = {
   DiscoveredService,
   GitRepository,
   ConfigChange,
+  AlertRule,
+  NotificationChannel,
+  ApiKey,
 };

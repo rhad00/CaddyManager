@@ -2,8 +2,17 @@ const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 require('dotenv').config();
 
-// JWT secret key from environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-for-development-only';
+// JWT secret key from environment variables (REQUIRED - no fallback for security)
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is required. Set it to a strong random string.');
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  } else {
+    console.warn('WARNING: Using insecure default JWT secret for development only.');
+  }
+}
+const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-in-production';
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '24h';
 
 /**
@@ -18,9 +27,29 @@ const generateToken = (user) => {
       email: user.email,
       role: user.role 
     },
-    JWT_SECRET,
+    EFFECTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRATION }
   );
+};
+
+/**
+ * Generate a short-lived TOTP session token (5 min) used as a challenge ticket.
+ */
+const generateTotpSession = (userId) => {
+  return jwt.sign({ sub: userId, purpose: 'totp_challenge' }, EFFECTIVE_JWT_SECRET, { expiresIn: '5m' });
+};
+
+/**
+ * Verify a TOTP session token. Returns userId if valid, null otherwise.
+ */
+const verifyTotpSession = (token) => {
+  try {
+    const payload = jwt.verify(token, EFFECTIVE_JWT_SECRET);
+    if (payload.purpose !== 'totp_challenge') return null;
+    return payload.sub;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -30,7 +59,7 @@ const generateToken = (user) => {
  */
 const verifyToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, EFFECTIVE_JWT_SECRET);
   } catch (error) {
     console.error('Token verification failed:', error.message);
     return null;
@@ -55,7 +84,15 @@ const authenticateUser = async (email, password) => {
     
     // Check if account is locked
     if (user.status === 'locked') {
-      return { success: false, message: 'Account is locked' };
+      // Auto-unlock if lockout period has passed (30 minutes)
+      if (user.lockout_until && new Date() > new Date(user.lockout_until)) {
+        user.status = 'active';
+        user.failed_login_attempts = 0;
+        user.lockout_until = null;
+        await user.save();
+      } else {
+        return { success: false, message: 'Account is locked. Please try again later.' };
+      }
     }
     
     // Check password
@@ -68,6 +105,7 @@ const authenticateUser = async (email, password) => {
       // Lock account after 5 failed attempts
       if (user.failed_login_attempts >= 5) {
         user.status = 'locked';
+        user.lockout_until = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
       }
       
       await user.save();
@@ -75,6 +113,15 @@ const authenticateUser = async (email, password) => {
       return { success: false, message: 'Invalid password' };
     }
     
+    // If 2FA is enabled, issue a challenge ticket instead of the full token
+    if (user.totp_enabled) {
+      // Reset failure counter but don't update last_login yet
+      user.failed_login_attempts = 0;
+      await user.save();
+      const totpSession = generateTotpSession(user.id);
+      return { success: true, require_2fa: true, totp_session: totpSession };
+    }
+
     // Reset failed login attempts and update last login
     user.failed_login_attempts = 0;
     user.last_login = new Date();
@@ -102,5 +149,7 @@ const authenticateUser = async (email, password) => {
 module.exports = {
   generateToken,
   verifyToken,
+  generateTotpSession,
+  verifyTotpSession,
   authenticateUser
 };

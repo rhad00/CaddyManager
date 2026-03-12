@@ -25,7 +25,9 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchCsrfToken = async () => {
       try {
-        const response = await fetch(`${API_URL}/csrf-token`);
+        const response = await fetch(`${API_URL}/csrf-token`, {
+          credentials: 'include'
+        });
         if (response.ok) {
           const data = await response.json();
           setCsrfToken(data.csrfToken);
@@ -43,6 +45,7 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const response = await fetch(`${API_URL}/auth/me`, {
+            credentials: 'include',
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -78,11 +81,12 @@ export const AuthProvider = ({ children }) => {
         'Content-Type': 'application/json'
       };
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers,
         body: JSON.stringify({ email, password })
       });
@@ -90,6 +94,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (response.ok) {
+        // 2FA required — return challenge ticket to Login page
+        if (data.require_2fa) {
+          return { success: true, require_2fa: true, totp_session: data.totp_session };
+        }
         localStorage.setItem('token', data.token);
         setToken(data.token);
         setCurrentUser(data.user);
@@ -114,12 +122,13 @@ export const AuthProvider = ({ children }) => {
         'Authorization': `Bearer ${token}`
       };
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
-      // Call logout endpoint (optional, as JWT is stateless)
+      // Call logout endpoint to clear httpOnly cookie
       await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
+        credentials: 'include',
         headers
       });
     } catch (error) {
@@ -141,6 +150,8 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     logout,
+    setToken,
+    setCurrentUser,
     isAuthenticated: !!currentUser
   };
 

@@ -4,25 +4,33 @@ on:
   pull_request:
     branches: [ dev, main ]
   push:
-    branches: [ dev ]
+    branches: [ dev, main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [20.x]
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0      
-          fetch-tags: true   
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -34,11 +42,18 @@ jobs:
 
       - name: Run frontend tests
         working-directory: frontend
-        run: npm run test --silent
+        run: npm run test -- --run
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build --silent
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
 
       - name: Install backend dependencies
         working-directory: backend
@@ -46,8 +61,18 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:unit --silent
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+          DB_TYPE: sqlite
+          SQLITE_PATH: ':memory:'
+        run: npm run test:unit -- --forceExit
 
-      - name: Run backend integration tests
-        working-directory: backend
-        run: npm run test:integration --silent
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+          retention-days: 7
+

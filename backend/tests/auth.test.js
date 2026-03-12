@@ -25,7 +25,7 @@ describe('Auth Endpoints', () => {
     });
 
     beforeEach(async () => {
-        // Get CSRF token
+        // Get CSRF token — with csrf-csrf, the token is set as a cookie and returned in body
         const res = await agent.get('/api/csrf-token');
         csrfToken = res.body.csrfToken;
     });
@@ -41,7 +41,7 @@ describe('Auth Endpoints', () => {
         it('should login successfully with valid credentials', async () => {
             const res = await agent
                 .post('/api/auth/login')
-                .set('CSRF-Token', csrfToken)
+                .set('x-csrf-token', csrfToken)
                 .send({
                     email: 'test@example.com',
                     password: 'Password123!'
@@ -55,7 +55,7 @@ describe('Auth Endpoints', () => {
         it('should fail with invalid credentials', async () => {
             const res = await agent
                 .post('/api/auth/login')
-                .set('CSRF-Token', csrfToken)
+                .set('x-csrf-token', csrfToken)
                 .send({
                     email: 'test@example.com',
                     password: 'WrongPassword'
@@ -68,7 +68,7 @@ describe('Auth Endpoints', () => {
         it('should fail with invalid email format', async () => {
             const res = await agent
                 .post('/api/auth/login')
-                .set('CSRF-Token', csrfToken)
+                .set('x-csrf-token', csrfToken)
                 .send({
                     email: 'invalid-email',
                     password: 'Password123!'

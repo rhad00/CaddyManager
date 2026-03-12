@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import UserForm from '../components/UserForm';
@@ -8,7 +9,6 @@ const Users = () => {
   const { token, csrfToken, currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [targetUserToDelete, setTargetUserToDelete] = useState(null);
 
@@ -18,9 +18,9 @@ const Users = () => {
       const res = await api.get('/users', token);
       const data = await res.json();
       if (res.ok) setUsers(data.users || []);
-      else setError(data.message || 'Failed to load users');
+      else toast.error(data.message || 'Failed to load users');
     } catch {
-      setError('Failed to load users');
+      toast.error('Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -37,11 +37,12 @@ const Users = () => {
       const data = await res.json();
       if (res.ok) {
         setUsers(prev => [data.user, ...prev]);
+        toast.success('User created');
       } else {
-        setError(data.message || 'Failed to create user');
+        toast.error(data.message || 'Failed to create user');
       }
     } catch {
-      setError('Failed to create user');
+      toast.error('Failed to create user');
     }
   };
 
@@ -55,15 +56,46 @@ const Users = () => {
       const res = await api.del(`/users/${id}`, token, csrfToken);
       if (res.ok) {
         setUsers(prev => prev.filter(u => u.id !== id));
+        toast.success('User deleted');
       } else {
         const data = await res.json();
-        setError(data.message || 'Failed to delete user');
+        toast.error(data.message || 'Failed to delete user');
       }
     } catch {
-      setError('Failed to delete user');
+      toast.error('Failed to delete user');
     } finally {
       setConfirmOpen(false);
       setTargetUserToDelete(null);
+    }
+  };
+
+  const handleRoleChange = async (user, newRole) => {
+    try {
+      const res = await api.put(`/users/${user.id}`, { role: newRole }, token, csrfToken);
+      const data = await res.json();
+      if (res.ok) {
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole } : u));
+        toast.success(`Role changed to ${newRole}`);
+      } else {
+        toast.error(data.message || 'Failed to change role');
+      }
+    } catch {
+      toast.error('Failed to change role');
+    }
+  };
+
+  const handleUnlock = async (user) => {
+    try {
+      const res = await api.put(`/users/${user.id}`, { status: 'active' }, token, csrfToken);
+      const data = await res.json();
+      if (res.ok) {
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'active' } : u));
+        toast.success(`Account unlocked for ${user.email}`);
+      } else {
+        toast.error(data.message || 'Failed to unlock account');
+      }
+    } catch {
+      toast.error('Failed to unlock account');
     }
   };
 
@@ -75,7 +107,6 @@ const Users = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="bg-white shadow-sm rounded-md p-6">
         <h2 className="text-2xl font-semibold mb-4">User Management</h2>
-        {error && <div className="text-red-600 mb-2">{error}</div>}
         <UserForm onCreate={handleCreate} />
 
         {loading ? (
@@ -99,9 +130,39 @@ const Users = () => {
                     {users.map(u => (
                       <tr key={u.id}>
                         <td className="px-4 py-3 text-sm text-gray-900">{u.email}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{u.role}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{u.status}</td>
                         <td className="px-4 py-3 text-sm">
+                          {u.id === currentUser.id ? (
+                            <span className="text-gray-700">{u.role}</span>
+                          ) : (
+                            <select
+                              value={u.role}
+                              onChange={(e) => handleRoleChange(u, e.target.value)}
+                              className="text-sm border border-gray-300 rounded px-2 py-1"
+                              aria-label={`Role for ${u.email}`}
+                            >
+                              <option value="admin">admin</option>
+                              <option value="read-only">read-only</option>
+                            </select>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                            u.status === 'active'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {u.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm space-x-2">
+                          {u.status === 'locked' && (
+                            <button
+                              onClick={() => handleUnlock(u)}
+                              className="text-indigo-600 hover:underline"
+                            >
+                              Unlock
+                            </button>
+                          )}
                           {u.id !== currentUser.id && (
                             <button onClick={() => confirmDelete(u)} className="text-red-600 hover:underline">Delete</button>
                           )}

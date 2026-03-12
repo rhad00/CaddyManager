@@ -16,6 +16,10 @@ const auditRoutes = require('./api/audit/routes');
 const featuresRoutes = require('./api/features/routes');
 const discoveryRoutes = require('./api/discovery/routes');
 const gitRoutes = require('./api/git/routes');
+const logsRoutes = require('./api/logs/routes');
+const alertsRoutes = require('./api/alerts/routes');
+const keysRoutes = require('./api/keys/routes');
+const { setupSwagger } = require('./config/swagger');
 
 // Create Express app
 const app = express();
@@ -26,36 +30,61 @@ app.set('trust proxy', 1);
 
 // Set up middleware
 app.use(helmet()); // Security headers
-app.use(cors()); // CORS support
-app.use(express.json()); // Parse JSON bodies
+
+// CORS - restrict to explicit origins
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://localhost:8080']);
+app.use(cors({
+  origin: corsOrigins.length > 0 ? corsOrigins : false,
+  credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with size limit
 app.use(morgan('dev')); // Request logging
 
 // Rate limiting
 const { apiLimiter } = require('./middleware/rateLimiter');
-app.use('/api', apiLimiter); // Apply to all API routes
+app.use('/api', apiLimiter); // Apply to all API routes (covers /api and /api/v1)
 
-// CSRF Protection
+// CSRF Protection (double-submit cookie pattern)
 const cookieParser = require('cookie-parser');
-const csurf = require('csurf');
+const { doubleCsrf } = require('csrf-csrf');
 
 app.use(cookieParser());
 
-// Configure CSRF
-// Note: In a real production environment with a separate frontend, 
-// you might need to adjust cookie settings (secure: true, sameSite: 'strict')
-const csrfProtection = csurf({ cookie: true });
+const isProduction = process.env.NODE_ENV === 'production';
+const csrfCookieName = isProduction ? '__Host-x-csrf-token' : 'x-csrf-token';
+const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
+  getSecret: () => process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-csrf-secret',
+  getSessionIdentifier: (req) => req.cookies?.auth_token || req.headers?.authorization || 'anonymous',
+  cookieName: csrfCookieName,
+  cookieOptions: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    path: '/',
+  },
+  getTokenFromRequest: (req) => req.headers['x-csrf-token'] || req.headers['csrf-token'],
+});
+
+// Mount Swagger UI (must be before CSRF middleware, no auth required)
+setupSwagger(app);
 
 // Apply CSRF protection to all API routes that mutate state
-app.use('/api', csrfProtection);
+app.use('/api', doubleCsrfProtection);
 
 // Endpoint to get CSRF token
-app.get('/api/csrf-token', (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
-});
+const csrfTokenHandler = (req, res) => {
+  const csrfToken = generateCsrfToken(req, res);
+  res.json({ csrfToken });
+};
+app.get('/api/csrf-token', csrfTokenHandler);
+app.get('/api/v1/csrf-token', csrfTokenHandler);
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {
-  if (err.code !== 'EBADCSRFTOKEN') return next(err);
+  if (err.code !== 'EBADCSRFTOKEN' && err.message !== 'invalid csrf token' && err.message !== 'misconfigured csrf') return next(err);
   res.status(403).json({
     error: {
       message: 'Invalid CSRF token',
@@ -64,29 +93,50 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Basic route for health check
+// Basic route for health check (liveness)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/proxies', proxyRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/backups', backupRoutes);
-app.use('/api/metrics', metricsRoutes);
-app.use('/api/audit', auditRoutes);
-app.use('/api/features', featuresRoutes);
-app.use('/api/discovery', discoveryRoutes);
-app.use('/api/git', gitRoutes);
+// Readiness probe — verifies database connectivity
+app.get('/ready', async (req, res) => {
+  try {
+    const dbReady = await testConnection();
+    if (dbReady) {
+      res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+    } else {
+      res.status(503).json({ status: 'not ready', reason: 'database unavailable' });
+    }
+  } catch {
+    res.status(503).json({ status: 'not ready', reason: 'database check failed' });
+  }
+});
+
+// API routes — mounted under both /api (legacy) and /api/v1 (versioned)
+const apiRouter = express.Router();
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/proxies', proxyRoutes);
+apiRouter.use('/templates', templateRoutes);
+apiRouter.use('/users', userRoutes);
+apiRouter.use('/backups', backupRoutes);
+apiRouter.use('/metrics', metricsRoutes);
+apiRouter.use('/audit', auditRoutes);
+apiRouter.use('/features', featuresRoutes);
+apiRouter.use('/discovery', discoveryRoutes);
+apiRouter.use('/git', gitRoutes);
+apiRouter.use('/logs', logsRoutes);
+apiRouter.use('/alerts', alertsRoutes);
+apiRouter.use('/keys', keysRoutes);
+
+app.use('/api/v1', apiRouter);
+app.use('/api', apiRouter); // backward compatible
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     error: {
-      message: err.message || 'Internal Server Error',
+      message: 'Internal Server Error',
       status: err.status || 500
     }
   });

@@ -1,14 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { get } from '../utils/api';
-import TemplateList from '../components/TemplateList';
+import TemplateCreator from '../components/TemplateCreator';
+import toast from 'react-hot-toast';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const TemplateManagement = () => {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [showCreator, setShowCreator] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { token } = useAuth();
+  const { token, csrfToken, currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -35,26 +41,65 @@ const TemplateManagement = () => {
 
   const handleViewTemplate = (template) => {
     setSelectedTemplate(template);
+    setShowCreator(false);
+    setEditingTemplate(null);
+  };
+
+  const handleEdit = (template) => {
+    setEditingTemplate(template);
+    setSelectedTemplate(null);
+    setShowCreator(false);
+  };
+
+  const handleDelete = async (template) => {
+    if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/templates/${template.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, 'x-csrf-token': csrfToken },
+      });
+      const d = await res.json();
+      if (!d.success) throw new Error(d.message);
+      toast.success('Template deleted');
+      fetchTemplates();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleSaved = () => {
+    setShowCreator(false);
+    setEditingTemplate(null);
+    fetchTemplates();
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Service Templates</h1>
+        {isAdmin && !showCreator && !editingTemplate && (
+          <button onClick={() => { setShowCreator(true); setSelectedTemplate(null); setEditingTemplate(null); }}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">
+            + Create Template
+          </button>
+        )}
       </div>
       
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
-          <div className="flex">
-            <div className="shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* Template Creator / Editor */}
+      {(showCreator || editingTemplate) && isAdmin && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">
+            {editingTemplate ? `Edit: ${editingTemplate.name}` : 'Create New Template'}
+          </h2>
+          <TemplateCreator
+            initial={editingTemplate}
+            onSave={handleSaved}
+            onCancel={() => { setShowCreator(false); setEditingTemplate(null); }}
+          />
         </div>
       )}
       
@@ -75,12 +120,18 @@ const TemplateManagement = () => {
                 <h3 className="text-lg font-medium text-indigo-600">{selectedTemplate.name}</h3>
                 <p className="mt-1 text-sm text-gray-500">{selectedTemplate.description}</p>
               </div>
-              <button
-                onClick={() => setSelectedTemplate(null)}
-                className="px-3 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
-              >
-                Back to List
-              </button>
+              <div className="flex gap-2">
+                {isAdmin && (
+                  <button onClick={() => handleEdit(selectedTemplate)}
+                    className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200">
+                    Edit
+                  </button>
+                )}
+                <button onClick={() => setSelectedTemplate(null)}
+                  className="px-3 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800 hover:bg-gray-200">
+                  Back to List
+                </button>
+              </div>
             </div>
             
             <div className="mt-6">
@@ -92,9 +143,9 @@ const TemplateManagement = () => {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -102,9 +153,7 @@ const TemplateManagement = () => {
                         <tr key={index}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              header.header_type === 'request' 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-green-100 text-green-800'
+                              header.header_type === 'request' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
                             }`}>
                               {header.header_type}
                             </span>
@@ -128,9 +177,9 @@ const TemplateManagement = () => {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Configuration</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Configuration</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -138,7 +187,7 @@ const TemplateManagement = () => {
                         <tr key={index}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{middleware.middleware_type}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{middleware.order || 0}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="px-6 py-4 text-sm text-gray-500">
                             <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
                               {JSON.stringify(middleware.configuration, null, 2)}
                             </pre>
@@ -171,9 +220,7 @@ const TemplateManagement = () => {
                           <div className="flex items-center">
                             <span className="text-lg font-medium text-indigo-600">{template.name}</span>
                           </div>
-                          <div className="mt-1 text-sm text-gray-500">
-                            {template.description}
-                          </div>
+                          <div className="mt-1 text-sm text-gray-500">{template.description}</div>
                           <div className="mt-2 flex items-center text-sm text-gray-500">
                             <span className="mr-2">Headers:</span>
                             <span className="px-2 py-1 bg-gray-100 rounded">{template.headers.length}</span>
@@ -181,13 +228,23 @@ const TemplateManagement = () => {
                             <span className="px-2 py-1 bg-gray-100 rounded">{template.middleware.length}</span>
                           </div>
                         </div>
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleViewTemplate(template)}
-                            className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
-                          >
+                        <div className="flex gap-2">
+                          <button onClick={() => handleViewTemplate(template)}
+                            className="px-3 py-1 text-xs font-medium rounded bg-indigo-100 text-indigo-800 hover:bg-indigo-200">
                             View Details
                           </button>
+                          {isAdmin && (
+                            <>
+                              <button onClick={() => handleEdit(template)}
+                                className="px-3 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800 hover:bg-gray-200">
+                                Edit
+                              </button>
+                              <button onClick={() => handleDelete(template)}
+                                className="px-3 py-1 text-xs font-medium rounded bg-red-100 text-red-700 hover:bg-red-200">
+                                Delete
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </li>
@@ -203,3 +260,4 @@ const TemplateManagement = () => {
 };
 
 export default TemplateManagement;
+

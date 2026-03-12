@@ -11,6 +11,152 @@ const { GitRepository } = require('../../models');
 const router = express.Router();
 
 /**
+ * Validate a domain name (RFC 1035 compliant, allows wildcards)
+ * @param {string} domain - Domain to validate
+ * @returns {boolean}
+ */
+const isValidDomain = (domain) => {
+  if (!domain || typeof domain !== 'string') return false;
+  // Allow wildcard prefix (*.example.com) and standard domains
+  const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
+  return domainRegex.test(domain) && domain.length <= 253;
+};
+
+/**
+ * Validate an upstream URL (prevents SSRF)
+ * @param {string} url - URL to validate
+ * @returns {{ valid: boolean, message?: string }}
+ */
+const validateUpstreamUrl = (url) => {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, message: 'Upstream URL is required' };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, message: 'Invalid upstream URL format' };
+  }
+
+  // Only allow http and https schemes
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { valid: false, message: 'Upstream URL must use http or https protocol' };
+  }
+
+  // Block file://, ftp://, gopher://, etc.
+  // Block common metadata endpoints (cloud SSRF targets)
+  const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'metadata.internal'];
+  if (blockedHosts.includes(parsed.hostname)) {
+    return { valid: false, message: 'Upstream URL points to a restricted address' };
+  }
+
+  return { valid: true };
+};
+
+/**
+ * Validate proxy input (domains and upstream URL)
+ * @param {Object} body - Request body
+ * @returns {{ valid: boolean, message?: string }}
+ */
+const validateProxyInput = (body) => {
+  // Validate domains
+  if (body.domains) {
+    const domains = Array.isArray(body.domains) ? body.domains : [body.domains];
+    for (const domain of domains) {
+      if (!isValidDomain(domain)) {
+        return { valid: false, message: `Invalid domain name: ${domain}` };
+      }
+    }
+  }
+
+  // Validate upstream URL
+  if (body.upstream_url) {
+    const urlCheck = validateUpstreamUrl(body.upstream_url);
+    if (!urlCheck.valid) {
+      return urlCheck;
+    }
+  }
+
+  // Validate load balancing configuration
+  if (body.load_balancing && body.load_balancing.enabled) {
+    const validPolicies = ['round_robin', 'least_conn', 'ip_hash', 'random', 'first'];
+    if (body.load_balancing.policy && !validPolicies.includes(body.load_balancing.policy)) {
+      return { valid: false, message: `Invalid load balancing policy. Use one of: ${validPolicies.join(', ')}` };
+    }
+    if (!body.load_balancing.upstreams || !Array.isArray(body.load_balancing.upstreams) || body.load_balancing.upstreams.length < 1) {
+      return { valid: false, message: 'Load balancing requires at least one upstream URL' };
+    }
+    for (const upstream of body.load_balancing.upstreams) {
+      if (!upstream.url) {
+        return { valid: false, message: 'Each load balancing upstream must have a url field' };
+      }
+      const upstreamCheck = validateUpstreamUrl(upstream.url);
+      if (!upstreamCheck.valid) {
+        return { valid: false, message: `Invalid load balancing upstream URL: ${upstream.url}` };
+      }
+    }
+  }
+
+  // Validate health check configuration
+  if (body.health_checks && body.health_checks.enabled) {
+    if (body.health_checks.interval && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.interval)) {
+      return { valid: false, message: 'health_checks.interval must be a duration string e.g. "30s", "1m"' };
+    }
+    if (body.health_checks.timeout && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.timeout)) {
+      return { valid: false, message: 'health_checks.timeout must be a duration string e.g. "5s"' };
+    }
+    if (body.health_checks.max_fails !== undefined && (typeof body.health_checks.max_fails !== 'number' || body.health_checks.max_fails < 1)) {
+      return { valid: false, message: 'health_checks.max_fails must be a positive integer' };
+    }
+  }
+
+  // Validate custom headers
+  if (body.headers && Array.isArray(body.headers)) {
+    const validHeaderNameRegex = /^[a-zA-Z0-9\-]+$/;
+    for (const header of body.headers) {
+      if (header.header_name && !validHeaderNameRegex.test(header.header_name)) {
+        return { valid: false, message: `Invalid header name: ${header.header_name}` };
+      }
+      if (header.header_name && header.header_name.length > 256) {
+        return { valid: false, message: `Header name too long: ${header.header_name}` };
+      }
+      if (header.header_value && header.header_value.length > 8192) {
+        return { valid: false, message: 'Header value too long (max 8192 characters)' };
+      }
+    }
+  }
+
+  // Validate middleware configurations
+  if (body.middlewares && Array.isArray(body.middlewares)) {
+    for (const mw of body.middlewares) {
+      // Validate rate limit values
+      if (mw.type === 'rate_limit') {
+        if (mw.requests_per_second !== undefined) {
+          const rps = Number(mw.requests_per_second);
+          if (!Number.isFinite(rps) || rps <= 0 || rps > 100000) {
+            return { valid: false, message: 'Rate limit requests_per_second must be a positive number (max 100000)' };
+          }
+        }
+      }
+
+      // Validate IP filter values
+      if (mw.type === 'ip_filter' && mw.allowed_ips) {
+        const ips = Array.isArray(mw.allowed_ips) ? mw.allowed_ips : [mw.allowed_ips];
+        const ipCidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        for (const ip of ips) {
+          if (!ipCidrRegex.test(ip)) {
+            return { valid: false, message: `Invalid IP address or CIDR range: ${ip}` };
+          }
+        }
+      }
+    }
+  }
+
+  return { valid: true };
+};
+
+/**
  * @route POST /api/proxies/:id/recheck-tls
  * @desc Re-run TLS verification for a proxy's domains (admin or owner)
  * @access Private
@@ -41,7 +187,7 @@ router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
     res.status(200).json({ success: true, tlsStatus });
   } catch (error) {
     console.error('Recheck TLS error:', error);
-    res.status(500).json({ success: false, message: `Failed to recheck TLS: ${error.message}` });
+    res.status(500).json({ success: false, message: 'Failed to recheck TLS' });
   }
 });
 
@@ -50,8 +196,69 @@ router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
  * @desc Get all proxies
  * @access Private
  */
+/**
+ * @swagger
+ * tags:
+ *   name: Proxies
+ *   description: Reverse proxy configuration management
+ *
+ * /proxies:
+ *   get:
+ *     summary: List all proxies
+ *     tags: [Proxies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of proxy objects
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 proxies:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Proxy'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    const { page, limit } = req.query;
+
+    // If pagination params provided, use paginated query
+    if (page || limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows: proxies } = await Proxy.findAndCountAll({
+        include: [
+          { model: Header, as: 'headers' },
+          { model: Middleware, as: 'middlewares' }
+        ],
+        limit: limitNum,
+        offset,
+        distinct: true,
+        order: [['createdAt', 'DESC']],
+      });
+
+      return res.status(200).json({
+        success: true,
+        proxies,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
+
+    // Default: return all (backward compatible)
     // Get all proxy IDs first
     const proxyIds = await Proxy.findAll({
       attributes: ['id'],
@@ -120,11 +327,47 @@ router.get('/:id', authMiddleware, async (req, res) => {
  * @route POST /api/proxies
  * @desc Create a new proxy
  * @access Private
+ *
+ * @swagger
+ * /proxies:
+ *   post:
+ *     summary: Create a new proxy
+ *     tags: [Proxies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, domains, upstream_url]
+ *             properties:
+ *               name: { type: string }
+ *               domains: { type: array, items: { type: string } }
+ *               upstream_url: { type: string }
+ *               ssl_type: { type: string, enum: [acme, cloudflare, custom, none] }
+ *               enabled: { type: boolean, default: true }
+ *     responses:
+ *       201:
+ *         description: Proxy created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
+    // Validate domains and upstream URL
+    const validation = validateProxyInput(req.body);
+    if (!validation.valid) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
     // Format domains consistently as arrays
     const newDomains = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
     const sortedNewDomains = JSON.stringify(newDomains.sort());
@@ -253,7 +496,7 @@ router.post('/', authMiddleware, async (req, res) => {
     console.error('Create proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while creating proxy: ${error.message}` 
+      message: 'Server error while creating proxy' 
     });
   }
 });
@@ -267,6 +510,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
+    // Validate domains and upstream URL
+    const validation = validateProxyInput(req.body);
+    if (!validation.valid) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
     // Find the proxy
     const proxy = await Proxy.findByPk(req.params.id, {
       include: [
@@ -394,7 +644,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     console.error('Update proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while updating proxy: ${error.message}` 
+      message: 'Server error while updating proxy' 
     });
   }
 });
@@ -494,7 +744,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     console.error('Delete proxy error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while deleting proxy: ${error.message}` 
+      message: 'Server error while deleting proxy' 
     });
   }
 });

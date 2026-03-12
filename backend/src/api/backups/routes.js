@@ -44,7 +44,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
     console.error('Create backup error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error during backup creation: ${error.message}` 
+      message: 'Server error during backup creation' 
     });
   }
 });
@@ -69,7 +69,7 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     console.error('Get backup file error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while retrieving backup file: ${error.message}` 
+      message: 'Server error while retrieving backup file' 
     });
   }
 });
@@ -92,7 +92,7 @@ router.post('/:id/restore', [authMiddleware, roleMiddleware('admin')], async (re
     console.error('Restore backup error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error during backup restoration: ${error.message}` 
+      message: 'Server error during backup restoration' 
     });
   }
 });
@@ -114,7 +114,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     console.error('Delete backup error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error during backup deletion: ${error.message}` 
+      message: 'Server error during backup deletion' 
     });
   }
 });

@@ -3,12 +3,11 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { User } = require('../../models');
 const { logAction } = require('../../services/auditService');
+const { sendPasswordResetEmail } = require('../../services/emailService');
 const { body, validationResult } = require('express-validator');
+const { passwordResetLimiter } = require('../../middleware/rateLimiter');
 
 const router = express.Router();
-
-// In-memory store for reset tokens (in production, use Redis or database)
-const resetTokens = new Map();
 
 /**
  * @route POST /api/auth/password-reset/request
@@ -17,6 +16,7 @@ const resetTokens = new Map();
  */
 router.post(
   '/request',
+  passwordResetLimiter,
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   ],
@@ -37,18 +37,16 @@ router.post(
       const user = await User.findOne({ where: { email } });
 
       // Always return success to prevent email enumeration
-      // But only send email if user exists
+      // But only generate token if user exists
       if (user) {
         // Generate reset token
         const resetToken = crypto.randomBytes(32).toString('hex');
         const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-        // Store token with expiration (1 hour)
-        resetTokens.set(resetTokenHash, {
-          userId: user.id,
-          email: user.email,
-          expiresAt: Date.now() + 3600000, // 1 hour
-        });
+        // Store hashed token in database with 1-hour expiry
+        user.reset_token = resetTokenHash;
+        user.reset_token_expires = new Date(Date.now() + 3600000); // 1 hour
+        await user.save();
 
         // Log password reset request
         await logAction({
@@ -59,20 +57,13 @@ router.post(
           status: 'success',
         }, req);
 
-        // In production, send email with reset link
-        // For now, we'll return the token in development mode
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`Password reset token for ${email}: ${resetToken}`);
-          return res.status(200).json({
-            success: true,
-            message: 'Password reset instructions sent to email',
-            resetToken, // Only in development
-          });
+        // Send password reset email (falls back to console logging if SMTP not configured)
+        try {
+          await sendPasswordResetEmail(email, resetToken);
+        } catch (emailError) {
+          console.error('Failed to send password reset email:', emailError);
+          // Don't fail the request — token is stored and can be resent
         }
-
-        // TODO: Send email with reset link
-        // const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
-        // await sendEmail(user.email, 'Password Reset', resetUrl);
       }
 
       res.status(200).json({
@@ -113,17 +104,23 @@ router.post(
       const { token } = req.body;
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-      const tokenData = resetTokens.get(tokenHash);
+      // Find user with matching token that hasn't expired
+      const user = await User.findOne({
+        where: { reset_token: tokenHash }
+      });
 
-      if (!tokenData) {
+      if (!user) {
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired reset token',
         });
       }
 
-      if (Date.now() > tokenData.expiresAt) {
-        resetTokens.delete(tokenHash);
+      if (new Date() > new Date(user.reset_token_expires)) {
+        // Clear expired token
+        user.reset_token = null;
+        user.reset_token_expires = null;
+        await user.save();
         return res.status(400).json({
           success: false,
           message: 'Reset token has expired',
@@ -179,42 +176,38 @@ router.post(
       const { token, password } = req.body;
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-      const tokenData = resetTokens.get(tokenHash);
+      // Find user with matching token
+      const user = await User.findOne({
+        where: { reset_token: tokenHash }
+      });
 
-      if (!tokenData) {
+      if (!user) {
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired reset token',
         });
       }
 
-      if (Date.now() > tokenData.expiresAt) {
-        resetTokens.delete(tokenHash);
+      if (new Date() > new Date(user.reset_token_expires)) {
+        // Clear expired token
+        user.reset_token = null;
+        user.reset_token_expires = null;
+        await user.save();
         return res.status(400).json({
           success: false,
           message: 'Reset token has expired',
         });
       }
 
-      // Find user
-      const user = await User.findByPk(tokenData.userId);
-
-      if (!user) {
-        resetTokens.delete(tokenHash);
-        return res.status(404).json({
-          success: false,
-          message: 'User not found',
-        });
-      }
-
       // Hash new password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Update user password
-      await user.update({ password: hashedPassword });
-
-      // Delete used token
-      resetTokens.delete(tokenHash);
+      // Update user password and clear reset token
+      await user.update({
+        password: hashedPassword,
+        reset_token: null,
+        reset_token_expires: null
+      });
 
       // Log password reset
       await logAction({
@@ -238,18 +231,5 @@ router.post(
     }
   }
 );
-
-// Cleanup expired tokens periodically (every 15 minutes)
-// Avoid scheduling this during tests to prevent Jest from hanging on open handles
-if (process.env.NODE_ENV !== 'test') {
-  setInterval(() => {
-    const now = Date.now();
-    for (const [hash, data] of resetTokens.entries()) {
-      if (now > data.expiresAt) {
-        resetTokens.delete(hash);
-      }
-    }
-  }, 15 * 60 * 1000);
-}
 
 module.exports = router;

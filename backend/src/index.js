@@ -12,6 +12,21 @@ const { app, startServer } = require('./app');
 // Initialize database, admin user, and default templates
 const initialize = async () => {
   try {
+    // Validate required environment variables
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      const required = ['JWT_SECRET'];
+      const missing = required.filter(v => !process.env[v]);
+      if (missing.length > 0) {
+        console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+        process.exit(1);
+      }
+    }
+
+    if (!process.env.CADDY_API_URL) {
+      console.warn('WARNING: CADDY_API_URL not set, defaulting to http://caddy:2019');
+    }
+
     // Sync database models - only create tables if they don't exist
     // Use migrations for schema changes instead of alter: true
     await sequelize.sync();
@@ -62,6 +77,10 @@ const initialize = async () => {
     const gitService = require('./services/gitService');
     await gitService.initialize();
     console.log('Git service initialized successfully');
+
+    // Start alert scheduler
+    const { startAlertScheduler } = require('./services/alertService');
+    startAlertScheduler(15); // check every 15 minutes
 
     // TODO: Initialize Kubernetes discovery service if enabled
     // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {

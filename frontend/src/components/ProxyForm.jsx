@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { get, post, put } from '../utils/api';
 
@@ -26,6 +27,14 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [basicAuthPassword, setBasicAuthPassword] = useState('');
   const [pathRoutingEnabled, setPathRoutingEnabled] = useState(false);
   const [pathRoutes, setPathRoutes] = useState([{ path: '', upstream_url: '' }]);
+  const [lbEnabled, setLbEnabled] = useState(false);
+  const [lbPolicy, setLbPolicy] = useState('round_robin');
+  const [lbUpstreams, setLbUpstreams] = useState([{ url: '', weight: '' }]);
+  const [healthCheckEnabled, setHealthCheckEnabled] = useState(false);
+  const [healthCheckPath, setHealthCheckPath] = useState('/health');
+  const [healthCheckInterval, setHealthCheckInterval] = useState('30s');
+  const [healthCheckTimeout, setHealthCheckTimeout] = useState('5s');
+  const [healthCheckMaxFails, setHealthCheckMaxFails] = useState(3);
 
   const { token, currentUser, csrfToken } = useAuth();
   const [features, setFeatures] = useState({});
@@ -135,6 +144,25 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
           : [{ path: '', upstream_url: '' }]
         );
       }
+
+      // Populate load balancing fields
+      if (proxy.load_balancing) {
+        setLbEnabled(proxy.load_balancing.enabled);
+        setLbPolicy(proxy.load_balancing.policy || 'round_robin');
+        setLbUpstreams(proxy.load_balancing.upstreams && proxy.load_balancing.upstreams.length > 0
+          ? proxy.load_balancing.upstreams.map(u => ({ url: u.url, weight: u.weight !== undefined ? String(u.weight) : '' }))
+          : [{ url: '', weight: '' }]
+        );
+      }
+
+      // Populate health check fields
+      if (proxy.health_checks) {
+        setHealthCheckEnabled(proxy.health_checks.enabled);
+        setHealthCheckPath(proxy.health_checks.path || '/health');
+        setHealthCheckInterval(proxy.health_checks.interval || '30s');
+        setHealthCheckTimeout(proxy.health_checks.timeout || '5s');
+        setHealthCheckMaxFails(proxy.health_checks.max_fails || 3);
+      }
     }
   }, [token, proxy]);
 
@@ -184,6 +212,20 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
           enabled: true,
           routes: pathRoutes.filter(route => route.path && route.upstream_url)
         } : null,
+        load_balancing: lbEnabled ? {
+          enabled: true,
+          policy: lbPolicy,
+          upstreams: lbUpstreams
+            .filter(u => u.url.trim())
+            .map(u => ({ url: u.url.trim(), ...(u.weight ? { weight: parseInt(u.weight) } : {}) }))
+        } : null,
+        health_checks: healthCheckEnabled ? {
+          enabled: true,
+          path: healthCheckPath,
+          interval: healthCheckInterval,
+          timeout: healthCheckTimeout,
+          max_fails: parseInt(healthCheckMaxFails)
+        } : null,
         created_by: currentUser.id
       };
 
@@ -230,10 +272,12 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
       // Only call onSave if there's no config preview to show
       if (!configPreview) {
+        toast.success(proxy ? 'Proxy updated' : 'Proxy created');
         onSave(responseData.proxy);
       }
     } catch (error) {
       console.error('Error saving proxy:', error);
+      toast.error(error.message || 'Failed to save proxy');
       setError(error.message || 'Failed to save proxy. Please try again.');
     } finally {
       setLoading(false);
@@ -589,6 +633,150 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                   >
                     Add Route
                   </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Load Balancing Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="lb_enabled"
+                type="checkbox"
+                checked={lbEnabled}
+                onChange={(e) => setLbEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="lb_enabled" className="font-medium text-gray-700">
+                Enable Load Balancing
+              </label>
+              <p className="text-gray-500 text-xs">Distribute traffic across multiple upstream servers</p>
+              {lbEnabled && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600">Policy</label>
+                    <select
+                      value={lbPolicy}
+                      onChange={(e) => setLbPolicy(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    >
+                      <option value="round_robin">Round Robin</option>
+                      <option value="least_conn">Least Connections</option>
+                      <option value="ip_hash">IP Hash</option>
+                      <option value="random">Random</option>
+                      <option value="first">First Available</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Upstream Servers</label>
+                    {lbUpstreams.map((upstream, index) => (
+                      <div key={index} className="flex items-center gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={upstream.url}
+                          onChange={(e) => {
+                            const next = [...lbUpstreams];
+                            next[index] = { ...next[index], url: e.target.value };
+                            setLbUpstreams(next);
+                          }}
+                          placeholder="backend1:8080"
+                          className="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        />
+                        <input
+                          type="number"
+                          value={upstream.weight}
+                          onChange={(e) => {
+                            const next = [...lbUpstreams];
+                            next[index] = { ...next[index], weight: e.target.value };
+                            setLbUpstreams(next);
+                          }}
+                          placeholder="Weight"
+                          min="1"
+                          className="w-20 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        />
+                        {lbUpstreams.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setLbUpstreams(lbUpstreams.filter((_, i) => i !== index))}
+                            className="text-red-600 hover:text-red-800 text-sm"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setLbUpstreams([...lbUpstreams, { url: '', weight: '' }])}
+                      className="mt-1 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
+                    >
+                      Add Upstream
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Health Checks Section */}
+          <div className="flex items-start mb-4">
+            <div className="flex items-center h-5">
+              <input
+                id="health_check_enabled"
+                type="checkbox"
+                checked={healthCheckEnabled}
+                onChange={(e) => setHealthCheckEnabled(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm flex-grow">
+              <label htmlFor="health_check_enabled" className="font-medium text-gray-700">
+                Enable Active Health Checks
+              </label>
+              <p className="text-gray-500 text-xs">Caddy will actively probe upstreams and remove unhealthy ones from the pool</p>
+              {healthCheckEnabled && (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm text-gray-600">Health Check Path</label>
+                    <input
+                      type="text"
+                      value={healthCheckPath}
+                      onChange={(e) => setHealthCheckPath(e.target.value)}
+                      placeholder="/health"
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">Interval (e.g. 30s, 1m)</label>
+                    <input
+                      type="text"
+                      value={healthCheckInterval}
+                      onChange={(e) => setHealthCheckInterval(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">Timeout (e.g. 5s)</label>
+                    <input
+                      type="text"
+                      value={healthCheckTimeout}
+                      onChange={(e) => setHealthCheckTimeout(e.target.value)}
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600">Max Fails before removing</label>
+                    <input
+                      type="number"
+                      value={healthCheckMaxFails}
+                      onChange={(e) => setHealthCheckMaxFails(e.target.value)}
+                      min="1"
+                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    />
+                  </div>
                 </div>
               )}
             </div>

@@ -20,7 +20,7 @@ const DEFAULT_SECURITY_HEADERS = [
   {
     header_type: 'response',
     header_name: 'Content-Security-Policy',
-    header_value: "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';",
+    header_value: "default-src 'self'; img-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline';",
     enabled: true
   },
   {

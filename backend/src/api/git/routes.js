@@ -136,7 +136,7 @@ router.post('/repositories', [
       await repo.destroy();
       return res.status(400).json({
         success: false,
-        message: `Failed to clone repository: ${error.message}`
+        message: 'Failed to clone repository'
       });
     }
 
@@ -289,7 +289,7 @@ router.post('/repositories/:id/sync', [
     console.error('Sync repository error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error while syncing repository'
+      message: 'Server error while syncing repository'
     });
   }
 });
@@ -415,7 +415,7 @@ router.post('/repositories/:id/rollback', [
     console.error('Rollback error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error while rolling back'
+      message: 'Server error while rolling back'
     });
   }
 });

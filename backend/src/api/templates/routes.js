@@ -13,6 +13,31 @@ const router = express.Router();
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    const { page, limit } = req.query;
+
+    if (page || limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows: templates } = await Template.findAndCountAll({
+        limit: limitNum,
+        offset,
+        order: [['createdAt', 'DESC']],
+      });
+
+      return res.status(200).json({
+        success: true,
+        templates,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
+
     const templates = await Template.findAll();
     
     res.status(200).json({
@@ -255,7 +280,7 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     console.error('Apply template error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while applying template: ${error.message}` 
+      message: 'Server error while applying template' 
     });
   }
 });

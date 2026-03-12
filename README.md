@@ -65,11 +65,22 @@ docker run -d \
 
 | Feature | Description |
 |---------|-------------|
-| **User Management** | JWT-based auth, Role-based access (Admin/ReadOnly), Brute-force protection. |
-| **Proxy Management** | Multi-domain support, Auto-SSL (Let's Encrypt), Custom Certs, HTTP->HTTPS redirects. |
-| **Advanced Routing** | Path-based routing, Compression (Gzip/Zstd), WebSocket support. |
+| **User Management** | JWT + httpOnly cookie auth, role-based access (Admin/ReadOnly), brute-force protection, account lockout. |
+| **Two-Factor Authentication** | TOTP-based 2FA with QR code setup, backup codes, enforced per-user. |
+| **API Key Authentication** | Long-lived API keys with scoped permissions for CI/CD and automation. |
+| **Proxy Management** | Multi-domain support, auto-SSL (Let's Encrypt), custom certs, HTTP→HTTPS redirects. |
+| **Load Balancing** | Multiple upstreams per proxy with round-robin, least-connections, IP-hash, weighted strategies. |
+| **Health Checks** | Active TCP/HTTP upstream health monitoring with automatic failover. |
+| **Access Log Viewer** | Live SSE log tail + historical search with domain/status code filters. |
+| **Alerting & Notifications** | Certificate expiry, upstream failure, and error-rate alerts via email, Slack, Discord, or webhook. |
+| **Security Headers** | One-click HSTS, CSP, X-Frame-Options, IP filtering, rate limiting. |
+| **Service Templates** | Battle-tested header/middleware templates for Authelia, Keycloak, Nextcloud, Grafana, and more. |
+| **Custom Template Creator** | Visual template builder — add headers by row, pick from presets, edit middleware JSON. |
 | **Docker Auto-Discovery** | Automatic proxy creation from container labels. Zero-config deployments. |
-| **Monitoring** | System health checks, Real-time status updates. |
+| **Git Integration & GitOps** | Auto-commit config changes to Git; pull-from-Git GitOps mode. AES-256 token encryption. |
+| **Backups** | Scheduled backups, one-click restore, AES-256-GCM encryption, configurable retention policy. |
+| **OpenAPI Docs** | Interactive Swagger UI at `/api/docs`. |
+| **Metrics & Audit Logs** | Metrics snapshots, full audit trail for all admin actions. |
 
 ## How It Works
 
@@ -142,28 +153,50 @@ Example header configurations:
 
 ### Core Features
 - **Authentication & User Management**
-  - JWT-based authentication with secure password hashing
+  - JWT stored in httpOnly cookies + localStorage fallback for SSE streams
   - Role-based access control (Admin, Read-only)
-  - Brute-force protection with rate limiting
+  - Brute-force protection with account lockout
   - Initial admin setup automation
+  - Password reset via email (SMTP)
+
+- **Two-Factor Authentication (TOTP)** ✨
+  - Time-based one-time passwords (RFC 6238)
+  - QR code setup wizard + optional manual key entry
+  - 10 single-use backup codes generated on activation
+  - Two-step login flow with short-lived challenge token
+  - Enable/disable per user from the "My Account" tab
+
+- **API Key Authentication** ✨
+  - Create long-lived API keys for automation and CI/CD
+  - Scoped permissions: `read`, `write`, `admin`
+  - Optional expiry date and last-used tracking
+  - SHA-256 hashed; raw key shown only once at creation
+  - Pass via `X-API-Key` header in any API request
 
 - **Proxy Host Management**
   - Multi-domain support
-  - Automatic SSL via Let's Encrypt
+  - Automatic SSL via Let's Encrypt (ACME)
+  - Cloudflare DNS-01 challenge (wildcard certs, internal services)
   - Custom SSL certificate management
-  - Advanced routing options
-  - HTTP to HTTPS redirection
+  - HTTP → HTTPS redirection
   - Compression options (gzip/zstd)
+  - WebSocket support
+
+- **Load Balancing & Health Checks** ✨
+  - Multiple upstream URLs per proxy
+  - Strategies: `round_robin`, `least_conn`, `ip_hash`, `random`, `weighted`
+  - Active HTTP/TCP health checks with configurable interval, timeout, thresholds
+  - Automatic failover to healthy upstreams
 
 - **Header & Middleware Configuration**
   - Custom header injection (request/response)
-  - One-click security headers configuration:
-    - Strict-Transport-Security (HSTS) for enhanced transport security
-    - X-Content-Type-Options to prevent MIME-type sniffing
-    - X-Frame-Options to control frame embedding
-    - Content-Security-Policy for XSS prevention
-    - Referrer-Policy to control referrer information
-    - Permissions-Policy to manage browser features
+  - One-click security headers:
+    - Strict-Transport-Security (HSTS)
+    - X-Content-Type-Options
+    - X-Frame-Options
+    - Content-Security-Policy
+    - Referrer-Policy
+    - Permissions-Policy
   - Rate limiting middleware
   - IP filtering (allow/block lists)
   - Basic authentication
@@ -171,53 +204,69 @@ Example header configurations:
 
 ### Advanced Features
 
-- **Docker Auto-Discovery** ✨ NEW!
+- **Access Log Viewer** ✨
+  - Caddy structured JSON access logs auto-configured on first proxy creation
+  - **Live tail** mode via Server-Sent Events (SSE) stream
+  - **Historical search** with filters: domain, status code, IP, time range
+  - Log stats endpoint: total requests, error rate, top domains
+  - Accessible from the "Access Logs" tab in the Dashboard
+
+- **Alerting & Notifications** ✨
+  - **Notification channels**: Email (SMTP), Slack webhook, Discord webhook, generic webhook
+  - **Alert rule types**: certificate expiry, upstream down, error rate, no traffic
+  - Configurable threshold and cooldown period per rule
+  - Proxy-specific or global rules
+  - Manual "run now" trigger for testing
+  - Automatic evaluation every 15 minutes
+  - Accessible from the "Alerts" tab in the Dashboard
+
+- **Service Templates**
+  - Predefined templates:
+    - Authelia (authentication server)
+    - Keycloak (identity management)
+    - Amazon S3-compatible storage (MinIO, Ceph RadosGW)
+    - Nextcloud (self-hosted productivity)
+    - Cloudflare Tunnel
+    - Grafana (monitoring platform)
+    - Kibana/Elastic (dashboards)
+  - **Custom Template Creator** ✨ — visual builder with per-row headers, preset dropdown, and middleware JSON editor
+  - Create, edit, and delete templates from the UI (admin-only)
+  - *(Planned: import/export templates as portable JSON files)*
+
+- **Docker Auto-Discovery** ✨
   - Automatic service detection from Docker containers
   - Label-based proxy configuration
   - Auto-create/destroy proxies on container start/stop
   - Template auto-application via labels
   - Real-time event monitoring
-  - API endpoints for discovery management
   - Configurable auto-removal of stopped containers
   - Periodic reconciliation for cleanup
-  - **Future:** Kubernetes service discovery
 
-- **Git Integration & GitOps** ✨ NEW!
-  - Version control for all configuration changes
-  - Automatic commits on proxy create/update/delete
-  - GitOps mode: pull configuration from Git
-  - Support for GitHub, GitLab, Gitea, Bitbucket
-  - AES-256-GCM encryption for access tokens
-  - Configuration export to JSON and YAML
-  - Complete audit trail with diffs
-  - Rollback to any previous commit
+- **Git Integration & GitOps** ✨
+  - Auto-commit all config changes to GitHub, GitLab, Gitea, or Bitbucket
+  - GitOps mode: pull config from Git and auto-apply on interval
+  - AES-256-GCM encryption for stored access tokens
+  - Export to `proxies.json`, `proxies.yaml`, `caddy.json`
+  - Full audit trail with diffs per change
+  - Rollback to any commit (safety backup branch created automatically)
   - Customizable commit message templates
-  - Scheduled auto-sync from Git repositories
-  - API endpoints for repository management
-
-- **Service Templates**
-  - Predefined templates for:
-    - Amazon S3
-    - Authelia
-    - Keycloak
-    - Nextcloud
-    - Cloudflare Tunnel
-    - Grafana
-    - Kibana/Elastic
-  - Custom template creation (to do)
-  - Template merging with headers (to do)
 
 - **Backup & Restore**
-  - Configuration export/import
-  - Automated backups (to do)
-  - SSL certificate backup (to do)
-  - Optional S3 cloud backup (to do)
-  - Encrypted local backups (to do)
+  - Scheduled automatic backups (every 24h)
+  - One-click restore from any backup
+  - **AES-256-GCM encrypted backups** ✨ — set `BACKUP_ENCRYPTION_KEY` to encrypt all backup files at rest
+  - **Retention policy** ✨ — `BACKUP_RETENTION_DAYS` auto-deletes old auto-backups (default: 30 days)
+  - Caddy config backup before every change for instant rollback
+  - *(Planned: SSL/certificate backup)*
+  - *(Planned: cloud storage upload — S3/GCS/Azure)*
 
-- **Monitoring & Security**
-  - System health monitoring
-  - Access and error logging (to do)
-  - Comprehensive security features (CrowdSec / mod_security) (to do)
+- **Monitoring & Observability**
+  - System metrics snapshots (stored every 60 min)
+  - Metrics dashboard with charts
+  - Full audit log for all admin actions
+  - Interactive **OpenAPI / Swagger UI** ✨ at `/api/docs`
+  - *(Planned: WAF integration — CrowdSec / ModSecurity)*
+  - *(Planned: Prometheus metrics export endpoint)*
 
 ## Implementation Details
 
@@ -255,25 +304,27 @@ await caddyService.applyTemplate(proxy, template);
 
 ### Backend
 - **Runtime**: Node.js 20.x LTS
-- **Framework**: Express.js
-- **Database**: PostgreSQL with Sequelize ORM
-- **Authentication**: JWT with Passport.js
-- **API Documentation**: Swagger/OpenAPI
-- **Testing**: Jest, Supertest
+- **Framework**: Express.js 5
+- **Database**: SQLite (default) or PostgreSQL via Sequelize ORM
+- **Authentication**: JWT + httpOnly cookies, bcrypt, speakeasy (TOTP)
+- **API Documentation**: swagger-jsdoc + swagger-ui-express at `/api/docs`
+- **Email**: nodemailer (password reset, alert notifications)
+- **Testing**: Jest 30 + Supertest
 
 ### Frontend
-- **Framework**: React 18+
-- **Build Tool**: Vite
-- **UI Framework**: TailwindCSS + ShadCN UI
-- **State Management**: React Context API + React Query
-- **Form Handling**: React Hook Form
+- **Framework**: React 19
+- **Build Tool**: Vite 6
+- **Styling**: TailwindCSS 4
+- **Routing**: React Router v7
+- **Notifications**: react-hot-toast
+- **Charts**: Chart.js
 - **Testing**: Vitest + React Testing Library
 
 ### Infrastructure
 - **Container**: Docker & Docker Compose
-- **Reverse Proxy**: Caddy 2.x
-- **CI/CD**: GitHub Actions
-- **Monitoring**: Prometheus + Grafana (optional)
+- **Reverse Proxy**: Caddy 2.x (custom build with `caddy-dns/cloudflare`)
+- **Web Server**: NGINX (serves SPA + proxies `/api` to backend)
+- **CI/CD**: GitHub Actions (Node 20, unit tests, build artifacts, coverage upload)
 
 ## 🚀 Quick Start
 
@@ -480,13 +531,15 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`) | No |
 | `ADMIN_EMAIL` | `admin@caddymanager.local` | Initial admin user email (created on first startup if no users exist) | No |
 | `ADMIN_PASSWORD` | `changeme123` | Initial admin user password (created on first startup if no users exist) | No |
+| `APP_NAME` | `CaddyManager` | Application name shown in TOTP QR codes | No |
 
 #### Caddy Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
-| `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint (use `http://caddy:2019` in Docker, `http://localhost:2019` for local dev) | No |
-| `CF_API_TOKEN` | - | Cloudflare API token used for DNS-01 challenges when issuing certificates via Cloudflare DNS. Set this to enable Cloudflare DNS challenge support in Caddy and to surface the Cloudflare option in the frontend UI. | No |
+| `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
+| `CADDY_ACCESS_LOG` | `/app/logs/access.log` | Path to Caddy structured JSON access log file | No |
+| `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
 
 #### Docker Auto-Discovery Configuration
 
@@ -497,6 +550,13 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `DOCKER_LABEL_PREFIX` | `caddymanager` | Prefix for Docker labels used in discovery | No |
 | `AUTO_REMOVE_STOPPED` | `false` | Automatically remove proxies when containers stop | No |
 | `DOCKER_POLL_INTERVAL` | `30000` | Reconciliation interval in milliseconds | No |
+
+#### Backup Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `BACKUP_ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) for AES-256-GCM backup encryption. Generate with `openssl rand -hex 32`. If not set, backups are stored unencrypted. | No |
+| `BACKUP_RETENTION_DAYS` | `30` | Number of days to keep auto-generated backups. Older auto-backups are deleted after each scheduled backup run. | No |
 
 #### Git Integration & GitOps Configuration
 
@@ -1173,6 +1233,224 @@ curl -X POST http://localhost:3000/api/git/repositories/<repo-id>/rollback \
 
 ---
 
+### Load Balancing & Health Checks
+
+Distribute traffic across multiple backends with automatic failover.
+
+#### Configure Load Balancing
+
+When creating or editing a proxy, add multiple upstream URLs and choose a balancing strategy:
+
+| Strategy | Description |
+|----------|-------------|
+| `round_robin` | Distribute requests evenly across all upstreams (default) |
+| `least_conn` | Route to the upstream with fewest active connections |
+| `ip_hash` | Sticky sessions — same client IP always hits same upstream |
+| `random` | Random upstream selection |
+| `weighted` | Weighted distribution (specify weight per upstream) |
+
+#### Configure Health Checks
+
+Health checks run in the background and automatically remove unhealthy upstreams from rotation:
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| Check path | HTTP path to probe (e.g., `/health`) | `/` |
+| Interval | How often to check (seconds) | `30s` |
+| Timeout | Max time to wait for response | `5s` |
+| Max fails | Consecutive failures before marking down | `3` |
+| Expect status | Expected HTTP status code | `200` |
+
+Both features are configured in the ProxyForm UI under the "Load Balancing" and "Health Checks" sections, or via the API:
+
+```bash
+curl -X POST http://localhost:3000/api/proxies \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Scaled Service",
+    "domains": ["api.example.com"],
+    "ssl_type": "acme",
+    "load_balancing": {
+      "strategy": "least_conn",
+      "upstreams": [
+        { "url": "http://backend1:3000", "weight": 1 },
+        { "url": "http://backend2:3000", "weight": 1 }
+      ]
+    },
+    "health_checks": {
+      "path": "/health",
+      "interval": "30s",
+      "timeout": "5s",
+      "max_fails": 3
+    }
+  }'
+```
+
+---
+
+### Access Log Viewer
+
+View and search Caddy's structured access logs directly from the Dashboard.
+
+#### Setup
+
+Caddy access logging is configured automatically when CaddyManager initializes. Logs are written to `CADDY_ACCESS_LOG` (default: `/app/logs/access.log`) in JSON format.
+
+#### Features
+
+- **Live Tail**: Click "Live" in the Access Logs tab to stream new log entries in real time via SSE
+- **Historical Search**: Filter by domain, HTTP status code, client IP, or time range
+- **Stats**: View total request count, error rate, and top domains via `GET /api/logs/stats`
+
+#### API
+
+```bash
+# Query historical logs
+GET /api/logs?domain=api.example.com&status=500&limit=100
+
+# Live tail (SSE stream)
+GET /api/logs/stream?token=<jwt>
+
+# Log statistics
+GET /api/logs/stats
+```
+
+---
+
+### Alerting & Notifications
+
+Get proactively notified before issues affect your users.
+
+#### Step 1: Create a Notification Channel
+
+Go to **Dashboard → Alerts → Channels** and add a channel:
+
+| Type | Required Config |
+|------|----------------|
+| Email | SMTP host, port, username, password, from/to addresses |
+| Slack | Incoming webhook URL |
+| Discord | Webhook URL |
+| Webhook | URL, optional secret header |
+
+Test any channel immediately with the **"Test"** button.
+
+#### Step 2: Create Alert Rules
+
+Go to **Dashboard → Alerts → Rules** and define conditions:
+
+| Condition | Description | Threshold |
+|-----------|-------------|-----------|
+| `cert_expiry` | Certificate expires within N days | Days remaining |
+| `upstream_down` | Upstream health check fails | Failure count |
+| `error_rate` | HTTP 5xx response rate exceeds threshold | Percentage (0-100) |
+| `no_traffic` | No requests received for N minutes | Minutes of silence |
+
+Each rule can target a specific proxy or all proxies, and you can assign multiple notification channels.
+
+#### Evaluation Schedule
+
+Alert rules are evaluated automatically every **15 minutes**. You can also trigger a manual check from the Alerts tab with the "Run Checks Now" button.
+
+---
+
+### Two-Factor Authentication
+
+Protect admin accounts with TOTP-based 2FA (compatible with Google Authenticator, Authy, 1Password, and any RFC 6238 app).
+
+#### Setting Up 2FA (per user)
+
+1. Log in and navigate to **Dashboard → My Account**
+2. Click "Set Up Two-Factor Authentication"
+3. Scan the QR code with your authenticator app (or enter the manual key)
+4. Enter the 6-digit code from your app to confirm and activate
+5. **Save your backup codes** — shown once, each is single-use for account recovery
+
+#### Login Flow
+
+When 2FA is enabled, login becomes a two-step process:
+
+```
+Step 1: Enter email + password → server returns a short-lived challenge token
+Step 2: Enter 6-digit TOTP code (or 8-character backup code) → receive full session token
+```
+
+#### Disabling 2FA
+
+Go to **Dashboard → My Account**, click "Disable 2FA", and confirm with a current TOTP code.
+
+---
+
+### API Key Authentication
+
+Create long-lived keys for scripts, CI/CD pipelines, and automation tools.
+
+#### Creating an API Key
+
+Go to **Dashboard → My Account → API Keys** and click "Create New Key":
+
+- **Name**: A label for tracking (e.g., "GitHub Actions deploy")
+- **Permissions**: `read` (GET only), `write` (GET + POST + PUT), `admin` (full access)
+- **Expiry**: Optional expiry date; leave blank for non-expiring keys
+
+The raw key is shown **only once** — copy it immediately.
+
+#### Using an API Key
+
+Pass the key in the `X-API-Key` header on any API request:
+
+```bash
+curl http://localhost:3000/api/proxies \
+  -H "X-API-Key: cm_live_xxxxxxxxxxxxxxxx"
+```
+
+The key is verified by SHA-256 hash (the plaintext key is never stored). Each request updates `last_used_at` for auditing.
+
+---
+
+### Backup Encryption & Retention
+
+#### Encrypted Backups
+
+Set `BACKUP_ENCRYPTION_KEY` to enable AES-256-GCM encryption for all backup files:
+
+```bash
+# Generate a secure key
+BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32)
+```
+
+Encrypted backups use the `.json.enc` extension. Unencrypted backups (`.json`) are still readable if the key is not set — the system auto-detects the format on restore.
+
+#### Retention Policy
+
+Set `BACKUP_RETENTION_DAYS` (default: `30`) to automatically delete old auto-generated backups:
+
+```bash
+BACKUP_RETENTION_DAYS=14  # Keep only the last 14 days of auto-backups
+```
+
+Retention is enforced after every scheduled backup run. Manual backups are not affected.
+
+#### Environment Variables
+
+```bash
+BACKUP_ENCRYPTION_KEY=<64-char hex string>  # openssl rand -hex 32
+BACKUP_RETENTION_DAYS=30                    # days to keep auto-backups
+```
+
+---
+
+### OpenAPI / Swagger Documentation
+
+Interactive API documentation is available at:
+
+- **Swagger UI**: `http://localhost:3000/api/docs`
+- **Raw OpenAPI JSON**: `http://localhost:3000/api/docs/openapi.json`
+
+The spec covers all endpoints with request/response schemas, authentication methods (Bearer JWT and X-API-Key), and example payloads. The Swagger UI is accessible without authentication.
+
+---
+
 ## 🧪 Testing
 
 CaddyManager includes comprehensive integration tests for all features:
@@ -1238,28 +1516,37 @@ export GIT_SECRET_KEY=$(openssl rand -hex 32)
 
 ## 📚 Documentation
 
-- [Deployment Guide](./docs/DEPLOYMENT.md) - Complete deployment and troubleshooting guide
-- [Getting Started Guide](./docs/getting_started.md)
-- [Development Roadmap](./docs/development_roadmap.md)
-- [Technology Stack Details](./docs/technology_stack.md)
-- [Project Structure](./docs/project_structure.md)
-- [API Documentation](https://api-docs.caddymanager.org)
-- [Contributing Guidelines](./CONTRIBUTING.md)
-- [Code of Conduct](./docs/CODE_OF_CONDUCT.md)
+- [CLAUDE.md](./CLAUDE.md) — Architecture deep-dive, service descriptions, and development guide
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — Contributing guidelines
+- [FEATURE_IMPLEMENTATION.md](./FEATURE_IMPLEMENTATION.md) — Detailed implementation notes
+- **Swagger / OpenAPI**: `http://localhost:3000/api/docs` (live instance required)
 
 ## 🗺 Roadmap
 
-### Wish list
-- Enhanced monitoring capabilities
-- Additional service templates
-- Advanced analytics dashboard
-- Multi-language support
-- Plugin system for extensions
-- Multi-node Caddy management
-- Advanced backup strategies
-- Enhanced security features
-- Clustering and high availability
-- Enterprise features (LDAP/SAML)
+### Completed ✅
+- Load balancing with multiple upstreams and health checks
+- Access log viewer (live tail + historical search)
+- Alerting & notifications (email, Slack, Discord, webhook)
+- Two-factor authentication (TOTP)
+- API key authentication
+- Custom template creator UI
+- Backup encryption (AES-256-GCM) + retention policy
+- OpenAPI / Swagger documentation
+- CI/CD pipeline (GitHub Actions)
+- Docker Auto-Discovery
+- Git Integration & GitOps
+
+### Planned
+- S3/cloud backup storage
+- LDAP / Active Directory authentication
+- Kubernetes service discovery
+- Advanced request routing (header/query/method conditions)
+- Multi-node clustering & high availability
+- WAF integration (CrowdSec)
+- Plugin/extension system
+- OAuth2 / SAML SSO
+- Prometheus metrics export endpoint
+- Dark/light theme toggle
 
 ## 👥 Contributing
 
