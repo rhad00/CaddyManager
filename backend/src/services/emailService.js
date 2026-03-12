@@ -1,5 +1,4 @@
 const nodemailer = require('nodemailer');
-const logger = require('./logger');
 
 let transporter = null;
 
@@ -11,7 +10,7 @@ function getTransporter() {
   if (transporter) return transporter;
 
   if (!process.env.SMTP_HOST) {
-    logger.warn('SMTP_HOST not configured — password reset emails will be logged to console');
+    console.warn('SMTP_HOST not configured — password reset emails will be logged to console');
     return null;
   }
 
@@ -44,7 +43,7 @@ async function sendPasswordResetEmail(to, resetToken) {
 
   if (!mail) {
     // No SMTP configured — log for development convenience
-    logger.info(`Password reset requested for ${to}. Link: ${resetLink}`);
+    console.info(`Password reset requested for ${to}. Link: ${resetLink}`);
     return;
   }
 
@@ -68,7 +67,7 @@ async function sendPasswordResetEmail(to, resetToken) {
     `,
   });
 
-  logger.info(`Password reset email sent to ${to}`);
+  console.info(`Password reset email sent to ${to}`);
 }
 
 module.exports = { sendPasswordResetEmail };

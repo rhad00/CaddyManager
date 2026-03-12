@@ -10,10 +10,10 @@
     "test:unit": "vitest --config vitest.config.js",
     "e2e": "playwright test --config e2e/playwright.config.js",
     "lint": "eslint .",
+    "audit:check": "npm audit --audit-level=high",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@shadcn/ui": "^0.0.4",
     "@tailwindcss/postcss": "^4.1.7",
     "@tailwindcss/vite": "^4.1.7",
     "autoprefixer": "^10.4.21",

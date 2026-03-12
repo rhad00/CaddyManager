@@ -41,7 +41,7 @@ app.use(morgan('dev')); // Request logging
 
 // Rate limiting
 const { apiLimiter } = require('./middleware/rateLimiter');
-app.use('/api', apiLimiter); // Apply to all API routes
+app.use('/api', apiLimiter); // Apply to all API routes (covers /api and /api/v1)
 
 // CSRF Protection (double-submit cookie pattern)
 const cookieParser = require('cookie-parser');
@@ -68,10 +68,12 @@ const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
 app.use('/api', doubleCsrfProtection);
 
 // Endpoint to get CSRF token
-app.get('/api/csrf-token', (req, res) => {
+const csrfTokenHandler = (req, res) => {
   const csrfToken = generateCsrfToken(req, res);
   res.json({ csrfToken });
-});
+};
+app.get('/api/csrf-token', csrfTokenHandler);
+app.get('/api/v1/csrf-token', csrfTokenHandler);
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {
@@ -84,22 +86,40 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Basic route for health check
+// Basic route for health check (liveness)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/proxies', proxyRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/backups', backupRoutes);
-app.use('/api/metrics', metricsRoutes);
-app.use('/api/audit', auditRoutes);
-app.use('/api/features', featuresRoutes);
-app.use('/api/discovery', discoveryRoutes);
-app.use('/api/git', gitRoutes);
+// Readiness probe — verifies database connectivity
+app.get('/ready', async (req, res) => {
+  try {
+    const dbReady = await testConnection();
+    if (dbReady) {
+      res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+    } else {
+      res.status(503).json({ status: 'not ready', reason: 'database unavailable' });
+    }
+  } catch {
+    res.status(503).json({ status: 'not ready', reason: 'database check failed' });
+  }
+});
+
+// API routes — mounted under both /api (legacy) and /api/v1 (versioned)
+const apiRouter = express.Router();
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/proxies', proxyRoutes);
+apiRouter.use('/templates', templateRoutes);
+apiRouter.use('/users', userRoutes);
+apiRouter.use('/backups', backupRoutes);
+apiRouter.use('/metrics', metricsRoutes);
+apiRouter.use('/audit', auditRoutes);
+apiRouter.use('/features', featuresRoutes);
+apiRouter.use('/discovery', discoveryRoutes);
+apiRouter.use('/git', gitRoutes);
+
+app.use('/api/v1', apiRouter);
+app.use('/api', apiRouter); // backward compatible
 
 // Error handling middleware
 app.use((err, req, res, next) => {
