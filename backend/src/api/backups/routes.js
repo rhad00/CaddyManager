@@ -6,9 +6,25 @@ const path = require('path');
 const router = express.Router();
 
 /**
- * @route GET /api/backups
- * @desc Get all backups
- * @access Private (Admin only)
+ * @swagger
+ * tags:
+ *   name: Backups
+ *   description: Configuration backup management (admin only)
+ *
+ * /backups:
+ *   get:
+ *     summary: List all backups
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of backup metadata objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -28,9 +44,21 @@ router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
 });
 
 /**
- * @route POST /api/backups
- * @desc Create a new backup
- * @access Private (Admin only)
+ * @swagger
+ * /backups:
+ *   post:
+ *     summary: Create a new backup
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       201:
+ *         description: Backup created
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -50,9 +78,29 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
 });
 
 /**
- * @route GET /api/backups/:id
- * @desc Download a backup file
- * @access Private (Admin only)
+ * @swagger
+ * /backups/{id}:
+ *   get:
+ *     summary: Download a backup file
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Backup JSON file download
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -75,9 +123,24 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
 });
 
 /**
- * @route POST /api/backups/:id/restore
- * @desc Restore from a backup
- * @access Private (Admin only)
+ * @swagger
+ * /backups/{id}/restore:
+ *   post:
+ *     summary: Restore configuration from a backup
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Backup restored successfully
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/restore', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -98,9 +161,24 @@ router.post('/:id/restore', [authMiddleware, roleMiddleware('admin')], async (re
 });
 
 /**
- * @route DELETE /api/backups/:id
- * @desc Delete a backup
- * @access Private (Admin only)
+ * @swagger
+ * /backups/{id}:
+ *   delete:
+ *     summary: Delete a backup
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Backup deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -120,9 +198,17 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
 });
 
 /**
- * @route POST /api/backups/upload
- * @desc Upload a backup file
- * @access Private (Admin only)
+ * @swagger
+ * /backups/upload:
+ *   post:
+ *     summary: Upload a backup file (not yet implemented)
+ *     tags: [Backups]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       501:
+ *         description: Not implemented
  */
 router.post('/upload', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   // This would require a file upload middleware like multer

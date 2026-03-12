@@ -2,9 +2,29 @@ const express = require('express');
 const router = express.Router();
 
 /**
- * @route GET /api/features
- * @desc Return feature flags based on environment (e.g., Cloudflare DNS availability)
- * @access Public (frontend needs to query this)
+ * @swagger
+ * tags:
+ *   name: Features
+ *   description: Server-side feature flags
+ *
+ * /features:
+ *   get:
+ *     summary: Get enabled feature flags
+ *     tags: [Features]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Feature flags object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 features:
+ *                   type: object
+ *                   properties:
+ *                     cloudflare: { type: boolean, description: "Whether Cloudflare DNS challenge is enabled" }
  */
 router.get('/', async (req, res) => {
   try {

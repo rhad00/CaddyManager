@@ -13,8 +13,24 @@ const hashKey = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
 const generateRawKey = () => `cm_${crypto.randomBytes(20).toString('hex')}`;
 
 /**
- * GET /api/keys
- * List API keys for the current user (admins see all).
+ * @swagger
+ * tags:
+ *   name: API Keys
+ *   description: Programmatic access key management
+ *
+ * /keys:
+ *   get:
+ *     summary: List API keys
+ *     description: "Returns keys for the current user. Admins see all keys."
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of API key objects (key_hash excluded)
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -38,8 +54,42 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * POST /api/keys
- * Create a new API key. Returns the raw key ONCE (not stored).
+ * @swagger
+ * /keys:
+ *   post:
+ *     summary: Create a new API key
+ *     description: "Returns the raw key ONCE — it is not stored and cannot be retrieved again."
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: "CI/CD pipeline" }
+ *               permissions:
+ *                 type: array
+ *                 items: { type: string, enum: [read, write, admin] }
+ *                 default: [read]
+ *               expires_at: { type: string, format: date-time }
+ *     responses:
+ *       201:
+ *         description: API key created — raw_key shown once
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 key: { type: object }
+ *                 raw_key: { type: string, example: "cm_abc123..." }
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', authMiddleware, async (req, res) => {
   try {
@@ -87,8 +137,26 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * DELETE /api/keys/:id
- * Revoke an API key (admin or owner only).
+ * @swagger
+ * /keys/{id}:
+ *   delete:
+ *     summary: Revoke an API key
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: API key revoked
+ *       403:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
@@ -113,8 +181,35 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * PUT /api/keys/:id
- * Update API key name or enabled status.
+ * @swagger
+ * /keys/{id}:
+ *   put:
+ *     summary: Update API key name or enabled status
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               enabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: API key updated
+ *       403:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.put('/:id', authMiddleware, async (req, res) => {
   try {

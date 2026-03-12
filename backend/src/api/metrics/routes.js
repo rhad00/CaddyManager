@@ -4,9 +4,23 @@ const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
- * @route GET /api/metrics
- * @desc Get metrics summary
- * @access Private
+ * @swagger
+ * tags:
+ *   name: Metrics
+ *   description: System and application metrics
+ *
+ * /metrics:
+ *   get:
+ *     summary: Get metrics summary
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Metrics summary object
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -26,9 +40,25 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/metrics/raw
- * @desc Get raw metrics in Prometheus format
- * @access Private (Admin only)
+ * @swagger
+ * /metrics/raw:
+ *   get:
+ *     summary: Get raw metrics in Prometheus format
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Prometheus-formatted text metrics
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/raw', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -46,9 +76,19 @@ router.get('/raw', [authMiddleware, roleMiddleware('admin')], async (req, res) =
 });
 
 /**
- * @route GET /api/metrics/http
- * @desc Get HTTP-related metrics
- * @access Private
+ * @swagger
+ * /metrics/http:
+ *   get:
+ *     summary: Get HTTP-related metrics
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: HTTP metrics object
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/http', authMiddleware, async (req, res) => {
   try {
@@ -68,9 +108,19 @@ router.get('/http', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/metrics/system
- * @desc Get system metrics (CPU, memory, etc.)
- * @access Private
+ * @swagger
+ * /metrics/system:
+ *   get:
+ *     summary: Get system metrics (CPU, memory, etc.)
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: System metrics object
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/system', authMiddleware, async (req, res) => {
   try {
@@ -90,9 +140,19 @@ router.get('/system', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/metrics/tls
- * @desc Get TLS-related metrics
- * @access Private
+ * @swagger
+ * /metrics/tls:
+ *   get:
+ *     summary: Get TLS-related metrics
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: TLS metrics object
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/tls', authMiddleware, async (req, res) => {
   try {
@@ -112,9 +172,28 @@ router.get('/tls', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/metrics/historical
- * @desc Get historical metrics data
- * @access Private
+ * @swagger
+ * /metrics/historical:
+ *   get:
+ *     summary: Get historical metrics data
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 500
+ *           default: 10
+ *         description: "Limit the number of historical entries returned (default: 10, max: 500)"
+ *     responses:
+ *       200:
+ *         description: Array of historical metric snapshots
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/historical', authMiddleware, async (req, res) => {
   try {
@@ -135,9 +214,21 @@ router.get('/historical', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/metrics/snapshot
- * @desc Create a metrics snapshot
- * @access Private (Admin only)
+ * @swagger
+ * /metrics/snapshot:
+ *   post:
+ *     summary: Create a metrics snapshot
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       201:
+ *         description: Snapshot created successfully
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ *       403:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/snapshot', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {

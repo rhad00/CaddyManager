@@ -6,9 +6,23 @@ const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
 /**
- * @route GET /api/git/repositories
- * @desc Get all Git repositories
- * @access Private
+ * @swagger
+ * tags:
+ *   name: Git
+ *   description: Git repository integration for config versioning
+ *
+ * /git/repositories:
+ *   get:
+ *     summary: List all connected Git repositories
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of repository objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/repositories', authMiddleware, async (req, res) => {
   try {
@@ -31,9 +45,24 @@ router.get('/repositories', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/git/repositories/:id
- * @desc Get single repository details
- * @access Private
+ * @swagger
+ * /git/repositories/{id}:
+ *   get:
+ *     summary: Get repository details with recent commit history
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Repository object with last 10 config changes
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/repositories/:id', authMiddleware, async (req, res) => {
   try {
@@ -68,9 +97,35 @@ router.get('/repositories/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/git/repositories
- * @desc Create new Git repository connection
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories:
+ *   post:
+ *     summary: Connect a new Git repository
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, provider, repository_url, access_token]
+ *             properties:
+ *               name: { type: string }
+ *               provider: { type: string, enum: [github, gitlab, gitea, bitbucket] }
+ *               repository_url: { type: string, format: uri }
+ *               branch: { type: string, default: main }
+ *               access_token: { type: string }
+ *               auto_commit: { type: boolean, default: true }
+ *               auto_sync: { type: boolean, default: false }
+ *               sync_interval: { type: integer, default: 300 }
+ *     responses:
+ *       201:
+ *         description: Repository connected
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/repositories', [
   authMiddleware,
@@ -165,9 +220,38 @@ router.post('/repositories', [
 });
 
 /**
- * @route PUT /api/git/repositories/:id
- * @desc Update repository settings
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}:
+ *   put:
+ *     summary: Update repository settings
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               branch: { type: string }
+ *               access_token: { type: string }
+ *               auto_commit: { type: boolean }
+ *               auto_sync: { type: boolean }
+ *               sync_interval: { type: integer }
+ *               enabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Repository updated
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.put('/repositories/:id', [
   authMiddleware,
@@ -229,9 +313,24 @@ router.put('/repositories/:id', [
 });
 
 /**
- * @route DELETE /api/git/repositories/:id
- * @desc Delete repository connection
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}:
+ *   delete:
+ *     summary: Delete a Git repository connection
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Repository deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/repositories/:id', [
   authMiddleware,
@@ -262,9 +361,24 @@ router.delete('/repositories/:id', [
 });
 
 /**
- * @route POST /api/git/repositories/:id/sync
- * @desc Manually trigger sync from Git
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}/sync:
+ *   post:
+ *     summary: Manually trigger sync from Git
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Sync completed
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/repositories/:id/sync', [
   authMiddleware,
@@ -295,9 +409,24 @@ router.post('/repositories/:id/sync', [
 });
 
 /**
- * @route POST /api/git/repositories/:id/test
- * @desc Test repository connection
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}/test:
+ *   post:
+ *     summary: Test Git repository connection
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Connection test result
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/repositories/:id/test', [
   authMiddleware,
@@ -325,9 +454,27 @@ router.post('/repositories/:id/test', [
 });
 
 /**
- * @route GET /api/git/history
- * @desc Get commit history (optionally filtered by resource)
- * @access Private
+ * @swagger
+ * /git/history:
+ *   get:
+ *     summary: Get commit history
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: resource_type
+ *         schema: { type: string }
+ *       - in: query
+ *         name: resource_id
+ *         schema: { type: string }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200:
+ *         description: Array of commit history entries
  */
 router.get('/history', authMiddleware, async (req, res) => {
   try {
@@ -353,9 +500,33 @@ router.get('/history', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/git/repositories/:id/diff
- * @desc Get diff between commits
- * @access Private
+ * @swagger
+ * /git/repositories/{id}/diff:
+ *   get:
+ *     summary: "Get diff between commits"
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: from
+ *         required: true
+ *         schema: { type: string }
+ *         description: Base commit SHA
+ *       - in: query
+ *         name: to
+ *         schema: { type: string }
+ *         description: Target commit SHA (defaults to HEAD)
+ *     responses:
+ *       200:
+ *         description: Diff output
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
   try {
@@ -384,9 +555,33 @@ router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/git/repositories/:id/rollback
- * @desc Rollback to specific commit
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}/rollback:
+ *   post:
+ *     summary: Rollback configuration to a specific commit
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [commit_sha]
+ *             properties:
+ *               commit_sha: { type: string }
+ *     responses:
+ *       200:
+ *         description: Rolled back to specified commit
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/repositories/:id/rollback', [
   authMiddleware,
@@ -421,9 +616,24 @@ router.post('/repositories/:id/rollback', [
 });
 
 /**
- * @route POST /api/git/repositories/:id/export
- * @desc Manually export current configuration to Git
- * @access Private (Admin only)
+ * @swagger
+ * /git/repositories/{id}/export:
+ *   post:
+ *     summary: Manually export current configuration to Git
+ *     tags: [Git]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Configuration exported or no changes to export
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/repositories/:id/export', [
   authMiddleware,

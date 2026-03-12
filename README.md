@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub issues](https://img.shields.io/github/issues/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/issues)
 [![GitHub stars](https://img.shields.io/github/stars/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://hub.docker.com/r/rhad00/CaddyManager)
+[![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://ghcr.io/rhad00/caddymanager-backend)
 
 **CaddyManager** is the modern, hassle-free way to manage your reverse proxy. Built on the powerful **Caddy Server**, it gives you a beautiful UI to manage domains, SSL certificates, and complex headers without touching a single config file.
 

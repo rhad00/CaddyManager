@@ -7,9 +7,30 @@ const { logAction } = require('../../services/auditService');
 const router = express.Router();
 
 /**
- * @route GET /api/templates
- * @desc Get all templates
- * @access Private
+ * @swagger
+ * tags:
+ *   name: Templates
+ *   description: Proxy configuration templates
+ *
+ * /templates:
+ *   get:
+ *     summary: List all templates
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 25 }
+ *     responses:
+ *       200:
+ *         description: Array of template objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -54,9 +75,24 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/templates/:id
- * @desc Get template by ID
- * @access Private
+ * @swagger
+ * /templates/{id}:
+ *   get:
+ *     summary: Get a template by ID
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Template object
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
@@ -83,9 +119,35 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/templates
- * @desc Create a new template
- * @access Private (Admin only)
+ * @swagger
+ * /templates:
+ *   post:
+ *     summary: Create a new template
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               headers:
+ *                 type: array
+ *                 items: { type: object }
+ *               middleware:
+ *                 type: array
+ *                 items: { type: object }
+ *     responses:
+ *       201:
+ *         description: Template created
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -134,9 +196,39 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
 });
 
 /**
- * @route PUT /api/templates/:id
- * @desc Update a template
- * @access Private (Admin only)
+ * @swagger
+ * /templates/{id}:
+ *   put:
+ *     summary: Update a template
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               headers:
+ *                 type: array
+ *                 items: { type: object }
+ *               middleware:
+ *                 type: array
+ *                 items: { type: object }
+ *     responses:
+ *       200:
+ *         description: Template updated
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -187,9 +279,24 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
 });
 
 /**
- * @route DELETE /api/templates/:id
- * @desc Delete a template
- * @access Private (Admin only)
+ * @swagger
+ * /templates/{id}:
+ *   delete:
+ *     summary: Delete a template
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Template deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -230,9 +337,28 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
 });
 
 /**
- * @route POST /api/templates/:id/apply/:proxyId
- * @desc Apply a template to a proxy
- * @access Private (Admin only)
+ * @swagger
+ * /templates/{id}/apply/{proxyId}:
+ *   post:
+ *     summary: Apply a template to a proxy
+ *     tags: [Templates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: proxyId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Template applied to proxy
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
