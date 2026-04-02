@@ -4,7 +4,7 @@ const Header = require('../../models/header');
 const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
 const securityHeadersService = require('../../services/securityHeadersService');
-const { authMiddleware } = require('../../middleware/auth');
+const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
@@ -44,10 +44,38 @@ const validateUpstreamUrl = (url) => {
     return { valid: false, message: 'Upstream URL must use http or https protocol' };
   }
 
-  // Block file://, ftp://, gopher://, etc.
-  // Block common metadata endpoints (cloud SSRF targets)
-  const blockedHosts = ['169.254.169.254', 'metadata.google.internal', 'metadata.internal'];
-  if (blockedHosts.includes(parsed.hostname)) {
+  // Block loopback, link-local, private ranges, and cloud metadata endpoints (SSRF prevention)
+  const hostname = parsed.hostname;
+
+  const blockedHosts = [
+    'localhost',
+    '169.254.169.254',        // AWS/Azure link-local metadata
+    'metadata.google.internal',
+    'metadata.internal',
+  ];
+  if (blockedHosts.includes(hostname)) {
+    return { valid: false, message: 'Upstream URL points to a restricted address' };
+  }
+
+  // Block numeric IP addresses in private/loopback/link-local ranges
+  const isPrivateIp = (host) => {
+    // IPv6 loopback
+    if (host === '::1' || host === '[::1]') return true;
+    // Strip IPv6 brackets
+    const h = host.replace(/^\[|\]$/g, '');
+    const parts = h.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(isNaN)) return false;
+    const [a, b] = parts;
+    return (
+      a === 0 ||                           // 0.0.0.0/8
+      a === 10 ||                          // 10.0.0.0/8
+      a === 127 ||                         // 127.0.0.0/8 loopback
+      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+      (a === 192 && b === 168)             // 192.168.0.0/16
+    );
+  };
+
+  if (isPrivateIp(hostname)) {
     return { valid: false, message: 'Upstream URL points to a restricted address' };
   }
 
@@ -357,7 +385,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
@@ -506,7 +534,7 @@ router.post('/', authMiddleware, async (req, res) => {
  * @desc Update a proxy
  * @access Private
  */
-router.put('/:id', authMiddleware, async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
@@ -654,7 +682,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
  * @desc Delete a proxy
  * @access Private
  */
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {

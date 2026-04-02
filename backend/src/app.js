@@ -54,6 +54,12 @@ const { doubleCsrf } = require('csrf-csrf');
 app.use(cookieParser());
 
 const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction && !process.env.CSRF_SECRET) {
+  console.error('FATAL: CSRF_SECRET environment variable is required in production');
+  process.exit(1);
+}
+
 const csrfCookieName = isProduction ? '__Host-x-csrf-token' : 'x-csrf-token';
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
   getSecret: () => process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-csrf-secret',

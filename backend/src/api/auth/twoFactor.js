@@ -6,6 +6,7 @@ const { authMiddleware } = require('../../middleware/auth');
 const { User } = require('../../models');
 const { logAction } = require('../../services/auditService');
 const { verifyTotpSession, generateToken } = require('../../services/authService');
+const { twoFaLimiter } = require('../../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -133,7 +134,7 @@ router.get('/status', authMiddleware, async (req, res) => {
  * Complete login for users with 2FA enabled.
  * Takes totp_session (from login response) + TOTP code or backup code.
  */
-router.post('/challenge', async (req, res) => {
+router.post('/challenge', twoFaLimiter, async (req, res) => {
   try {
     const { totp_session, code } = req.body;
     if (!totp_session || !code) {
