@@ -199,7 +199,8 @@ router.post(
       }
 
       // Update user password and clear reset token
-      // The beforeUpdate hook on the User model handles hashing password_hash
+      // The User model's beforeUpdate hook specifically hashes the plain-text
+      // password assigned to `password_hash` before persisting the change.
       await user.update({
         password_hash: password,
         reset_token: null,
