@@ -1,6 +1,5 @@
 const express = require('express');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
 const { User } = require('../../models');
 const { logAction } = require('../../services/auditService');
 const { sendPasswordResetEmail } = require('../../services/emailService');
@@ -199,12 +198,10 @@ router.post(
         });
       }
 
-      // Hash new password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
       // Update user password and clear reset token
+      // The beforeUpdate hook on the User model handles hashing password_hash
       await user.update({
-        password: hashedPassword,
+        password_hash: password,
         reset_token: null,
         reset_token_expires: null
       });

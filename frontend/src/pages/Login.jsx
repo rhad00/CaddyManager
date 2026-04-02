@@ -15,7 +15,7 @@ const Login = () => {
   const [totpSession, setTotpSession] = useState(null);
   const [totpCode, setTotpCode] = useState('');
 
-  const { login, csrfToken, setToken, setCurrentUser, error } = useAuth();
+  const { login, csrfToken, setCurrentUser, error } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -52,8 +52,6 @@ const Login = () => {
       });
       const data = await res.json();
       if (data.success) {
-        localStorage.setItem('token', data.token);
-        setToken(data.token);
         setCurrentUser(data.user);
         navigate('/');
       } else {

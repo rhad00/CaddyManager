@@ -44,8 +44,24 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+/**
+ * Rate limiter for 2FA challenge endpoint
+ * Prevents brute-force TOTP code guessing
+ */
+const twoFaLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 2FA attempts per windowMs
+    message: {
+        success: false,
+        message: 'Too many 2FA attempts, please try again after 15 minutes'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 module.exports = {
     loginLimiter,
     passwordResetLimiter,
-    apiLimiter
+    apiLimiter,
+    twoFaLimiter
 };

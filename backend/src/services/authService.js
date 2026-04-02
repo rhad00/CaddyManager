@@ -79,7 +79,7 @@ const authenticateUser = async (email, password) => {
     
     // Check if user exists
     if (!user) {
-      return { success: false, message: 'User not found' };
+      return { success: false, message: 'Invalid credentials' };
     }
     
     // Check if account is locked
@@ -110,7 +110,7 @@ const authenticateUser = async (email, password) => {
       
       await user.save();
       
-      return { success: false, message: 'Invalid password' };
+      return { success: false, message: 'Invalid credentials' };
     }
     
     // If 2FA is enabled, issue a challenge ticket instead of the full token

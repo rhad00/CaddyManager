@@ -92,8 +92,9 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
       }
     }
 
-    // Calculate pagination
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    // Calculate pagination (cap limit at 500 to prevent excessive data fetches)
+    const safeLimit = Math.min(Math.max(1, parseInt(limit) || 50), 500);
+    const offset = (parseInt(page) - 1) * safeLimit;
 
     // Fetch logs with user information
     const { count, rows: logs } = await AuditLog.findAndCountAll({
@@ -106,7 +107,7 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
         },
       ],
       order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
+      limit: safeLimit,
       offset,
     });
 
@@ -116,8 +117,8 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
       pagination: {
         total: count,
         page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(count / parseInt(limit)),
+        limit: safeLimit,
+        totalPages: Math.ceil(count / safeLimit),
       },
     });
   } catch (error) {

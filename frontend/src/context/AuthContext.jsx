@@ -12,7 +12,7 @@ export const useAuth = () => {
 // Auth provider component
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -39,37 +39,27 @@ export const AuthProvider = ({ children }) => {
     fetchCsrfToken();
   }, [API_URL]);
 
-  // Effect to check if user is already logged in
+  // Effect to check if user is already logged in via httpOnly cookie
   useEffect(() => {
     const checkLoggedIn = async () => {
-      if (token) {
-        try {
-          const response = await fetch(`${API_URL}/auth/me`, {
-            credentials: 'include',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
+      try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+          credentials: 'include',
+        });
 
-          if (response.ok) {
-            const data = await response.json();
-            setCurrentUser(data.user);
-          } else {
-            // Token invalid or expired
-            localStorage.removeItem('token');
-            setToken(null);
-          }
-        } catch (error) {
-          console.error('Auth check failed:', error);
-          setError('Failed to authenticate user');
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentUser(data.user);
         }
+      } catch (error) {
+        console.error('Auth check failed:', error);
       }
 
       setLoading(false);
     };
 
     checkLoggedIn();
-  }, [token, API_URL]);
+  }, [API_URL]);
 
   // Login function
   const login = async (email, password) => {
@@ -98,8 +88,6 @@ export const AuthProvider = ({ children }) => {
         if (data.require_2fa) {
           return { success: true, require_2fa: true, totp_session: data.totp_session };
         }
-        localStorage.setItem('token', data.token);
-        setToken(data.token);
         setCurrentUser(data.user);
         return { success: true };
       } else {
@@ -118,9 +106,7 @@ export const AuthProvider = ({ children }) => {
   // Logout function
   const logout = async () => {
     try {
-      const headers = {
-        'Authorization': `Bearer ${token}`
-      };
+      const headers = {};
       if (csrfToken) {
         headers['x-csrf-token'] = csrfToken;
       }
@@ -135,8 +121,6 @@ export const AuthProvider = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       // Always clear local state regardless of API response
-      localStorage.removeItem('token');
-      setToken(null);
       setCurrentUser(null);
     }
   };

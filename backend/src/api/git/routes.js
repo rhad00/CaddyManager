@@ -528,6 +528,8 @@ router.get('/history', authMiddleware, async (req, res) => {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
+const SHA_REGEX = /^[0-9a-f]{7,40}$/i;
+
 router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
   try {
     const { from, to } = req.query;
@@ -536,6 +538,13 @@ router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'From commit is required'
+      });
+    }
+
+    if (!SHA_REGEX.test(from) || (to && !SHA_REGEX.test(to))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid commit SHA format'
       });
     }
 
@@ -586,7 +595,7 @@ router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
 router.post('/repositories/:id/rollback', [
   authMiddleware,
   roleMiddleware('admin'),
-  body('commit_sha').notEmpty().withMessage('Commit SHA is required')
+  body('commit_sha').notEmpty().withMessage('Commit SHA is required').matches(/^[0-9a-f]{7,40}$/i).withMessage('Invalid commit SHA format')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
