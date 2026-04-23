@@ -12,7 +12,7 @@ export const useAuth = () => {
 // Auth provider component
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -25,7 +25,9 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const fetchCsrfToken = async () => {
       try {
-        const response = await fetch(`${API_URL}/csrf-token`);
+        const response = await fetch(`${API_URL}/csrf-token`, {
+          credentials: 'include'
+        });
         if (response.ok) {
           const data = await response.json();
           setCsrfToken(data.csrfToken);
@@ -37,36 +39,27 @@ export const AuthProvider = ({ children }) => {
     fetchCsrfToken();
   }, [API_URL]);
 
-  // Effect to check if user is already logged in
+  // Effect to check if user is already logged in via httpOnly cookie
   useEffect(() => {
     const checkLoggedIn = async () => {
-      if (token) {
-        try {
-          const response = await fetch(`${API_URL}/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
+      try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+          credentials: 'include',
+        });
 
-          if (response.ok) {
-            const data = await response.json();
-            setCurrentUser(data.user);
-          } else {
-            // Token invalid or expired
-            localStorage.removeItem('token');
-            setToken(null);
-          }
-        } catch (error) {
-          console.error('Auth check failed:', error);
-          setError('Failed to authenticate user');
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentUser(data.user);
         }
+      } catch (error) {
+        console.error('Auth check failed:', error);
       }
 
       setLoading(false);
     };
 
     checkLoggedIn();
-  }, [token, API_URL]);
+  }, [API_URL]);
 
   // Login function
   const login = async (email, password) => {
@@ -78,11 +71,12 @@ export const AuthProvider = ({ children }) => {
         'Content-Type': 'application/json'
       };
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers,
         body: JSON.stringify({ email, password })
       });
@@ -90,8 +84,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem('token', data.token);
-        setToken(data.token);
+        // 2FA required — return challenge ticket to Login page
+        if (data.require_2fa) {
+          return { success: true, require_2fa: true, totp_session: data.totp_session };
+        }
         setCurrentUser(data.user);
         return { success: true };
       } else {
@@ -110,24 +106,21 @@ export const AuthProvider = ({ children }) => {
   // Logout function
   const logout = async () => {
     try {
-      const headers = {
-        'Authorization': `Bearer ${token}`
-      };
+      const headers = {};
       if (csrfToken) {
-        headers['CSRF-Token'] = csrfToken;
+        headers['x-csrf-token'] = csrfToken;
       }
 
-      // Call logout endpoint (optional, as JWT is stateless)
+      // Call logout endpoint to clear httpOnly cookie
       await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
+        credentials: 'include',
         headers
       });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
       // Always clear local state regardless of API response
-      localStorage.removeItem('token');
-      setToken(null);
       setCurrentUser(null);
     }
   };
@@ -141,6 +134,8 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     logout,
+    setToken,
+    setCurrentUser,
     isAuthenticated: !!currentUser
   };
 

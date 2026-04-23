@@ -46,6 +46,23 @@ const User = sequelize.define('User', {
   reset_token_expires: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  lockout_until: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  totp_secret: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  totp_enabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    allowNull: false
+  },
+  totp_backup_codes: {
+    type: DataTypes.JSON,
+    allowNull: true
   }
 }, {
   timestamps: true, // Adds createdAt and updatedAt

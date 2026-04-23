@@ -18,7 +18,7 @@ describe('authService (real tests with mocks)', () => {
     User.findOne.mockResolvedValue(null);
     const res = await authService.authenticateUser('nope@example.com', 'pass');
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/not found/i);
+    expect(res.message).toMatch(/invalid credentials/i);
   });
 
   test('authenticateUser handles locked accounts', async () => {
@@ -43,7 +43,7 @@ describe('authService (real tests with mocks)', () => {
 
     const res = await authService.authenticateUser('u@example.com', 'wrong');
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/invalid password/i);
+    expect(res.message).toMatch(/invalid credentials/i);
     expect(user.failed_login_attempts).toBeGreaterThanOrEqual(1);
     expect(user.save).toHaveBeenCalled();
   });

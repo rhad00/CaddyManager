@@ -53,8 +53,8 @@ const AuditLogViewer = () => {
       setLogs(data.logs);
       setPagination(prev => ({
         ...prev,
-        total: data.total,
-        totalPages: data.totalPages
+        total: data.pagination.total,
+        totalPages: data.pagination.totalPages
       }));
       setError(null);
     } catch (error) {
@@ -195,7 +195,7 @@ const AuditLogViewer = () => {
             <div className="px-4 py-5 sm:p-6">
               <dt className="text-sm font-medium text-gray-500 truncate">Total Events</dt>
               <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                {stats.totalEvents?.toLocaleString() || 0}
+                {stats.total?.toLocaleString() || 0}
               </dd>
             </div>
           </div>
@@ -203,7 +203,7 @@ const AuditLogViewer = () => {
             <div className="px-4 py-5 sm:p-6">
               <dt className="text-sm font-medium text-gray-500 truncate">Successful</dt>
               <dd className="mt-1 text-3xl font-semibold text-green-600">
-                {stats.successfulEvents?.toLocaleString() || 0}
+                {(stats.byStatus?.find(s => s.status === 'success')?.count ?? 0).toLocaleString()}
               </dd>
             </div>
           </div>
@@ -211,15 +211,15 @@ const AuditLogViewer = () => {
             <div className="px-4 py-5 sm:p-6">
               <dt className="text-sm font-medium text-gray-500 truncate">Failed</dt>
               <dd className="mt-1 text-3xl font-semibold text-red-600">
-                {stats.failedEvents?.toLocaleString() || 0}
+                {(stats.byStatus?.find(s => s.status === 'failure')?.count ?? 0).toLocaleString()}
               </dd>
             </div>
           </div>
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Unique Users</dt>
+              <dt className="text-sm font-medium text-gray-500 truncate">Unique Actions</dt>
               <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                {stats.uniqueUsers?.toLocaleString() || 0}
+                {stats.byAction?.length?.toLocaleString() || 0}
               </dd>
             </div>
           </div>

@@ -5,17 +5,74 @@ const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
- * @route GET /api/discovery
- * @desc Get all discovered services
- * @access Private
+ * @swagger
+ * tags:
+ *   name: Discovery
+ *   description: Docker/Kubernetes service auto-discovery
+ *
+ * /discovery:
+ *   get:
+ *     summary: List all discovered services
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: source_type
+ *         schema: { type: string, enum: [docker, kubernetes] }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 25 }
+ *     responses:
+ *       200:
+ *         description: Array of discovered service objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { source_type, status } = req.query;
+    const { source_type, status, page, limit } = req.query;
 
     const where = {};
     if (source_type) where.source_type = source_type;
     if (status) where.status = status;
+
+    if (page || limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows: services } = await DiscoveredService.findAndCountAll({
+        where,
+        include: [{
+          model: Proxy,
+          as: 'proxy',
+          attributes: ['id', 'name', 'domains', 'upstream_url', 'status']
+        }],
+        order: [['last_seen', 'DESC']],
+        limit: limitNum,
+        offset,
+        distinct: true,
+      });
+
+      return res.status(200).json({
+        success: true,
+        services,
+        pagination: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
 
     const services = await DiscoveredService.findAll({
       where,
@@ -41,9 +98,17 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/discovery/status
- * @desc Get discovery service status
- * @access Private
+ * @swagger
+ * /discovery/status:
+ *   get:
+ *     summary: Get discovery service status
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Discovery service status for each source
  */
 router.get('/status', authMiddleware, async (req, res) => {
   try {
@@ -69,9 +134,24 @@ router.get('/status', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/discovery/:id
- * @desc Get single discovered service details
- * @access Private
+ * @swagger
+ * /discovery/{id}:
+ *   get:
+ *     summary: Get a discovered service by ID
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Discovered service object
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
@@ -103,9 +183,26 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/discovery/:id/sync
- * @desc Manually sync a discovered service
- * @access Private (Admin only)
+ * @swagger
+ * /discovery/{id}/sync:
+ *   post:
+ *     summary: Manually sync a discovered service
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Service synced
+ *       501:
+ *         description: Not implemented for this source type
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -136,15 +233,30 @@ router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, 
     console.error('Sync discovered service error:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error while syncing service'
+      message: 'Server error while syncing service'
     });
   }
 });
 
 /**
- * @route POST /api/discovery/:id/disable
- * @desc Disable auto-management for a service
- * @access Private (Admin only)
+ * @swagger
+ * /discovery/{id}/disable:
+ *   post:
+ *     summary: Disable auto-management for a discovered service
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Auto-management disabled
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/disable', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -174,9 +286,24 @@ router.post('/:id/disable', [authMiddleware, roleMiddleware('admin')], async (re
 });
 
 /**
- * @route POST /api/discovery/:id/enable
- * @desc Enable auto-management for a service
- * @access Private (Admin only)
+ * @swagger
+ * /discovery/{id}/enable:
+ *   post:
+ *     summary: Enable auto-management for a discovered service
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Auto-management enabled
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/enable', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -206,9 +333,28 @@ router.post('/:id/enable', [authMiddleware, roleMiddleware('admin')], async (req
 });
 
 /**
- * @route DELETE /api/discovery/:id
- * @desc Delete a discovered service (and optionally its proxy)
- * @access Private (Admin only)
+ * @swagger
+ * /discovery/{id}:
+ *   delete:
+ *     summary: Delete a discovered service
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: deleteProxy
+ *         schema: { type: boolean }
+ *         description: Also delete the associated proxy
+ *     responses:
+ *       200:
+ *         description: Service deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -250,9 +396,29 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
 });
 
 /**
- * @route POST /api/discovery/scan
- * @desc Manually trigger a full scan of containers/services
- * @access Private (Admin only)
+ * @swagger
+ * /discovery/scan:
+ *   post:
+ *     summary: Trigger a full scan of all containers and services
+ *     tags: [Discovery]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               source:
+ *                 type: string
+ *                 enum: [docker, kubernetes]
+ *                 description: Limit scan to a specific source
+ *     responses:
+ *       200:
+ *         description: Scan completed
+ *       503:
+ *         description: Discovery service not initialized
  */
 router.post('/scan', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {

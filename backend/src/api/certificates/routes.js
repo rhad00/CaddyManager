@@ -1,20 +1,65 @@
 const express = require('express');
+const fs = require('fs');
 const { Certificate, CertificateAuthority } = require('../../models');
 const certificateService = require('../../services/certificateService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: 'uploads/', limits: { fileSize: 1024 * 1024 } }); // 1MB limit
 const router = express.Router();
 
 /**
- * @route GET /api/certificates
- * @desc Get all certificates
- * @access Private
+ * Validate PEM file content
+ * @param {string} filePath - Path to the uploaded file
+ * @param {string} expectedType - Expected PEM type ('CERTIFICATE' or 'PRIVATE KEY' or 'RSA PRIVATE KEY')
+ * @returns {{ valid: boolean, message?: string }}
+ */
+const validatePemFile = (filePath, expectedType) => {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8').trim();
+    const validHeaders = expectedType === 'CERTIFICATE'
+      ? ['-----BEGIN CERTIFICATE-----']
+      : ['-----BEGIN PRIVATE KEY-----', '-----BEGIN RSA PRIVATE KEY-----', '-----BEGIN EC PRIVATE KEY-----'];
+    const validFooters = expectedType === 'CERTIFICATE'
+      ? ['-----END CERTIFICATE-----']
+      : ['-----END PRIVATE KEY-----', '-----END RSA PRIVATE KEY-----', '-----END EC PRIVATE KEY-----'];
+
+    const hasValidHeader = validHeaders.some(h => content.includes(h));
+    const hasValidFooter = validFooters.some(f => content.includes(f));
+
+    if (!hasValidHeader || !hasValidFooter) {
+      return { valid: false, message: `Invalid PEM format: expected ${expectedType}` };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, message: 'Unable to read uploaded file' };
+  }
+};
+
+/**
+ * @swagger
+ * tags:
+ *   name: Certificates
+ *   description: TLS certificate management
+ *
+ * /certificates:
+ *   get:
+ *     summary: List all certificates
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of certificate objects
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const certificates = await Certificate.findAll();
+    const certificates = await Certificate.findAll({
+      attributes: { exclude: ['private_key_pem'] }
+    });
     
     res.status(200).json({
       success: true,
@@ -30,13 +75,30 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/certificates/:id
- * @desc Get certificate details
- * @access Private
+ * @swagger
+ * /certificates/{id}:
+ *   get:
+ *     summary: Get certificate details
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate object
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const certificate = await Certificate.findByPk(req.params.id);
+    const certificate = await Certificate.findByPk(req.params.id, {
+      attributes: { exclude: ['private_key_pem'] }
+    });
     
     if (!certificate) {
       return res.status(404).json({
@@ -59,9 +121,24 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route GET /api/certificates/domains/:domain
- * @desc Get certificates for a specific domain
- * @access Private
+ * @swagger
+ * /certificates/domains/{domain}:
+ *   get:
+ *     summary: Get certificates covering a specific domain
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: domain
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Array of matching certificates
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.get('/domains/:domain', authMiddleware, async (req, res) => {
   try {
@@ -82,9 +159,35 @@ router.get('/domains/:domain', authMiddleware, async (req, res) => {
 });
 
 /**
- * @route POST /api/certificates/upload
- * @desc Upload custom certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/upload:
+ *   post:
+ *     summary: Upload a custom certificate and private key
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [certificate, privateKey, name, domains]
+ *             properties:
+ *               certificate:
+ *                 type: string
+ *                 format: binary
+ *               privateKey:
+ *                 type: string
+ *                 format: binary
+ *               name: { type: string }
+ *               domains: { type: string }
+ *     responses:
+ *       201:
+ *         description: Certificate uploaded
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
   { name: 'certificate', maxCount: 1 },
@@ -106,7 +209,17 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
         message: 'Name and domains are required'
       });
     }
-    
+
+    // Validate PEM format of uploaded files
+    const certValidation = validatePemFile(req.files.certificate[0].path, 'CERTIFICATE');
+    if (!certValidation.valid) {
+      return res.status(400).json({ success: false, message: certValidation.message });
+    }
+    const keyValidation = validatePemFile(req.files.privateKey[0].path, 'PRIVATE KEY');
+    if (!keyValidation.valid) {
+      return res.status(400).json({ success: false, message: keyValidation.message });
+    }
+
     const result = await certificateService.uploadCertificate(
       name,
       domains,
@@ -136,15 +249,30 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
     console.error('Upload certificate error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while uploading certificate: ${error.message}` 
+      message: 'Server error while uploading certificate' 
     });
   }
 });
 
 /**
- * @route DELETE /api/certificates/:id
- * @desc Delete a certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/{id}:
+ *   delete:
+ *     summary: Delete a certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate deleted
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -180,15 +308,38 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     console.error('Delete certificate error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while deleting certificate: ${error.message}` 
+      message: 'Server error while deleting certificate' 
     });
   }
 });
 
 /**
- * @route POST /api/certificates/generate
- * @desc Generate a self-signed certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/generate:
+ *   post:
+ *     summary: Generate a self-signed certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, domains]
+ *             properties:
+ *               name: { type: string }
+ *               domains:
+ *                 type: array
+ *                 items: { type: string }
+ *               validityDays: { type: integer, default: 365 }
+ *     responses:
+ *       201:
+ *         description: Self-signed certificate generated
+ *       400:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -231,15 +382,30 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
     console.error('Generate certificate error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while generating certificate: ${error.message}` 
+      message: 'Server error while generating certificate' 
     });
   }
 });
 
 /**
- * @route POST /api/certificates/:id/renew
- * @desc Renew a certificate
- * @access Private (Admin only)
+ * @swagger
+ * /certificates/{id}/renew:
+ *   post:
+ *     summary: Renew a certificate
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate renewed
+ *       404:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
@@ -276,7 +442,7 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
     console.error('Renew certificate error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while renewing certificate: ${error.message}` 
+      message: 'Server error while renewing certificate' 
     });
   }
 });
@@ -325,7 +491,13 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
         message: 'Name and type are required'
       });
     }
-    
+
+    // Validate PEM format of CA certificate
+    const caValidation = validatePemFile(req.file.path, 'CERTIFICATE');
+    if (!caValidation.valid) {
+      return res.status(400).json({ success: false, message: caValidation.message });
+    }
+
     const result = await certificateService.addCertificateAuthority(
       name,
       type,
@@ -344,7 +516,7 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
     console.error('Add CA error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while adding certificate authority: ${error.message}` 
+      message: 'Server error while adding certificate authority' 
     });
   }
 });
@@ -375,7 +547,7 @@ router.delete('/cas/:id', [authMiddleware, roleMiddleware('admin')], async (req,
     console.error('Delete CA error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while removing certificate authority: ${error.message}` 
+      message: 'Server error while removing certificate authority' 
     });
   }
 });
@@ -416,7 +588,7 @@ router.put('/cas/:id/trust', [authMiddleware, roleMiddleware('admin')], async (r
     console.error('Update CA trust error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while updating certificate authority trust status: ${error.message}` 
+      message: 'Server error while updating certificate authority trust status' 
     });
   }
 });
@@ -479,7 +651,7 @@ router.post('/acme/accounts', [authMiddleware, roleMiddleware('admin')], async (
     console.error('Add ACME account error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while adding ACME account: ${error.message}` 
+      message: 'Server error while adding ACME account' 
     });
   }
 });
@@ -502,7 +674,7 @@ router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], a
     console.error('Delete ACME account error:', error);
     res.status(500).json({ 
       success: false, 
-      message: `Server error while removing ACME account: ${error.message}` 
+      message: 'Server error while removing ACME account' 
     });
   }
 });

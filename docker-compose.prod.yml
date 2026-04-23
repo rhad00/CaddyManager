@@ -38,8 +38,7 @@ services:
     restart: unless-stopped
     depends_on:
       - db
-    ports:
-      - "3000:3000"
+    # Port 3000 is NOT exposed to the host — traffic is proxied through the frontend's nginx
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -49,12 +48,14 @@ services:
       - DB_NAME=${DB_NAME:-caddymanager}
       - DB_USER=${DB_USER:-caddyuser}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_SSL=false
       - DB_URL=postgresql://${DB_USER:-caddyuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-caddymanager}
       - CADDY_API_URL=http://caddy:2019
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - CSRF_SECRET=${CSRF_SECRET}
+      - GIT_SECRET_KEY=${GIT_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - backend_logs:/app/logs

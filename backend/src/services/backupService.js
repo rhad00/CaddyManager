@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { promisify } = require('util');
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
@@ -14,6 +15,43 @@ const {
   Backup
 } = require('../models');
 require('dotenv').config();
+
+// ── Encryption helpers ────────────────────────────────────────────────────────
+const ENCRYPTION_ALGO = 'aes-256-gcm';
+
+function getEncryptionKey() {
+  const keyHex = process.env.BACKUP_ENCRYPTION_KEY;
+  if (!keyHex) return null;
+  return Buffer.from(keyHex.slice(0, 64), 'hex'); // 32 bytes
+}
+
+function encryptBuffer(plainBuf) {
+  const key = getEncryptionKey();
+  if (!key) return { encrypted: false, data: plainBuf };
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ENCRYPTION_ALGO, key, iv);
+  const cipherBuf = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Format: 4-byte magic "CMEK" + 16-byte IV + 16-byte authTag + ciphertext
+  const header = Buffer.alloc(4);
+  header.write('CMEK');
+  return { encrypted: true, data: Buffer.concat([header, iv, authTag, cipherBuf]) };
+}
+
+function decryptBuffer(buf) {
+  if (buf.length < 4 || buf.slice(0, 4).toString() !== 'CMEK') {
+    // Not encrypted — return as-is
+    return buf;
+  }
+  const key = getEncryptionKey();
+  if (!key) throw new Error('BACKUP_ENCRYPTION_KEY is required to decrypt this backup');
+  const iv = buf.slice(4, 20);
+  const authTag = buf.slice(20, 36);
+  const cipherBuf = buf.slice(36);
+  const decipher = crypto.createDecipheriv(ENCRYPTION_ALGO, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(cipherBuf), decipher.final()]);
+}
 
 /**
  * Service for backup and restore functionality
@@ -53,7 +91,8 @@ class BackupService {
       
       // Generate backup filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `backup-${timestamp}.json`;
+      const extension = getEncryptionKey() ? '.json.enc' : '.json';
+      const filename = `backup-${timestamp}${extension}`;
       const filePath = path.join(this.backupDir, filename);
       
       // Fetch all configuration data
@@ -85,8 +124,10 @@ class BackupService {
         templates: templates.map(template => template.toJSON())
       };
       
-      // Write backup file
-      await writeFileAsync(filePath, JSON.stringify(backupData, null, 2));
+      // Write backup file (optionally encrypted)
+      const jsonBuf = Buffer.from(JSON.stringify(backupData, null, 2));
+      const { data: fileData } = encryptBuffer(jsonBuf);
+      await writeFileAsync(filePath, fileData);
       
       // Get file size
       const stats = fs.statSync(filePath);
@@ -160,10 +201,11 @@ class BackupService {
         throw new Error('Backup not found');
       }
       
-      // Read backup file
+      // Read backup file (decrypt if necessary)
       const filePath = path.join(this.backupDir, backup.filename);
-      const backupContent = await readFileAsync(filePath, 'utf8');
-      const backupData = JSON.parse(backupContent);
+      const rawBuf = await readFileAsync(filePath);
+      const plainBuf = decryptBuffer(rawBuf);
+      const backupData = JSON.parse(plainBuf.toString('utf8'));
       
       // Validate backup data
       if (!backupData.version || !backupData.proxies || !backupData.templates) {
@@ -329,6 +371,36 @@ class BackupService {
   }
   
   /**
+   * Delete backups older than BACKUP_RETENTION_DAYS (default 30).
+   * Only deletes auto backups; manual backups are kept unless retain_days=0.
+   */
+  async enforceRetention() {
+    const retainDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10);
+    if (!retainDays || retainDays <= 0) return; // 0 = disabled
+
+    const cutoff = new Date(Date.now() - retainDays * 24 * 60 * 60 * 1000);
+    const { Op } = require('sequelize');
+
+    const old = await Backup.findAll({
+      where: {
+        backup_type: 'auto',
+        createdAt: { [Op.lt]: cutoff },
+      },
+    });
+
+    for (const backup of old) {
+      try {
+        const filePath = path.join(this.backupDir, backup.filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await backup.destroy();
+        console.log(`Retention: deleted old backup ${backup.filename}`);
+      } catch (err) {
+        console.error(`Retention: failed to delete backup ${backup.filename}:`, err.message);
+      }
+    }
+  }
+
+  /**
    * Schedule automatic backups
    * @param {Number} intervalHours - Interval in hours between backups
    */
@@ -355,6 +427,8 @@ class BackupService {
         
         await this.createBackup(adminUser, 'auto');
         console.log('Automatic backup created successfully');
+        // Enforce retention policy after each auto backup
+        await this.enforceRetention();
       } catch (error) {
         console.error('Automatic backup failed:', error);
       }

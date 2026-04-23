@@ -33,7 +33,8 @@ coverage/
 .nyc_output/
 
 # Logs
-logs/
+/backend/logs/
+/logs/
 *.log
 
 # Database

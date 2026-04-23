@@ -22,6 +22,9 @@ if (dbType === 'postgres') {
   });
 } else {
   // Use SQLite (default)
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('WARNING: SQLite is not recommended for production. Set DB_TYPE=postgres for reliability.');
+  }
   sequelize = new Sequelize({
     dialect: 'sqlite',
     storage: process.env.SQLITE_PATH || './database.sqlite',

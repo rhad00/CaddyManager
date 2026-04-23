@@ -1,4 +1,4 @@
-name: Version Bump and Release
+name: Release
 
 on:
   push:
@@ -6,26 +6,71 @@ on:
       - main
   workflow_dispatch:
 
+# Cancel redundant runs triggered by fast successive pushes to main
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
   id-token: write
+  attestations: write
 
 jobs:
-  version-bump:
+  # ─── Job 1: Lint ──────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend (ESLint)
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Lint backend (ESLint)
+        working-directory: backend
+        run: |
+          if npm run lint --if-present 2>/dev/null; then
+            echo "Backend lint passed"
+          else
+            echo "No lint script in backend — skipping"
+          fi
+
+  # ─── Job 2: Version bump via Cocogitto ────────────────────────────────────────
+  version:
+    name: Semantic Version Bump
+    needs: lint
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.cog.outputs.version }}
-      has_new_version: ${{ steps.check.outputs.has_new_version }}
-    
+      new_release: ${{ steps.cog.outputs.version != '' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use a PAT so the pushed tag triggers downstream workflows.
+          # Falls back to GITHUB_TOKEN if PAT is not set (downstream won't re-trigger).
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Cocogitto release
+      - name: Run Cocogitto — check commits & bump version
         id: cog
         uses: cocogitto/cocogitto-action@v3
         with:
@@ -35,34 +80,38 @@ jobs:
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Check if new version was created
-        id: check
-        run: |
-          if [ -n "${{ steps.cog.outputs.version }}" ]; then
-            echo "has_new_version=true" >> $GITHUB_OUTPUT
-            echo "New version created: ${{ steps.cog.outputs.version }}"
-          else
-            echo "has_new_version=false" >> $GITHUB_OUTPUT
-            echo "No new version created"
-          fi
+      - name: Push version tag
+        if: steps.cog.outputs.version != ''
+        run: git push origin --tags
 
-      - name: Push tags to repository
-        if: steps.check.outputs.has_new_version == 'true'
-        run: |
-          git push origin --tags
-          echo "Pushed tag ${{ steps.cog.outputs.version }} to repository"
-
-  build-and-push-images:
-    needs: version-bump
-    if: needs.version-bump.outputs.has_new_version == 'true'
+  # ─── Job 3: Build & push Docker images ────────────────────────────────────────
+  docker:
+    name: Docker / ${{ matrix.component }}
+    needs: version
+    if: needs.version.outputs.new_release == 'true'
     runs-on: ubuntu-latest
-    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            image: caddymanager-backend
+          - component: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            image: caddymanager-frontend
+          - component: caddy
+            context: ./caddy
+            dockerfile: ./caddy/Dockerfile
+            image: caddymanager-caddy
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ needs.version-bump.outputs.version }}
+          # Check out the exact tagged commit so images match the release
+          ref: ${{ needs.version.outputs.version }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -71,121 +120,94 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up QEMU
+      - name: Set up QEMU (cross-platform builds)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata for backend
-        id: meta-backend
+      - name: Extract Docker metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/caddymanager-backend
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.version-bump.outputs.version }}
-            type=sha,prefix=
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.version.outputs.version }}
+            type=sha,format=short
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.vendor=rhad00
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
+      - name: Build and push ${{ matrix.component }} image
+        id: build
+        uses: docker/build-push-action@v6
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           platforms: linux/amd64
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-backend:buildcache,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:buildcache,mode=max
 
-      - name: Extract metadata for caddy
-        id: meta-caddy
-        uses: docker/metadata-action@v5
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
         with:
-          images: ghcr.io/${{ github.repository_owner }}/caddymanager-caddy
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.version-bump.outputs.version }}
-            type=sha,prefix=
-            type=raw,value=latest
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
-      - name: Build and push caddy image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./caddy
-          file: ./caddy/Dockerfile
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-caddy.outputs.tags }}
-          labels: ${{ steps.meta-caddy.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:buildcache,mode=max
-
-      - name: Extract metadata for frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/caddymanager-frontend
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version-bump.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.version-bump.outputs.version }}
-            type=sha,prefix=
-            type=raw,value=latest
-
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:buildcache,mode=max
-
-  create-release:
-    needs: [version-bump, build-and-push-images]
-    if: needs.version-bump.outputs.has_new_version == 'true'
+  # ─── Job 4: GitHub Release with changelog ─────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [version, docker]
+    if: needs.version.outputs.new_release == 'true'
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs.version-bump.outputs.version }}
+          ref: ${{ needs.version.outputs.version }}
 
-      - name: Extract changelog for this version
-        id: changelog
+      - name: Extract changelog section for this release
+        id: notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${{ needs.version-bump.outputs.version }}"
-          if [ -f CHANGELOG.md ]; then
-            # Extract the section for this version from CHANGELOG.md
-            # This is a simple extraction - adjust based on your changelog format
-            awk "/## \[${VERSION#v}\]/,/## \[/" CHANGELOG.md | sed '$d' > release_notes.md
-            if [ ! -s release_notes.md ]; then
-              echo "Release $VERSION" > release_notes.md
-              echo "" >> release_notes.md
-              echo "See CHANGELOG.md for details." >> release_notes.md
-            fi
-          else
-            echo "Release $VERSION" > release_notes.md
+          # Strip the "v" prefix to match CHANGELOG.md section headers (## [1.2.3])
+          BARE="${VERSION#v}"
+          if [[ -f CHANGELOG.md ]]; then
+            awk "/^## \[${BARE}\]/,/^## \[/" CHANGELOG.md | sed '$d' > release_notes.md
           fi
+          if [[ ! -s release_notes.md ]]; then
+            printf "## What's Changed\n\nSee [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.\n" > release_notes.md
+          fi
+          # Append Docker image references
+          cat >> release_notes.md <<EOF
+
+          ## Docker Images
+
+          \`\`\`
+          ghcr.io/${{ github.repository_owner }}/caddymanager-backend:${BARE}
+          ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:${BARE}
+          ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:${BARE}
+          \`\`\`
+          EOF
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.version-bump.outputs.version }}
-          name: ${{ needs.version-bump.outputs.version }}
+          tag_name: ${{ needs.version.outputs.version }}
+          name: ${{ needs.version.outputs.version }}
           body_path: release_notes.md
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

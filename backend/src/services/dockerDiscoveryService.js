@@ -293,7 +293,8 @@ class DockerDiscoveryService {
 
       // Create or update proxy
       if (!discovered.proxy_id) {
-        // Create new proxy
+        // New proxies are always created DISABLED so an admin can review
+        // and manually enable them. Caddy config is NOT updated yet.
         const proxy = await Proxy.create({
           name: `Auto: ${containerName}`,
           domains: [config.domain],
@@ -301,7 +302,7 @@ class DockerDiscoveryService {
           ssl_type: config.ssl_type,
           compression_enabled: config.compression !== false,
           websocket_enabled: config.websocket === true,
-          status: 'active'
+          status: 'disabled'
         });
 
         // Apply template if specified
@@ -320,8 +321,9 @@ class DockerDiscoveryService {
         discovered.proxy_id = proxy.id;
         await discovered.save();
 
-        await caddyService.updateCaddyConfig();
-        logger.info(`[DockerDiscovery] Created proxy for ${containerName} -> ${config.domain}`);
+        // Proxy is disabled — Caddy config is NOT updated.
+        // An administrator must enable the proxy in the UI to activate it.
+        logger.info(`[DockerDiscovery] Discovered ${containerName} → ${config.domain} (proxy created DISABLED, pending admin review)`);
       }
     } catch (error) {
       logger.error(`[DockerDiscovery] Error creating proxy for ${containerName}:`, error.message);

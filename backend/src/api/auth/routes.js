@@ -3,6 +3,7 @@ const { authenticateUser } = require('../../services/authService');
 const { authMiddleware } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 const passwordResetRoutes = require('./passwordReset');
+const twoFactorRoutes = require('./twoFactor');
 const router = express.Router();
 
 /**
@@ -17,6 +18,47 @@ const { loginValidation } = require('../../middleware/validation');
  * @route POST /api/auth/login
  * @desc Authenticate user and get token
  * @access Public
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Authentication endpoints
+ *
+ * /auth/login:
+ *   post:
+ *     summary: Log in with email and password
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *     responses:
+ *       200:
+ *         description: Login successful or 2FA required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   properties:
+ *                     success: { type: boolean }
+ *                     token: { type: string }
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                 - type: object
+ *                   properties:
+ *                     success: { type: boolean }
+ *                     require_2fa: { type: boolean }
+ *                     totp_session: { type: string }
+ *       401:
+ *         $ref: '#/components/schemas/Error'
  */
 router.post('/login', loginLimiter, loginValidation, async (req, res) => {
   try {
@@ -47,6 +89,11 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
       });
     }
 
+    // If 2FA is required, return a challenge ticket (no full token yet)
+    if (result.require_2fa) {
+      return res.status(200).json({ success: true, require_2fa: true, totp_session: result.totp_session });
+    }
+
     // Log successful login
     await logAction({
       userId: result.user.id,
@@ -56,7 +103,17 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
       status: 'success'
     }, req);
 
-    // Return user and token
+    // Set JWT as httpOnly cookie
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie('auth_token', result.token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'strict' : 'lax',
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    // Return user info (token still in body for backward compatibility with API clients)
     res.status(200).json({
       success: true,
       user: result.user,
@@ -77,8 +134,14 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
  * @access Public
  */
 router.post('/logout', (req, res) => {
-  // JWT is stateless, so logout is handled client-side
-  // This endpoint exists for consistency and future extensions
+  // Clear the httpOnly auth cookie
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: '/'
+  });
+
   res.status(200).json({
     success: true,
     message: 'Logout successful'
@@ -99,5 +162,8 @@ router.get('/me', authMiddleware, (req, res) => {
 
 // Password reset routes
 router.use('/password-reset', passwordResetRoutes);
+
+// 2FA routes
+router.use('/2fa', twoFactorRoutes);
 
 module.exports = router;

@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { sequelize, Certificate, CertificateAuthority } = require('../models');
 require('dotenv').config();
@@ -145,9 +145,12 @@ class CertificateService {
       // First, sync certificates to ensure we have the latest data
       await this.syncCertificates();
       
-      // Query certificates that match the domain
+      // Query certificates that match the domain (use parameterized query to prevent SQL injection)
+      const { Op } = require('sequelize');
       const certificates = await Certificate.findAll({
-        where: sequelize.literal(`domains LIKE '%${domain}%'`)
+        where: {
+          domains: { [Op.like]: `%${domain}%` }
+        }
       });
       
       return certificates;
@@ -235,11 +238,32 @@ class CertificateService {
       const configContent = this.generateOpenSSLConfig(domainList);
       await fs.writeFile(configPath, configContent);
       
-      // Generate private key
-      execSync(`openssl genrsa -out "${keyPath}" 2048`);
+      // Validate domain names to prevent command injection
+      const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
+      for (const d of domainList) {
+        if (!domainRegex.test(d)) {
+          throw new Error(`Invalid domain name: ${d}`);
+        }
+      }
+
+      // Validate validityDays is a positive integer
+      const days = parseInt(validityDays, 10);
+      if (!Number.isInteger(days) || days < 1 || days > 3650) {
+        throw new Error('Validity days must be an integer between 1 and 3650');
+      }
+
+      // Generate private key (use execFileSync to prevent command injection)
+      execFileSync('openssl', ['genrsa', '-out', keyPath, '2048']);
       
-      // Generate certificate
-      execSync(`openssl req -new -x509 -key "${keyPath}" -out "${certPath}" -days ${validityDays} -config "${configPath}" -subj "/CN=${primaryDomain}"`);
+      // Generate certificate (use execFileSync to prevent command injection)
+      execFileSync('openssl', [
+        'req', '-new', '-x509',
+        '-key', keyPath,
+        '-out', certPath,
+        '-days', String(days),
+        '-config', configPath,
+        '-subj', `/CN=${primaryDomain}`
+      ]);
       
       // Read generated files
       const certificatePem = await fs.readFile(certPath, 'utf8');

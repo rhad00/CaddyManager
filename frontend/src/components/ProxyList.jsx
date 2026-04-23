@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { get, del } from '../utils/api';
 
 const ProxyList = ({ onEdit, onCreate }) => {
   const [proxies, setProxies] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const { token, csrfToken } = useAuth();
 
   const fetchProxies = useCallback(async () => {
@@ -21,7 +21,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
       setProxies(data.proxies || []);
     } catch (error) {
       console.error('Error fetching proxies:', error);
-      setError('Failed to load proxies. Please try again later.');
+      toast.error('Failed to load proxies');
     } finally {
       setLoading(false);
     }
@@ -108,7 +108,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
       await fetchProxies();
     } catch (err) {
       console.error('Recheck TLS failed:', err);
-      setError('Failed to recheck TLS.');
+      toast.error('Failed to recheck TLS');
     } finally {
       setLoading(false);
     }
@@ -126,11 +126,12 @@ const ProxyList = ({ onEdit, onCreate }) => {
         throw new Error('Failed to delete proxy');
       }
 
+      toast.success('Proxy deleted');
       // Refresh the proxy list
       fetchProxies();
     } catch (error) {
       console.error('Error deleting proxy:', error);
-      setError('Failed to delete proxy. Please try again later.');
+      toast.error('Failed to delete proxy');
     }
   };
 
@@ -138,23 +139,6 @@ const ProxyList = ({ onEdit, onCreate }) => {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-gray-500">Loading proxies...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 my-4">
-        <div className="flex">
-          <div className="shrink-0">
-            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <div className="ml-3">
-            <p className="text-sm">{error}</p>
-          </div>
-        </div>
       </div>
     );
   }

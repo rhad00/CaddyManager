@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordResetForm from './pages/PasswordResetForm';
+import ToastProvider from './components/ToastProvider';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -24,8 +26,10 @@ const ProtectedRoute = ({ children }) => {
 
 const App = () => {
   return (
-    <AuthProvider>
-      <Router>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider />
+        <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/password-reset" element={<PasswordResetRequest />} />
@@ -50,6 +54,7 @@ const App = () => {
         </Routes>
       </Router>
     </AuthProvider>
+  </ErrorBoundary>
   );
 };
 

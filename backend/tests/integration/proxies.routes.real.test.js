@@ -33,7 +33,10 @@ const Middleware = require('../../src/models/middleware');
 const proxiesRouter = require('../../src/api/proxies/routes');
 
 // Simple auth middleware bypass for tests
-jest.mock('../../src/middleware/auth', () => ({ authMiddleware: (req, res, next) => { req.user = { id: 'test-user' }; return next(); } }));
+jest.mock('../../src/middleware/auth', () => ({
+  authMiddleware: (req, res, next) => { req.user = { id: 'test-user', role: 'admin' }; return next(); },
+  roleMiddleware: () => (req, res, next) => next()
+}));
 
 describe('Proxies routes (integration-style with mocks)', () => {
   let app;
@@ -57,13 +60,13 @@ describe('Proxies routes (integration-style with mocks)', () => {
   });
 
   test('POST /api/proxies creates a proxy and calls caddyService', async () => {
-    const fakeProxy = { id: 'newp', name: 'n', domains: ['d'], upstream_url: 'http://u' };
+    const fakeProxy = { id: 'newp', name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000', toJSON: () => ({ id: 'newp', name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' }) };
     Proxy.findAll.mockResolvedValueOnce([]); // for conflict check
     // create returns proxy instance
     Proxy.create.mockResolvedValueOnce(fakeProxy);
-    Proxy.findByPk.mockResolvedValueOnce({ ...fakeProxy, id: 'newp' });
+    Proxy.findByPk.mockResolvedValueOnce(fakeProxy);
 
-    const res = await request(app).post('/api/proxies').send({ name: 'n', domains: ['d'], upstream_url: 'http://u' });
+    const res = await request(app).post('/api/proxies').send({ name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' });
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
   });

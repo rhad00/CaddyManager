@@ -4,6 +4,9 @@
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+// Default request timeout in milliseconds
+const DEFAULT_TIMEOUT = 30000;
+
 /**
  * Make an authenticated API request with CSRF token
  * @param {string} endpoint - API endpoint (e.g., '/proxies')
@@ -18,22 +21,32 @@ export const apiRequest = async (endpoint, options = {}, token = null, csrfToken
     ...options.headers,
   };
 
-  // Add authorization token if provided
+  // Add authorization token if provided (backward compat for API clients)
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
   // Add CSRF token for state-changing operations
   if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method?.toUpperCase())) {
-    headers['CSRF-Token'] = csrfToken;
+    headers['x-csrf-token'] = csrfToken;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  // Add request timeout via AbortController
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), options.timeout || DEFAULT_TIMEOUT);
 
-  return response;
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      headers,
+      credentials: 'include',
+      signal: controller.signal,
+    });
+
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 /**

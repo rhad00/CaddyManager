@@ -16,6 +16,21 @@ const loginLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for password reset requests
+ * Very strict to prevent abuse and email enumeration via timing
+ */
+const passwordResetLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 3, // Limit each IP to 3 password reset requests per hour
+    message: {
+        success: false,
+        message: 'Too many password reset requests, please try again later'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+/**
  * General rate limiter for all API endpoints
  */
 const apiLimiter = rateLimit({
@@ -29,7 +44,24 @@ const apiLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+/**
+ * Rate limiter for 2FA challenge endpoint
+ * Prevents brute-force TOTP code guessing
+ */
+const twoFaLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limit each IP to 10 2FA attempts per windowMs
+    message: {
+        success: false,
+        message: 'Too many 2FA attempts, please try again after 15 minutes'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 module.exports = {
     loginLimiter,
-    apiLimiter
+    passwordResetLimiter,
+    apiLimiter,
+    twoFaLimiter
 };

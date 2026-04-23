@@ -8,7 +8,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "2019:2019"
+      # Port 2019 (Caddy Admin API) intentionally NOT exposed in production
+      # Use docker-compose.dev.yaml for development with port 2019 exposed
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -35,11 +36,11 @@ services:
       - SQLITE_PATH=${SQLITE_PATH:-/app/data/caddymanager.db}
       - CADDY_API_URL=${CADDY_API_URL:-http://caddy:2019}
       - CF_API_TOKEN=${CF_API_TOKEN}
-      - JWT_SECRET=${JWT_SECRET:-changeme_in_production_29341294612398764231987446}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ENABLE_DOCKER_DISCOVERY=${ENABLE_DOCKER_DISCOVERY:-false}
       - ENABLE_K8S_DISCOVERY=${ENABLE_K8S_DISCOVERY:-false}
       - DOCKER_LABEL_PREFIX=${DOCKER_LABEL_PREFIX:-caddymanager}
