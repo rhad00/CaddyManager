@@ -1,9 +1,20 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const backupService = require('../../services/backupService');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
+const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const fs = require('fs');
 const path = require('path');
 const router = express.Router();
+
+// Rate-limit mutating backup operations to prevent resource exhaustion.
+// Restore writes to disk and re-loads Caddy config; allow 3 per minute.
+const backupMutationRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many backup operations, please try again later' }
+});
 
 /**
  * @swagger
@@ -60,7 +71,7 @@ router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
     const result = await backupService.createBackup(req.user);
     
@@ -142,7 +153,7 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/restore', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/restore', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const result = await backupService.restoreBackup(req.params.id, req.user);
     
@@ -180,7 +191,7 @@ router.post('/:id/restore', [authMiddleware, roleMiddleware('admin')], async (re
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const result = await backupService.deleteBackup(req.params.id);
     

@@ -11,6 +11,7 @@ jest.mock('../../src/models/template', () => ({
 jest.mock('../../src/middleware/auth', () => ({
   authMiddleware: (req, res, next) => { req.user = { id: 'admin-1', role: 'admin' }; next(); },
   roleMiddleware: () => (req, res, next) => next(),
+  requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
 jest.mock('../../src/services/caddyService', () => ({}));

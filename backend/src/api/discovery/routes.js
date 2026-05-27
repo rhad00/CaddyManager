@@ -1,8 +1,19 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const dockerDiscoveryService = require('../../services/dockerDiscoveryService');
 const { DiscoveredService, Proxy } = require('../../models');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
+
+// Rate-limit the manual scan endpoint to prevent resource exhaustion.
+// Admins can trigger at most 5 full scans per minute.
+const scanRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many scan requests, please try again later' }
+});
 
 /**
  * @swagger
@@ -420,7 +431,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
  *       503:
  *         description: Discovery service not initialized
  */
-router.post('/scan', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
     const { source } = req.body;
 

@@ -98,8 +98,20 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, message: 'name is required' });
     }
 
+    const trimmedName = name.trim();
+    if (trimmedName.length < 1 || trimmedName.length > 100) {
+      return res.status(400).json({ success: false, message: 'name must be between 1 and 100 characters' });
+    }
+    // Only allow printable ASCII characters in key names
+    if (!/^[\x20-\x7E]+$/.test(trimmedName)) {
+      return res.status(400).json({ success: false, message: 'name must contain only printable ASCII characters' });
+    }
+
     const validPerms = ['read', 'write', 'admin'];
     const perms = Array.isArray(permissions) ? permissions : [permissions];
+    if (perms.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one permission is required' });
+    }
     if (!perms.every(p => validPerms.includes(p))) {
       return res.status(400).json({ success: false, message: `permissions must be a subset of: ${validPerms.join(', ')}` });
     }
@@ -109,14 +121,26 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Only admins can create admin-level keys' });
     }
 
+    // Validate expires_at if provided
+    let expiresAt = null;
+    if (expires_at !== undefined && expires_at !== null) {
+      expiresAt = new Date(expires_at);
+      if (isNaN(expiresAt.getTime())) {
+        return res.status(400).json({ success: false, message: 'expires_at must be a valid date' });
+      }
+      if (expiresAt <= new Date()) {
+        return res.status(400).json({ success: false, message: 'expires_at must be a future date' });
+      }
+    }
+
     const rawKey = generateRawKey();
     const key = await ApiKey.create({
-      name,
+      name: trimmedName,
       key_hash: hashKey(rawKey),
       key_prefix: rawKey.substring(0, 8),
       permissions: perms,
       created_by: req.user.id,
-      expires_at: expires_at ? new Date(expires_at) : null,
+      expires_at: expiresAt,
     });
 
     await logAction({
@@ -220,9 +244,32 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     const { name, enabled } = req.body;
-    if (name !== undefined) key.name = name;
+    if (name !== undefined) {
+      if (typeof name !== 'string') {
+        return res.status(400).json({ success: false, message: 'name must be a string' });
+      }
+      const trimmedName = name.trim();
+      if (trimmedName.length < 1 || trimmedName.length > 100) {
+        return res.status(400).json({ success: false, message: 'name must be between 1 and 100 characters' });
+      }
+      if (!/^[\x20-\x7E]+$/.test(trimmedName)) {
+        return res.status(400).json({ success: false, message: 'name must contain only printable ASCII characters' });
+      }
+      key.name = trimmedName;
+    }
     if (enabled !== undefined) key.enabled = Boolean(enabled);
     await key.save();
+
+    await logAction({
+      userId: req.user.id, action: 'API_KEY_UPDATED',
+      resource: 'api_key', resourceId: key.id,
+      details: {
+        name: key.name,
+        enabled: key.enabled,
+        changedFields: Object.keys(req.body).filter(f => ['name', 'enabled'].includes(f))
+      },
+      status: 'success',
+    }, req);
 
     const safe = key.toJSON();
     delete safe.key_hash;

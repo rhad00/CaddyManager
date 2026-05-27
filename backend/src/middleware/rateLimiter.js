@@ -74,10 +74,27 @@ const certificateUploadLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+/**
+ * Rate limiter for the CSRF token endpoint.
+ * The endpoint is unauthenticated so it could be abused to waste resources;
+ * 60 requests per minute per IP is generous for legitimate SPA usage.
+ */
+const csrfTokenLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60,
+    message: {
+        success: false,
+        message: 'Too many CSRF token requests, please try again later'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 module.exports = {
     loginLimiter,
     passwordResetLimiter,
     apiLimiter,
     twoFaLimiter,
-    certificateUploadLimiter
+    certificateUploadLimiter,
+    csrfTokenLimiter
 };

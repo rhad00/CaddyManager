@@ -42,12 +42,18 @@ const authMiddleware = async (req, res, next) => {
       // Update last_used_at asynchronously (don't block the request)
       apiKey.update({ last_used_at: new Date() }).catch(() => {});
 
-      // Map API key permissions to a req.user-like object
+      // Map API key permissions to a req.user-like object.
+      // 'admin' perm  → role 'admin'  (may pass roleMiddleware('admin'))
+      // 'write' perm  → role 'user'   (blocked from admin-only routes by design)
+      // 'read'  perm  → role 'read-only'
       const perms = apiKey.permissions || ['read'];
+      let role = 'read-only';
+      if (perms.includes('admin')) role = 'admin';
+      else if (perms.includes('write')) role = 'user';
+
       req.user = {
         id: apiKey.created_by,
-        // Use 'admin' role if key has admin permission, else 'read-only'
-        role: perms.includes('admin') ? 'admin' : (perms.includes('write') ? 'admin' : 'read-only'),
+        role,
         api_key_id: apiKey.id,
         api_key_permissions: perms,
       };
@@ -117,7 +123,36 @@ const roleMiddleware = (roles) => {
   };
 };
 
+/**
+ * API key granular permission middleware.
+ *
+ * When a request is authenticated via an API key, this middleware additionally
+ * enforces that the key carries the required permission scope.  JWT-authenticated
+ * sessions are not affected — their access is governed solely by `roleMiddleware`.
+ *
+ * Usage: place AFTER authMiddleware and roleMiddleware in the route handler array.
+ *
+ * @param {'read'|'write'|'admin'} permission - Required API key permission scope.
+ */
+const requireApiKeyPermission = (permission) => (req, res, next) => {
+  // Not an API-key request — JWT role-based checks already apply.
+  if (!req.user || !req.user.api_key_id) return next();
+
+  const perms = req.user.api_key_permissions || [];
+  // 'admin' permission on a key grants all scopes.
+  if (perms.includes('admin')) return next();
+
+  if (!perms.includes(permission)) {
+    return res.status(403).json({
+      success: false,
+      message: `This API key does not have the required '${permission}' permission`
+    });
+  }
+  return next();
+};
+
 module.exports = {
   authMiddleware,
-  roleMiddleware
+  roleMiddleware,
+  requireApiKeyPermission
 };

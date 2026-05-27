@@ -35,7 +35,8 @@ const proxiesRouter = require('../../src/api/proxies/routes');
 // Simple auth middleware bypass for tests
 jest.mock('../../src/middleware/auth', () => ({
   authMiddleware: (req, res, next) => { req.user = { id: 'test-user', role: 'admin' }; return next(); },
-  roleMiddleware: () => (req, res, next) => next()
+  roleMiddleware: () => (req, res, next) => next(),
+  requireApiKeyPermission: () => (req, res, next) => next()
 }));
 
 describe('Proxies routes (integration-style with mocks)', () => {

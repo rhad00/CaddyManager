@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { encrypt, decrypt } = require('../utils/encryption');
 
 const GitRepository = sequelize.define('GitRepository', {
   id: {
@@ -75,6 +76,41 @@ const GitRepository = sequelize.define('GitRepository', {
 }, {
   tableName: 'git_repositories',
   timestamps: true
+});
+
+// ── Encrypt sensitive fields before persisting ────────────────────────────────
+const ENCRYPTED_FIELDS = ['access_token', 'ssh_key'];
+
+function encryptFields(instance) {
+  for (const field of ENCRYPTED_FIELDS) {
+    if (instance[field]) {
+      instance[field] = encrypt(instance[field]);
+    }
+  }
+}
+
+GitRepository.addHook('beforeCreate', encryptFields);
+
+GitRepository.addHook('beforeUpdate', (instance) => {
+  for (const field of ENCRYPTED_FIELDS) {
+    if (instance.changed(field) && instance[field]) {
+      instance[field] = encrypt(instance[field]);
+    }
+  }
+});
+
+// ── Decrypt sensitive fields after reading ────────────────────────────────────
+GitRepository.addHook('afterFind', (result) => {
+  if (!result) return;
+  const items = Array.isArray(result) ? result : [result];
+  for (const repo of items) {
+    if (!repo) continue;
+    for (const field of ENCRYPTED_FIELDS) {
+      if (repo[field]) {
+        repo[field] = decrypt(repo[field]);
+      }
+    }
+  }
 });
 
 module.exports = GitRepository;

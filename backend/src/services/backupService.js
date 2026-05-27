@@ -205,9 +205,23 @@ class BackupService {
       if (!backup) {
         throw new Error('Backup not found');
       }
+
+      // Validate filename to prevent path traversal.  The filename is stored
+      // in the DB, but DB values should never be trusted implicitly for path
+      // operations — an attacker with DB write access could otherwise read or
+      // overwrite arbitrary files on the host.
+      const SAFE_BACKUP_FILENAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+      if (!SAFE_BACKUP_FILENAME.test(backup.filename)) {
+        throw new Error('Backup record has an invalid filename and cannot be restored safely');
+      }
+      const resolvedPath = path.resolve(this.backupDir, backup.filename);
+      const resolvedDir = path.resolve(this.backupDir);
+      if (!resolvedPath.startsWith(resolvedDir + path.sep) && resolvedPath !== resolvedDir) {
+        throw new Error('Backup path traversal detected — restore aborted');
+      }
       
       // Read backup file (decrypt if necessary)
-      const filePath = path.join(this.backupDir, backup.filename);
+      const filePath = resolvedPath;
       const rawBuf = await readFileAsync(filePath);
       const plainBuf = decryptBuffer(rawBuf);
       const backupData = JSON.parse(plainBuf.toString('utf8'));

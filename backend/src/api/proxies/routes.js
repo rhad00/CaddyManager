@@ -4,7 +4,7 @@ const Header = require('../../models/header');
 const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
 const securityHeadersService = require('../../services/securityHeadersService');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
+const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
@@ -62,30 +62,184 @@ const validateUpstreamUrl = (url) => {
     'metadata.google.internal',
     'metadata.internal',
   ];
-  if (blockedHosts.includes(hostname)) {
+  if (blockedHosts.includes(hostname.toLowerCase())) {
     return { valid: false, message: 'Upstream URL points to a restricted address' };
   }
 
-  // Block numeric IP addresses in private/loopback/link-local ranges
-  const isPrivateIp = (host) => {
-    // IPv6 loopback
-    if (host === '::1' || host === '[::1]') return true;
-    // Strip IPv6 brackets
+  // Block numeric IPv4 addresses in private/loopback/link-local/reserved ranges
+  const isPrivateIpv4 = (host) => {
     const h = host.replace(/^\[|\]$/g, '');
     const parts = h.split('.').map(Number);
-    if (parts.length !== 4 || parts.some(isNaN)) return false;
-    const [a, b] = parts;
+    if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return false;
+    const [a, b, c] = parts;
     return (
-      a === 0 ||                           // 0.0.0.0/8
-      a === 10 ||                          // 10.0.0.0/8
-      a === 127 ||                         // 127.0.0.0/8 loopback
-      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
-      (a === 192 && b === 168)             // 192.168.0.0/16
+      a === 0 ||                                    // 0.0.0.0/8 (this network)
+      a === 10 ||                                   // 10.0.0.0/8
+      a === 127 ||                                  // 127.0.0.0/8 loopback
+      (a === 100 && b >= 64 && b <= 127) ||         // 100.64.0.0/10 CGNAT
+      (a === 169 && b === 254) ||                   // 169.254.0.0/16 link-local (all)
+      (a === 172 && b >= 16 && b <= 31) ||          // 172.16.0.0/12
+      (a === 192 && b === 0 && c === 2) ||          // 192.0.2.0/24 TEST-NET-1
+      (a === 192 && b === 168) ||                   // 192.168.0.0/16
+      (a === 198 && b >= 18 && b <= 19) ||          // 198.18.0.0/15 benchmark
+      (a === 198 && b === 51 && c === 100) ||       // 198.51.100.0/24 TEST-NET-2
+      (a === 203 && b === 0 && c === 113) ||        // 203.0.113.0/24 TEST-NET-3
+      a >= 240                                      // 240.0.0.0/4 reserved + 255.255.255.255
     );
   };
 
-  if (isPrivateIp(hostname)) {
+  // Block private/loopback/link-local IPv6 addresses
+  const isPrivateIpv6 = (host) => {
+    const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+    // Loopback ::1
+    if (h === '::1') return true;
+    // Unspecified ::
+    if (h === '::') return true;
+    // Link-local fe80::/10
+    if (/^fe[89ab][0-9a-f]:/i.test(h)) return true;
+    // Unique Local (ULA) fc00::/7 — covers fc and fd prefixes
+    if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true;
+    // Loopback 0:0:0:0:0:0:0:1
+    if (h === '0:0:0:0:0:0:0:1') return true;
+    return false;
+  };
+
+  if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) {
     return { valid: false, message: 'Upstream URL points to a restricted address' };
+  }
+
+  return { valid: true };
+};
+
+const validateProxyName = (name) => {
+  if (name === undefined) {
+    return { valid: true };
+  }
+
+  if (typeof name !== 'string') {
+    return { valid: false, message: 'Proxy name must be a string' };
+  }
+
+  const trimmedName = name.trim();
+  if (trimmedName.length < 3 || trimmedName.length > 100) {
+    return { valid: false, message: 'Proxy name must be between 3 and 100 characters' };
+  }
+
+  if (!PROXY_NAME_REGEX.test(trimmedName)) {
+    return { valid: false, message: 'Proxy name contains invalid characters' };
+  }
+
+  return { valid: true };
+};
+
+const validateProxyDomains = (domainsInput) => {
+  if (!domainsInput) {
+    return { valid: true };
+  }
+
+  const domains = Array.isArray(domainsInput) ? domainsInput : [domainsInput];
+  for (const domain of domains) {
+    if (!isValidDomain(domain)) {
+      return { valid: false, message: `Invalid domain name: ${domain}` };
+    }
+  }
+
+  return { valid: true };
+};
+
+const validateLoadBalancingConfig = (loadBalancing) => {
+  if (!loadBalancing || !loadBalancing.enabled) {
+    return { valid: true };
+  }
+
+  const validPolicies = ['round_robin', 'least_conn', 'ip_hash', 'random', 'first'];
+  if (loadBalancing.policy && !validPolicies.includes(loadBalancing.policy)) {
+    return { valid: false, message: `Invalid load balancing policy. Use one of: ${validPolicies.join(', ')}` };
+  }
+
+  if (!loadBalancing.upstreams || !Array.isArray(loadBalancing.upstreams) || loadBalancing.upstreams.length < 1) {
+    return { valid: false, message: 'Load balancing requires at least one upstream URL' };
+  }
+
+  for (const upstream of loadBalancing.upstreams) {
+    if (!upstream.url) {
+      return { valid: false, message: 'Each load balancing upstream must have a url field' };
+    }
+
+    const upstreamCheck = validateUpstreamUrl(upstream.url);
+    if (!upstreamCheck.valid) {
+      return { valid: false, message: `Invalid load balancing upstream URL: ${upstream.url}` };
+    }
+  }
+
+  return { valid: true };
+};
+
+const validateHealthChecksConfig = (healthChecks) => {
+  if (!healthChecks || !healthChecks.enabled) {
+    return { valid: true };
+  }
+
+  if (healthChecks.interval && !/^\d+(\.\d+)?(s|m|h)$/.test(healthChecks.interval)) {
+    return { valid: false, message: 'health_checks.interval must be a duration string e.g. "30s", "1m"' };
+  }
+
+  if (healthChecks.timeout && !/^\d+(\.\d+)?(s|m|h)$/.test(healthChecks.timeout)) {
+    return { valid: false, message: 'health_checks.timeout must be a duration string e.g. "5s"' };
+  }
+
+  if (healthChecks.max_fails !== undefined && (typeof healthChecks.max_fails !== 'number' || healthChecks.max_fails < 1)) {
+    return { valid: false, message: 'health_checks.max_fails must be a positive integer' };
+  }
+
+  return { valid: true };
+};
+
+const validateHeadersConfig = (headers) => {
+  if (!headers || !Array.isArray(headers)) {
+    return { valid: true };
+  }
+
+  const validHeaderNameRegex = /^[a-zA-Z0-9\-]+$/;
+  for (const header of headers) {
+    if (header.header_name && !validHeaderNameRegex.test(header.header_name)) {
+      return { valid: false, message: `Invalid header name: ${header.header_name}` };
+    }
+
+    if (header.header_name && header.header_name.length > 256) {
+      return { valid: false, message: `Header name too long: ${header.header_name}` };
+    }
+
+    if (header.header_value && header.header_value.length > 8192) {
+      return { valid: false, message: 'Header value too long (max 8192 characters)' };
+    }
+  }
+
+  return { valid: true };
+};
+
+const validateMiddlewaresConfig = (middlewares) => {
+  if (!middlewares || !Array.isArray(middlewares)) {
+    return { valid: true };
+  }
+
+  for (const mw of middlewares) {
+    if (mw.type === 'rate_limit' && mw.requests_per_second !== undefined) {
+      const rps = Number(mw.requests_per_second);
+      if (!Number.isFinite(rps) || rps <= 0 || rps > 100000) {
+        return { valid: false, message: 'Rate limit requests_per_second must be a positive number (max 100000)' };
+      }
+    }
+
+    if (mw.type === 'ip_filter' && mw.allowed_ips) {
+      const ips = Array.isArray(mw.allowed_ips) ? mw.allowed_ips : [mw.allowed_ips];
+      const ipCidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+      for (const ip of ips) {
+        if (!ipCidrRegex.test(ip)) {
+          return { valid: false, message: `Invalid IP address or CIDR range: ${ip}` };
+        }
+      }
+    }
   }
 
   return { valid: true };
@@ -97,112 +251,20 @@ const validateUpstreamUrl = (url) => {
  * @returns {{ valid: boolean, message?: string }}
  */
 const validateProxyInput = (body) => {
-  // Validate proxy name
-  if (body.name !== undefined) {
-    if (typeof body.name !== 'string') {
-      return { valid: false, message: 'Proxy name must be a string' };
-    }
+  const validators = [
+    () => validateProxyName(body.name),
+    () => validateProxyDomains(body.domains),
+    () => (body.upstream_url ? validateUpstreamUrl(body.upstream_url) : { valid: true }),
+    () => validateLoadBalancingConfig(body.load_balancing),
+    () => validateHealthChecksConfig(body.health_checks),
+    () => validateHeadersConfig(body.headers),
+    () => validateMiddlewaresConfig(body.middlewares),
+  ];
 
-    const trimmedName = body.name.trim();
-    if (trimmedName.length < 3 || trimmedName.length > 100) {
-      return { valid: false, message: 'Proxy name must be between 3 and 100 characters' };
-    }
-
-    if (!PROXY_NAME_REGEX.test(trimmedName)) {
-      return { valid: false, message: 'Proxy name contains invalid characters' };
-    }
-  }
-
-  // Validate domains
-  if (body.domains) {
-    const domains = Array.isArray(body.domains) ? body.domains : [body.domains];
-    for (const domain of domains) {
-      if (!isValidDomain(domain)) {
-        return { valid: false, message: `Invalid domain name: ${domain}` };
-      }
-    }
-  }
-
-  // Validate upstream URL
-  if (body.upstream_url) {
-    const urlCheck = validateUpstreamUrl(body.upstream_url);
-    if (!urlCheck.valid) {
-      return urlCheck;
-    }
-  }
-
-  // Validate load balancing configuration
-  if (body.load_balancing && body.load_balancing.enabled) {
-    const validPolicies = ['round_robin', 'least_conn', 'ip_hash', 'random', 'first'];
-    if (body.load_balancing.policy && !validPolicies.includes(body.load_balancing.policy)) {
-      return { valid: false, message: `Invalid load balancing policy. Use one of: ${validPolicies.join(', ')}` };
-    }
-    if (!body.load_balancing.upstreams || !Array.isArray(body.load_balancing.upstreams) || body.load_balancing.upstreams.length < 1) {
-      return { valid: false, message: 'Load balancing requires at least one upstream URL' };
-    }
-    for (const upstream of body.load_balancing.upstreams) {
-      if (!upstream.url) {
-        return { valid: false, message: 'Each load balancing upstream must have a url field' };
-      }
-      const upstreamCheck = validateUpstreamUrl(upstream.url);
-      if (!upstreamCheck.valid) {
-        return { valid: false, message: `Invalid load balancing upstream URL: ${upstream.url}` };
-      }
-    }
-  }
-
-  // Validate health check configuration
-  if (body.health_checks && body.health_checks.enabled) {
-    if (body.health_checks.interval && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.interval)) {
-      return { valid: false, message: 'health_checks.interval must be a duration string e.g. "30s", "1m"' };
-    }
-    if (body.health_checks.timeout && !/^\d+(\.\d+)?(s|m|h)$/.test(body.health_checks.timeout)) {
-      return { valid: false, message: 'health_checks.timeout must be a duration string e.g. "5s"' };
-    }
-    if (body.health_checks.max_fails !== undefined && (typeof body.health_checks.max_fails !== 'number' || body.health_checks.max_fails < 1)) {
-      return { valid: false, message: 'health_checks.max_fails must be a positive integer' };
-    }
-  }
-
-  // Validate custom headers
-  if (body.headers && Array.isArray(body.headers)) {
-    const validHeaderNameRegex = /^[a-zA-Z0-9\-]+$/;
-    for (const header of body.headers) {
-      if (header.header_name && !validHeaderNameRegex.test(header.header_name)) {
-        return { valid: false, message: `Invalid header name: ${header.header_name}` };
-      }
-      if (header.header_name && header.header_name.length > 256) {
-        return { valid: false, message: `Header name too long: ${header.header_name}` };
-      }
-      if (header.header_value && header.header_value.length > 8192) {
-        return { valid: false, message: 'Header value too long (max 8192 characters)' };
-      }
-    }
-  }
-
-  // Validate middleware configurations
-  if (body.middlewares && Array.isArray(body.middlewares)) {
-    for (const mw of body.middlewares) {
-      // Validate rate limit values
-      if (mw.type === 'rate_limit') {
-        if (mw.requests_per_second !== undefined) {
-          const rps = Number(mw.requests_per_second);
-          if (!Number.isFinite(rps) || rps <= 0 || rps > 100000) {
-            return { valid: false, message: 'Rate limit requests_per_second must be a positive number (max 100000)' };
-          }
-        }
-      }
-
-      // Validate IP filter values
-      if (mw.type === 'ip_filter' && mw.allowed_ips) {
-        const ips = Array.isArray(mw.allowed_ips) ? mw.allowed_ips : [mw.allowed_ips];
-        const ipCidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-        for (const ip of ips) {
-          if (!ipCidrRegex.test(ip)) {
-            return { valid: false, message: `Invalid IP address or CIDR range: ${ip}` };
-          }
-        }
-      }
+  for (const runValidator of validators) {
+    const result = runValidator();
+    if (!result.valid) {
+      return result;
     }
   }
 
@@ -401,7 +463,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
@@ -553,7 +615,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
  * @desc Update a proxy
  * @access Private
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
@@ -708,7 +770,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  * @desc Delete a proxy
  * @access Private
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {

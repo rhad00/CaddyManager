@@ -19,14 +19,19 @@ describe('CaddyService Cloudflare policy deduplication', () => {
     expect(cfg2.apps.tls.automation.policies.length).toBe(1);
   });
 
-  test('adds new policy for different domain sets', () => {
+  test('merges different domain sets into one Cloudflare policy (M-02 fix)', () => {
     process.env.CF_API_TOKEN = 'dup-token';
     const baseConfig = { apps: { tls: { automation: { policies: [] } } } };
 
     const cfg1 = caddyService.ensureCloudflarePolicy(baseConfig, ['a.example.com']);
     expect(cfg1.apps.tls.automation.policies.length).toBe(1);
+    expect(cfg1.apps.tls.automation.policies[0].subjects).toContain('a.example.com');
 
+    // M-02: a second call with a different domain should merge subjects, not add a new policy.
     const cfg2 = caddyService.ensureCloudflarePolicy(cfg1, ['b.example.com']);
-    expect(cfg2.apps.tls.automation.policies.length).toBe(2);
+    expect(cfg2.apps.tls.automation.policies.length).toBe(1);
+    const subjects = cfg2.apps.tls.automation.policies[0].subjects;
+    expect(subjects).toContain('a.example.com');
+    expect(subjects).toContain('b.example.com');
   });
 });

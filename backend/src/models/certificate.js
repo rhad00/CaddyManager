@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
-
+const { encrypt, decrypt } = require('../utils/encryption');
 
   const Certificate = sequelize.define('Certificate', {
     id: {
@@ -76,5 +76,29 @@ const { sequelize } = require('../config/database');
       }
     }
   });
+
+// ── Encrypt private_key_pem before persisting ─────────────────────────────────
+Certificate.addHook('beforeCreate', (cert) => {
+  if (cert.private_key_pem) {
+    cert.private_key_pem = encrypt(cert.private_key_pem);
+  }
+});
+
+Certificate.addHook('beforeUpdate', (cert) => {
+  if (cert.changed('private_key_pem') && cert.private_key_pem) {
+    cert.private_key_pem = encrypt(cert.private_key_pem);
+  }
+});
+
+// ── Decrypt private_key_pem after reading ─────────────────────────────────────
+Certificate.addHook('afterFind', (result) => {
+  if (!result) return;
+  const items = Array.isArray(result) ? result : [result];
+  for (const cert of items) {
+    if (cert && cert.private_key_pem) {
+      cert.private_key_pem = decrypt(cert.private_key_pem);
+    }
+  }
+});
 
 module.exports = Certificate;

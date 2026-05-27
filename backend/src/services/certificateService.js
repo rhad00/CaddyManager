@@ -374,6 +374,7 @@ class CertificateService {
    * @returns {Promise<Object>} The created CA
    */
   async addCertificateAuthority(name, type, certificatePath, url, email, trusted) {
+    const transaction = await sequelize.transaction();
     try {
       let certificatePem = null;
       let acmeAccountId = null;
@@ -381,19 +382,15 @@ class CertificateService {
       if (type === 'custom') {
         // Read CA certificate file
         certificatePem = await fs.readFile(certificatePath, 'utf8');
-        
-        // Add CA to Caddy's trust store if trusted
-        if (trusted) {
-          await this.trustCACertificate(certificatePem);
-        }
       } else if (type === 'acme') {
-        // Register ACME account with Caddy
+        // Register ACME account with Caddy before writing to DB so that a
+        // Caddy failure rolls back cleanly without leaving an orphan DB row.
         if (url && email) {
           acmeAccountId = await this.registerACMEAccount(url, email);
         }
       }
       
-      // Create CA in database
+      // Create CA in database within the transaction (not yet committed).
       const ca = await CertificateAuthority.create({
         name,
         type,
@@ -402,10 +399,17 @@ class CertificateService {
         certificate_pem: certificatePem,
         trusted,
         acme_account_id: acmeAccountId
-      });
-      
+      }, { transaction });
+
+      // Push to Caddy's trust store.  If this fails, roll back the DB row.
+      if (type === 'custom' && trusted) {
+        await this.trustCACertificate(certificatePem);
+      }
+
+      await transaction.commit();
       return ca;
     } catch (error) {
+      await transaction.rollback();
       console.error('Failed to add certificate authority:', error);
       throw new Error(`Failed to add certificate authority: ${error.message}`);
     } finally {
@@ -413,8 +417,8 @@ class CertificateService {
       if (certificatePath) {
         try {
           await fs.unlink(certificatePath);
-        } catch (error) {
-          console.error('Failed to clean up temporary files:', error);
+        } catch (cleanupErr) {
+          console.error('Failed to clean up temporary files:', cleanupErr);
         }
       }
     }
@@ -426,35 +430,38 @@ class CertificateService {
    * @returns {Promise<Object>} Result of the operation
    */
   async deleteCertificateAuthority(ca) {
+    const transaction = await sequelize.transaction();
     try {
+      // Perform Caddy-side cleanup before committing the DB deletion.
+      // If either Caddy operation fails, the DB row is rolled back so the
+      // admin can retry; Caddy state may be partially changed but the row
+      // will still reflect reality.
+
       // If CA is ACME and has an account ID, delete the account
       if (ca.type === 'acme' && ca.acme_account_id) {
         try {
           await this.deleteACMEAccount(ca.acme_account_id);
         } catch (error) {
           console.error('Failed to delete ACME account:', error);
-          // Continue with deletion from database even if ACME account deletion fails
+          // Continue — ACME accounts may already be gone on Caddy side
         }
       }
       
       // If CA is custom and trusted, remove from trust store
       if (ca.type === 'custom' && ca.trusted && ca.certificate_pem) {
-        try {
-          await this.untrustCACertificate(ca.certificate_pem);
-        } catch (error) {
-          console.error('Failed to remove CA from trust store:', error);
-          // Continue with deletion from database even if trust store removal fails
-        }
+        await this.untrustCACertificate(ca.certificate_pem);
       }
       
-      // Delete CA from database
-      await ca.destroy();
+      // Delete CA from database within transaction
+      await ca.destroy({ transaction });
+      await transaction.commit();
       
       return {
         success: true,
         message: 'Certificate authority deleted successfully'
       };
     } catch (error) {
+      await transaction.rollback();
       console.error('Failed to delete certificate authority:', error);
       throw new Error(`Failed to delete certificate authority: ${error.message}`);
     }
@@ -467,24 +474,25 @@ class CertificateService {
    * @returns {Promise<Object>} The updated CA
    */
   async updateCATrustStatus(ca, trusted) {
+    const transaction = await sequelize.transaction();
     try {
       if (ca.type === 'custom' && ca.certificate_pem) {
         if (trusted && !ca.trusted) {
-          // Add to trust store
+          // Add to trust store — if this fails, DB is rolled back
           await this.trustCACertificate(ca.certificate_pem);
         } else if (!trusted && ca.trusted) {
-          // Remove from trust store
+          // Remove from trust store — if this fails, DB is rolled back
           await this.untrustCACertificate(ca.certificate_pem);
         }
       }
       
-      // Update CA in database
-      await ca.update({
-        trusted
-      });
+      // Update CA in database within transaction
+      await ca.update({ trusted }, { transaction });
+      await transaction.commit();
       
       return ca;
     } catch (error) {
+      await transaction.rollback();
       console.error('Failed to update CA trust status:', error);
       throw new Error(`Failed to update CA trust status: ${error.message}`);
     }

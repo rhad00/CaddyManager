@@ -7,6 +7,26 @@ const { Op } = require('sequelize');
 require('dotenv').config();
 
 /**
+ * Minimal promise-chain mutex — no external dependency required.
+ * All callers that need to read-modify-write the Caddy config must
+ * acquire this lock to prevent TOCTOU races and stale-index corruption.
+ */
+class Mutex {
+  constructor() {
+    this._queue = Promise.resolve();
+  }
+
+  /** Acquire the lock; returns a release function to call in a finally block. */
+  acquire() {
+    let release;
+    const next = new Promise((resolve) => { release = resolve; });
+    const current = this._queue;
+    this._queue = this._queue.then(() => next);
+    return current.then(() => release);
+  }
+}
+
+/**
  * Service for interacting with Caddy's Admin API
  */
 class CaddyService {
@@ -15,6 +35,7 @@ class CaddyService {
     this.serverName = process.env.CADDY_SERVER_NAME || 'srv0';
     this.configBackupDir = process.env.CONFIG_BACKUP_DIR || path.join(__dirname, '../../config_backups');
     this.configBackupFile = path.join(this.configBackupDir, 'caddy_config_backup.json');
+    this._configMutex = new Mutex();
      // defer any async initialization to initializeConfig
   }
 
@@ -58,37 +79,49 @@ class CaddyService {
       config.apps.tls.automation = config.apps.tls.automation || {};
       config.apps.tls.automation.policies = config.apps.tls.automation.policies || [];
 
-      // Create a policy for the provided domains
-      const subjects = Array.isArray(domains) ? domains : [domains];
-      const policy = {
-        subjects,
-        issuers: [{
-          module: 'acme',
-          // Challenges configuration for DNS provider
-          challenges: {
-            dns: {
-              provider: {
-                name: 'cloudflare',
-                // Cloudflare DNS provider expects 'api_token' field
-                // Use env placeholder so token is read from Caddy's environment
-                api_token: '{env.CF_API_TOKEN}'
+      const newSubjects = Array.isArray(domains) ? [...domains] : [domains];
+
+      // Find the canonical Cloudflare ACME policy — identified by the
+      // presence of a Cloudflare DNS challenge issuer.  We maintain ONE such
+      // policy and merge domains into it rather than accumulating N policies.
+      const policies = config.apps.tls.automation.policies;
+      const existingPolicyIdx = policies.findIndex(p =>
+        Array.isArray(p.issuers) &&
+        p.issuers.some(
+          iss => iss.challenges &&
+                 iss.challenges.dns &&
+                 iss.challenges.dns.provider &&
+                 iss.challenges.dns.provider.name === 'cloudflare'
+        )
+      );
+
+      if (existingPolicyIdx !== -1) {
+        // Merge new domains into the existing policy's subjects array.
+        const existingPolicy = policies[existingPolicyIdx];
+        const existingSubjects = Array.isArray(existingPolicy.subjects)
+          ? existingPolicy.subjects
+          : [];
+        const merged = Array.from(new Set([...existingSubjects, ...newSubjects]));
+        existingPolicy.subjects = merged;
+        console.log('[CaddyService] Merged Cloudflare DNS policy subjects:', merged.join(','));
+      } else {
+        // Create the first (and only) Cloudflare ACME policy.
+        const policy = {
+          subjects: newSubjects,
+          issuers: [{
+            module: 'acme',
+            challenges: {
+              dns: {
+                provider: {
+                  name: 'cloudflare',
+                  api_token: '{env.CF_API_TOKEN}'
+                }
               }
             }
-          }
-        }]
-      };
-
-      // Append policy — avoid duplicate exact subjects
-      const exists = (config.apps.tls.automation.policies || []).some(p => {
-        if (!p.subjects) return false;
-        const a = Array.isArray(p.subjects) ? p.subjects.sort().join(',') : p.subjects;
-        const b = subjects.sort().join(',');
-        return a === b;
-      });
-
-      if (!exists) {
-        config.apps.tls.automation.policies.push(policy);
-        console.log('Added Cloudflare DNS automation policy for domains:', subjects.join(','));
+          }]
+        };
+        policies.push(policy);
+        console.log('[CaddyService] Added Cloudflare DNS automation policy for domains:', newSubjects.join(','));
       }
 
       return config;
@@ -564,6 +597,7 @@ class CaddyService {
    * @returns {Promise<Object>} The result of the operation
    */
   async addProxy(proxy) {
+    const release = await this._configMutex.acquire();
     try {
       // Get current config
       const config = await this.getConfig();
@@ -660,6 +694,8 @@ class CaddyService {
     } catch (error) {
       console.error('Failed to add proxy to Caddy configuration:', error);
       throw new Error(`Failed to add proxy: ${error.message}`);
+    } finally {
+      release();
     }
   }
 
@@ -669,10 +705,15 @@ class CaddyService {
    * @returns {Promise<Object>} The result of the operation
    */
   async updateProxy(proxy) {
+    let released = false;
+    const release = await this._configMutex.acquire();
+    const safeRelease = () => { if (!released) { released = true; release(); } };
     try {
       // Check if we have a route index for this proxy
       if (proxy.caddy_route_index === null || proxy.caddy_route_index === undefined) {
-        // No route index, treat as a new proxy
+        // No route index — release current lock and delegate to addProxy (which
+        // acquires its own lock), so we don't hold two locks simultaneously.
+        safeRelease();
         return await this.addProxy(proxy);
       }
 
@@ -723,6 +764,8 @@ class CaddyService {
     } catch (error) {
       console.error('Failed to update proxy in Caddy configuration:', error);
       throw new Error(`Failed to update proxy: ${error.message}`);
+    } finally {
+      safeRelease();
     }
   }
 
@@ -732,6 +775,7 @@ class CaddyService {
    * @returns {Promise<Object>} The result of the operation
    */
   async deleteProxy(proxy) {
+    const release = await this._configMutex.acquire();
     try {
       // Delete from Caddy configuration if it exists there
       if (proxy.caddy_route_index !== null && proxy.caddy_route_index !== undefined) {
@@ -774,6 +818,8 @@ class CaddyService {
     } catch (error) {
       console.error('Failed to delete proxy from Caddy configuration:', error);
       throw new Error(`Failed to delete proxy: ${error.message}`);
+    } finally {
+      release();
     }
   }
 

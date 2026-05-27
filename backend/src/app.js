@@ -65,7 +65,7 @@ morgan.token('safe-url', (req) => sanitizeRequestUrl(req.originalUrl || req.url)
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]')); // Request logging
 
 // Rate limiting
-const { apiLimiter } = require('./middleware/rateLimiter');
+const { apiLimiter, csrfTokenLimiter } = require('./middleware/rateLimiter');
 app.use('/api', apiLimiter); // Apply to all API routes (covers /api and /api/v1)
 
 // CSRF Protection (double-submit cookie pattern)
@@ -103,13 +103,13 @@ setupSwagger(app);
 // Apply CSRF protection to all API routes that mutate state
 app.use('/api', doubleCsrfProtection);
 
-// Endpoint to get CSRF token
+// Endpoint to get CSRF token (dedicated rate limiter on top of the global apiLimiter)
 const csrfTokenHandler = (req, res) => {
   const csrfToken = generateCsrfToken(req, res);
   res.json({ csrfToken });
 };
-app.get('/api/csrf-token', csrfTokenHandler);
-app.get('/api/v1/csrf-token', csrfTokenHandler);
+app.get('/api/csrf-token', csrfTokenLimiter, csrfTokenHandler);
+app.get('/api/v1/csrf-token', csrfTokenLimiter, csrfTokenHandler);
 
 // Error handler for CSRF
 app.use((err, req, res, next) => {
@@ -192,9 +192,40 @@ const startServer = async () => {
     }
 
     // Start listening
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
+
+    // ── Graceful shutdown ─────────────────────────────────────────────────────
+    // Handle SIGTERM (Docker/Kubernetes stop) and SIGINT (Ctrl-C).
+    // This lets in-flight requests finish and closes the DB pool cleanly,
+    // preventing config corruption on forced process termination.
+    const gracefulShutdown = (signal) => {
+      console.log(`[Shutdown] ${signal} received — draining connections…`);
+
+      // Stop accepting new requests; wait for existing ones to finish.
+      server.close(async () => {
+        console.log('[Shutdown] HTTP server closed');
+        try {
+          const { sequelize: db } = require('./config/database');
+          await db.close();
+          console.log('[Shutdown] Database connection closed');
+        } catch (err) {
+          console.error('[Shutdown] Error closing database:', err.message);
+        }
+        console.log('[Shutdown] Exiting cleanly');
+        process.exit(0);
+      });
+
+      // Force-exit if shutdown takes longer than 15 s (e.g. a hung request).
+      setTimeout(() => {
+        console.error('[Shutdown] Graceful shutdown timed out — forcing exit');
+        process.exit(1);
+      }, 15000).unref();
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
