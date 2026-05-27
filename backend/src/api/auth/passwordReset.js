@@ -198,14 +198,12 @@ router.post(
         });
       }
 
-      // Update user password and clear reset token
-      // The User model's beforeUpdate hook specifically hashes the plain-text
-      // password assigned to `password_hash` before persisting the change.
-      await user.update({
-        password_hash: password,
-        reset_token: null,
-        reset_token_expires: null
-      });
+      // Update via instance save so changed fields are explicit before hooks run.
+      user.password_hash = password;
+      user.reset_token = null;
+      user.reset_token_expires = null;
+      user.changed('password_hash', true);
+      await user.save({ fields: ['password_hash', 'reset_token', 'reset_token_expires'] });
 
       // Log password reset
       await logAction({

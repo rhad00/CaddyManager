@@ -22,7 +22,12 @@ const ENCRYPTION_ALGO = 'aes-256-gcm';
 function getEncryptionKey() {
   const keyHex = process.env.BACKUP_ENCRYPTION_KEY;
   if (!keyHex) return null;
-  return Buffer.from(keyHex.slice(0, 64), 'hex'); // 32 bytes
+  const normalizedKey = keyHex.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(normalizedKey)) {
+    throw new Error('BACKUP_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)');
+  }
+
+  return Buffer.from(normalizedKey, 'hex');
 }
 
 function encryptBuffer(plainBuf) {

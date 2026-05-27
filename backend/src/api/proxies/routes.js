@@ -10,6 +10,15 @@ const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
 const router = express.Router();
 
+const PROXY_ALLOWED_FIELDS = [
+  'name', 'domains', 'upstream_url', 'ssl_type', 'custom_ssl_cert_id',
+  'compression_enabled', 'cache_settings', 'http_versions', 'status',
+  'security_headers_enabled', 'rate_limit', 'ip_filtering', 'basic_auth',
+  'path_routing', 'load_balancing', 'health_checks'
+];
+
+const PROXY_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._\-\s]{1,98}[a-zA-Z0-9]$/;
+
 /**
  * Validate a domain name (RFC 1035 compliant, allows wildcards)
  * @param {string} domain - Domain to validate
@@ -88,6 +97,22 @@ const validateUpstreamUrl = (url) => {
  * @returns {{ valid: boolean, message?: string }}
  */
 const validateProxyInput = (body) => {
+  // Validate proxy name
+  if (body.name !== undefined) {
+    if (typeof body.name !== 'string') {
+      return { valid: false, message: 'Proxy name must be a string' };
+    }
+
+    const trimmedName = body.name.trim();
+    if (trimmedName.length < 3 || trimmedName.length > 100) {
+      return { valid: false, message: 'Proxy name must be between 3 and 100 characters' };
+    }
+
+    if (!PROXY_NAME_REGEX.test(trimmedName)) {
+      return { valid: false, message: 'Proxy name contains invalid characters' };
+    }
+  }
+
   // Validate domains
   if (body.domains) {
     const domains = Array.isArray(body.domains) ? body.domains : [body.domains];
@@ -189,7 +214,7 @@ const validateProxyInput = (body) => {
  * @desc Re-run TLS verification for a proxy's domains (admin or owner)
  * @access Private
  */
-router.post('/:id/recheck-tls', authMiddleware, async (req, res) => {
+router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
   try {
     const proxy = await Proxy.findByPk(req.params.id);
 
@@ -287,21 +312,12 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     // Default: return all (backward compatible)
-    // Get all proxy IDs first
-    const proxyIds = await Proxy.findAll({
-      attributes: ['id'],
-      raw: true
-    });
-
-    // Then fetch complete data for each proxy
     const proxies = await Proxy.findAll({
-      where: {
-        id: proxyIds.map(p => p.id)
-      },
       include: [
         { model: Header, as: 'headers' },
         { model: Middleware, as: 'middlewares' }
-      ]
+      ],
+      order: [['createdAt', 'DESC']],
     });
     
     res.status(200).json({
@@ -398,14 +414,12 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
 
     // Format domains consistently as arrays
     const newDomains = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
-    const sortedNewDomains = JSON.stringify(newDomains.sort());
 
-    // Find all proxies and check domains manually
+    // Find all proxies and check for per-domain overlaps
     const existingProxies = await Proxy.findAll();
     const domainConflict = existingProxies.some(proxy => {
       const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
-      const sortedProxyDomains = JSON.stringify(proxyDomains.sort());
-      return sortedProxyDomains === sortedNewDomains;
+      return newDomains.some(d => proxyDomains.includes(d));
     });
 
     if (domainConflict) {
@@ -429,8 +443,13 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
       console.error('Failed to resolve creating user:', err.message);
     }
 
-    // Ensure created_by is set explicitly to avoid FK issues
-    const createData = { ...req.body, created_by: creatorId };
+    // Build createData from whitelist to prevent mass assignment
+    const createData = { created_by: creatorId };
+    for (const field of PROXY_ALLOWED_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        createData[field] = req.body[field];
+      }
+    }
 
     // Create the proxy in the database
     const proxy = await Proxy.create(createData, { transaction });
@@ -564,8 +583,15 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     // Capture old values for Git history
     const oldValues = proxy.toJSON();
 
+    // Build updateData from whitelist to prevent mass assignment
+    const updateData = {};
+    for (const field of PROXY_ALLOWED_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        updateData[field] = req.body[field];
+      }
+    }
     // Update the proxy
-    await proxy.update(req.body, { transaction });
+    await proxy.update(updateData, { transaction });
     
     // Handle security headers (within transaction)
     if (req.body.security_headers_enabled) {
@@ -705,26 +731,23 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     // Capture proxy data for Git history before deletion
     const proxyData = proxy.toJSON();
 
-    // Delete the proxy from Caddy configuration first
-    const caddyResult = await caddyService.deleteProxy(proxy);
-    
     // Delete headers and middlewares
     await Header.destroy({
       where: { proxy_id: proxy.id },
       transaction
     });
-    
+
     await Middleware.destroy({
       where: { proxy_id: proxy.id },
       transaction
     });
-    
+
     // Delete the proxy
     await proxy.destroy({ transaction });
-    
-    // Commit the database transaction
+
+    // Commit the database transaction before touching Caddy
     await transaction.commit();
-    
+
     // Log proxy deletion
     await logAction({
       userId: req.user.id,
@@ -758,6 +781,14 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     } catch (gitError) {
       console.error('Git commit error:', gitError);
       // Don't fail the request if Git commit fails
+    }
+
+    // Remove from Caddy after DB commit — DB is source of truth
+    let caddyResult = null;
+    try {
+      caddyResult = await caddyService.deleteProxy(proxyData);
+    } catch (caddyError) {
+      console.error('Caddy delete error (DB already committed):', caddyError);
     }
 
     res.status(200).json({

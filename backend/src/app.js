@@ -41,7 +41,27 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with size limit
-app.use(morgan('dev')); // Request logging
+
+const SENSITIVE_QUERY_PARAMS = ['token', 'password', 'secret', 'api_key', 'key', 'code', 'reset_token'];
+
+const sanitizeRequestUrl = (url) => {
+  if (!url || !url.includes('?')) {
+    return url;
+  }
+
+  const [pathname, query] = url.split('?', 2);
+  const params = new URLSearchParams(query);
+  SENSITIVE_QUERY_PARAMS.forEach((paramName) => {
+    if (params.has(paramName)) {
+      params.set(paramName, '[REDACTED]');
+    }
+  });
+
+  return `${pathname}?${params.toString()}`;
+};
+
+morgan.token('safe-url', (req) => sanitizeRequestUrl(req.originalUrl || req.url));
+app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]')); // Request logging
 
 // Rate limiting
 const { apiLimiter } = require('./middleware/rateLimiter');
@@ -60,9 +80,11 @@ if (isProduction && !process.env.CSRF_SECRET) {
   process.exit(1);
 }
 
+const csrfSecret = process.env.CSRF_SECRET || 'dev-csrf-secret';
+
 const csrfCookieName = isProduction ? '__Host-x-csrf-token' : 'x-csrf-token';
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
-  getSecret: () => process.env.CSRF_SECRET || process.env.JWT_SECRET || 'dev-csrf-secret',
+  getSecret: () => csrfSecret,
   getSessionIdentifier: (req) => req.cookies?.auth_token || req.headers?.authorization || 'anonymous',
   cookieName: csrfCookieName,
   cookieOptions: {

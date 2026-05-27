@@ -195,7 +195,7 @@ router.post('/channels/:id/test', adminOnly, async (req, res) => {
     res.json({ success: true, message: 'Test notification sent' });
   } catch (err) {
     console.error('Test channel error:', err);
-    res.status(500).json({ success: false, message: `Failed to send test: ${err.message}` });
+    res.status(500).json({ success: false, message: 'Failed to send test notification' });
   }
 });
 
@@ -374,7 +374,8 @@ router.post('/run', adminOnly, async (req, res) => {
     await runAlertChecks();
     res.json({ success: true, message: 'Alert checks completed' });
   } catch (err) {
-    res.status(500).json({ success: false, message: `Alert check failed: ${err.message}` });
+    console.error('Alert run error:', err);
+    res.status(500).json({ success: false, message: 'Alert check failed' });
   }
 });
 

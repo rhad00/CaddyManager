@@ -3,6 +3,7 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const CSRF_STORAGE_KEY = 'caddymanager.csrfToken';
 
 // Default request timeout in milliseconds
 const DEFAULT_TIMEOUT = 30000;
@@ -16,19 +17,26 @@ const DEFAULT_TIMEOUT = 30000;
  * @returns {Promise<Response>}
  */
 export const apiRequest = async (endpoint, options = {}, token = null, csrfToken = null) => {
+  const isFormData = options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...options.headers,
   };
+
+  const normalizedEndpoint = endpoint.startsWith('/api/')
+    ? endpoint.replace(/^\/api/, '')
+    : endpoint;
 
   // Add authorization token if provided (backward compat for API clients)
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Add CSRF token for state-changing operations
-  if (csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method?.toUpperCase())) {
-    headers['x-csrf-token'] = csrfToken;
+  // Add CSRF token for state-changing operations (fallback to persisted token)
+  const method = options.method?.toUpperCase();
+  const effectiveCsrfToken = csrfToken || window.sessionStorage.getItem(CSRF_STORAGE_KEY);
+  if (effectiveCsrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    headers['x-csrf-token'] = effectiveCsrfToken;
   }
 
   // Add request timeout via AbortController
@@ -36,7 +44,7 @@ export const apiRequest = async (endpoint, options = {}, token = null, csrfToken
   const timeoutId = setTimeout(() => controller.abort(), options.timeout || DEFAULT_TIMEOUT);
 
   try {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetch(`${API_URL}${normalizedEndpoint}`, {
       ...options,
       headers,
       credentials: 'include',
@@ -59,12 +67,12 @@ export const get = async (endpoint, token = null) => {
 /**
  * POST request with CSRF protection
  */
-export const post = async (endpoint, data, token = null, csrfToken = null) => {
+export const post = async (endpoint, data, token = null, csrfToken = null, isFormData = false) => {
   return apiRequest(
     endpoint,
     {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: isFormData ? data : JSON.stringify(data),
     },
     token,
     csrfToken
@@ -74,12 +82,12 @@ export const post = async (endpoint, data, token = null, csrfToken = null) => {
 /**
  * PUT request with CSRF protection
  */
-export const put = async (endpoint, data, token = null, csrfToken = null) => {
+export const put = async (endpoint, data, token = null, csrfToken = null, isFormData = false) => {
   return apiRequest(
     endpoint,
     {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: isFormData ? data : JSON.stringify(data),
     },
     token,
     csrfToken

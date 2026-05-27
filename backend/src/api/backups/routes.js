@@ -108,7 +108,7 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     
     // Set headers for file download
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=${result.backup.filename}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.backup.filename}"`);
     
     // Stream the file
     const fileStream = fs.createReadStream(result.filePath);

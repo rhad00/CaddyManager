@@ -3,10 +3,31 @@ const fs = require('fs');
 const { Certificate, CertificateAuthority } = require('../../models');
 const certificateService = require('../../services/certificateService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
+const { certificateUploadLimiter } = require('../../middleware/rateLimiter');
 const { logAction } = require('../../services/auditService');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 1024 * 1024 } }); // 1MB limit
+const upload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: 1024 * 1024, // 1MB per file
+    files: 2,
+    fields: 10,
+    parts: 12,
+    fieldNameSize: 100,
+    fieldSize: 16 * 1024,
+  }
+});
 const router = express.Router();
+
+const cleanupUploadedFiles = async (filePaths) => {
+  await Promise.all((filePaths || []).filter(Boolean).map(async (filePath) => {
+    try {
+      await fs.promises.unlink(filePath);
+    } catch {
+      // Ignore cleanup errors for already-removed temp files.
+    }
+  }));
+};
 
 /**
  * Validate PEM file content
@@ -94,32 +115,6 @@ router.get('/', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/:id', authMiddleware, async (req, res) => {
-  try {
-    const certificate = await Certificate.findByPk(req.params.id, {
-      attributes: { exclude: ['private_key_pem'] }
-    });
-    
-    if (!certificate) {
-      return res.status(404).json({
-        success: false,
-        message: 'Certificate not found'
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      certificate
-    });
-  } catch (error) {
-    console.error('Get certificate error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error while retrieving certificate' 
-    });
-  }
-});
-
 /**
  * @swagger
  * /certificates/domains/{domain}:
@@ -189,10 +184,15 @@ router.get('/domains/:domain', authMiddleware, async (req, res) => {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
+router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUploadLimiter, upload.fields([
   { name: 'certificate', maxCount: 1 },
   { name: 'privateKey', maxCount: 1 }
 ])], async (req, res) => {
+  const uploadedFilePaths = [
+    req.files?.certificate?.[0]?.path,
+    req.files?.privateKey?.[0]?.path
+  ];
+
   try {
     if (!req.files || !req.files.certificate || !req.files.privateKey) {
       return res.status(400).json({
@@ -251,6 +251,8 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), upload.fields([
       success: false, 
       message: 'Server error while uploading certificate' 
     });
+  } finally {
+    await cleanupUploadedFiles(uploadedFilePaths);
   }
 });
 
@@ -475,6 +477,8 @@ router.get('/cas', authMiddleware, async (req, res) => {
  * @access Private (Admin only)
  */
 router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('certificate')], async (req, res) => {
+  const uploadedFilePath = req.file?.path;
+
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -518,6 +522,8 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
       success: false, 
       message: 'Server error while adding certificate authority' 
     });
+  } finally {
+    await cleanupUploadedFiles([uploadedFilePath]);
   }
 });
 
@@ -675,6 +681,52 @@ router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], a
     res.status(500).json({ 
       success: false, 
       message: 'Server error while removing ACME account' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /certificates/{id}:
+ *   get:
+ *     summary: Get certificate details
+ *     tags: [Certificates]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Certificate object
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/:id', authMiddleware, async (req, res) => {
+  try {
+    const certificate = await Certificate.findByPk(req.params.id, {
+      attributes: { exclude: ['private_key_pem'] }
+    });
+
+    if (!certificate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Certificate not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      certificate
+    });
+  } catch (error) {
+    console.error('Get certificate error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while retrieving certificate'
     });
   }
 });

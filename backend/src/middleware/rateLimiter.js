@@ -59,9 +59,25 @@ const twoFaLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+/**
+ * Rate limiter for certificate upload endpoints
+ * Restricts repeated private-key upload attempts
+ */
+const certificateUploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    message: {
+        success: false,
+        message: 'Too many certificate upload attempts, please try again later'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 module.exports = {
     loginLimiter,
     passwordResetLimiter,
     apiLimiter,
-    twoFaLimiter
+    twoFaLimiter,
+    certificateUploadLimiter
 };

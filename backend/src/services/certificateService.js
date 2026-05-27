@@ -1,6 +1,5 @@
 const axios = require('axios');
 const fs = require('fs').promises;
-const fsSync = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
@@ -14,14 +13,11 @@ class CertificateService {
   constructor() {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.tempDir = process.env.TEMP_DIR || path.join(__dirname, '../../temp');
-    
-    // Ensure temp directory exists (synchronous to avoid async logs after tests)
-    try {
-      fsSync.mkdirSync(this.tempDir, { recursive: true });
-      console.log(`Temp directory ensured: ${this.tempDir}`);
-    } catch (error) {
+
+    // Fire-and-forget async initialization to avoid blocking the event loop.
+    this.ensureTempDir().catch((error) => {
       console.error('Failed to create temp directory:', error);
-    }
+    });
   }
   
   /**
