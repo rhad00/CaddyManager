@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "vitest",
     "test:unit": "vitest --config vitest.config.js",
+    "e2e:install": "playwright install chromium",
     "e2e": "playwright test --config e2e/playwright.config.js",
     "lint": "eslint .",
     "audit:check": "npm audit --audit-level=high",

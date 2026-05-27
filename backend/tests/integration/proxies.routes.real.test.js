@@ -70,4 +70,23 @@ describe('Proxies routes (integration-style with mocks)', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
   });
+
+  test.each([
+    'http://169.254.169.254/latest/meta-data',
+    'http://100.64.10.10:8080',
+    'http://192.168.1.4:8080',
+    'http://[fe80::1]:8080',
+    'http://[fd00::1]:8080',
+    'http://[::1]:8080',
+  ])('POST /api/proxies rejects restricted upstream URL: %s', async (upstreamUrl) => {
+    const res = await request(app).post('/api/proxies').send({
+      name: 'restricted-upstream-check',
+      domains: ['safe.example.com'],
+      upstream_url: upstreamUrl,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/restricted address/i);
+  });
 });
