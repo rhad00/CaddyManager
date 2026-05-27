@@ -68,6 +68,15 @@ jobs:
           SQLITE_PATH: ':memory:'
         run: npm run test:unit -- --forceExit
 
+      - name: Run backend integration tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+          DB_TYPE: sqlite
+          SQLITE_PATH: ':memory:'
+        run: npm run test:integration -- --runInBand
+
       - name: Upload backend coverage
         if: always()
         uses: actions/upload-artifact@v4

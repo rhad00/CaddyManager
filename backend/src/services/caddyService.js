@@ -12,9 +12,26 @@ require('dotenv').config();
 class CaddyService {
   constructor() {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
+    this.serverName = process.env.CADDY_SERVER_NAME || 'srv0';
     this.configBackupDir = process.env.CONFIG_BACKUP_DIR || path.join(__dirname, '../../config_backups');
     this.configBackupFile = path.join(this.configBackupDir, 'caddy_config_backup.json');
      // defer any async initialization to initializeConfig
+  }
+
+  ensureHttpServer(config) {
+    config.apps = config.apps || {};
+    config.apps.http = config.apps.http || {};
+    config.apps.http.servers = config.apps.http.servers || {};
+    config.apps.http.servers[this.serverName] = config.apps.http.servers[this.serverName] || {
+      listen: [':80'],
+      routes: []
+    };
+
+    return config.apps.http.servers[this.serverName];
+  }
+
+  getServerRoutesApiPath() {
+    return `${this.apiUrl}/config/apps/http/servers/${this.serverName}/routes`;
   }
 
   /**
@@ -89,12 +106,8 @@ class CaddyService {
     try {
       const logFile = process.env.CADDY_ACCESS_LOG || '/app/logs/access.log';
 
-      // Add server-level log reference
-      config.apps = config.apps || {};
-      config.apps.http = config.apps.http || {};
-      config.apps.http.servers = config.apps.http.servers || {};
-      config.apps.http.servers.srv0 = config.apps.http.servers.srv0 || {};
-      config.apps.http.servers.srv0.logs = {
+      const serverConfig = this.ensureHttpServer(config);
+      serverConfig.logs = {
         default_logger_name: 'access'
       };
 
@@ -107,7 +120,7 @@ class CaddyService {
           filename: logFile,
         },
         encoder: { format: 'json' },
-        include: ['http.log.access.srv0'],
+        include: [`http.log.access.${this.serverName}`],
       };
 
       return config;
@@ -203,20 +216,7 @@ class CaddyService {
         ]
       });
 
-      // Ensure the HTTP server exists in the config
-      if (!currentConfig.apps || !currentConfig.apps.http || !currentConfig.apps.http.servers) {
-        currentConfig.apps = currentConfig.apps || {};
-        currentConfig.apps.http = currentConfig.apps.http || {};
-        currentConfig.apps.http.servers = currentConfig.apps.http.servers || {};
-      }
-
-      // Ensure the default server exists
-      if (!currentConfig.apps.http.servers.srv0) {
-        currentConfig.apps.http.servers.srv0 = {
-          listen: [":80"],
-          routes: []
-        };
-      }
+      const serverConfig = this.ensureHttpServer(currentConfig);
 
       // Filter out duplicate routes and keep track of unique domains
       // Disabled proxies are excluded from Caddy config
@@ -233,7 +233,7 @@ class CaddyService {
       });
 
       // Clear existing routes (except for the CaddyManager routes)
-      const caddyManagerRoutes = currentConfig.apps.http.servers.srv0.routes.filter(route =>
+      const caddyManagerRoutes = serverConfig.routes.filter(route =>
         (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
           (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("backend:3000"))))
         ||
@@ -241,15 +241,15 @@ class CaddyService {
           (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("frontend:80"))))
       );
 
-      currentConfig.apps.http.servers.srv0.routes = caddyManagerRoutes;
+      serverConfig.routes = caddyManagerRoutes;
 
       // Add routes for each unique proxy
       for (const proxy of uniqueProxies) {
         const route = this.createRouteFromProxy(proxy);
-        currentConfig.apps.http.servers.srv0.routes.push(route);
+        serverConfig.routes.push(route);
 
         // Update the proxy with its route index
-        const routeIndex = currentConfig.apps.http.servers.srv0.routes.length - 1;
+        const routeIndex = serverConfig.routes.length - 1;
         await proxy.update({
           caddy_route_index: routeIndex
         });
@@ -569,12 +569,10 @@ class CaddyService {
       const config = await this.getConfig();
 
       // Ensure the HTTP server exists
-      if (!config.apps || !config.apps.http || !config.apps.http.servers || !config.apps.http.servers.srv0) {
-        throw new Error('Invalid Caddy configuration: HTTP server not found');
-      }
+      const serverConfig = this.ensureHttpServer(config);
 
       // Check for existing routes with the same domains and upstream URL
-      const existingRoutes = config.apps.http.servers.srv0.routes;
+      const existingRoutes = serverConfig.routes;
       const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
       const domainKey = proxyDomains.sort().join(',');
 
@@ -600,7 +598,7 @@ class CaddyService {
 
       // Use POST to add the route
       await axios.post(
-        `${this.apiUrl}/config/apps/http/servers/srv0/routes`,
+        this.getServerRoutesApiPath(),
         route,
         {
           headers: {
@@ -611,7 +609,8 @@ class CaddyService {
 
       // Get updated config to find the new route's index
       const updatedConfig = await this.getConfig();
-      const newRouteIndex = updatedConfig.apps.http.servers.srv0.routes.length - 1;
+      const updatedServerConfig = this.ensureHttpServer(updatedConfig);
+      const newRouteIndex = updatedServerConfig.routes.length - 1;
 
       // Update the proxy with its route index
       await proxy.update({
@@ -679,10 +678,11 @@ class CaddyService {
 
       // Get current config
       const config = await this.getConfig();
+      const serverConfig = this.ensureHttpServer(config);
 
       // Create and apply the updated route
       const route = this.createRouteFromProxy(proxy);
-      config.apps.http.servers.srv0.routes[proxy.caddy_route_index] = route;
+      serverConfig.routes[proxy.caddy_route_index] = route;
       // Ensure Cloudflare policy for this proxy's domains if needed
       if (proxy.ssl_type === 'cloudflare' || proxy.ssl_type === 'acme') {
         const force = proxy.ssl_type === 'cloudflare';
@@ -738,7 +738,7 @@ class CaddyService {
         try {
           // Use DELETE to remove the route
           await axios.delete(
-            `${this.apiUrl}/config/apps/http/servers/srv0/routes/${proxy.caddy_route_index}`
+            `${this.getServerRoutesApiPath()}/${proxy.caddy_route_index}`
           );
 
           // Get all proxies with higher route indices
@@ -787,7 +787,8 @@ class CaddyService {
     try {
       // First get the current config to show what will change
       const oldConfig = await this.getConfig();
-      const oldRoute = oldConfig.apps.http.servers.srv0.routes[proxy.caddy_route_index];
+      const oldServerConfig = this.ensureHttpServer(oldConfig);
+      const oldRoute = oldServerConfig.routes[proxy.caddy_route_index];
 
       // First apply the template headers to the proxy
       await sequelize.transaction(async (transaction) => {
@@ -869,41 +870,41 @@ class CaddyService {
       throw new Error(`Failed to restore configuration: ${error.message}`);
     }
   }
+
+  // Helper: perform TLS verification for a list of domains
+  verifyTlsForDomains(domains = [], timeoutMs = 10000) {
+    const checkDomain = (domain) => {
+      return new Promise((resolve) => {
+        const socket = tls.connect({ host: domain, port: 443, servername: domain, rejectUnauthorized: false }, () => {
+          try {
+            const cert = socket.getPeerCertificate();
+            socket.end();
+            if (cert && Object.keys(cert).length > 0) {
+              resolve({ domain, ok: true, certSubject: cert.subject, validFrom: cert.valid_from, validTo: cert.valid_to });
+            } else {
+              resolve({ domain, ok: false, error: 'No certificate presented' });
+            }
+          } catch (err) {
+            resolve({ domain, ok: false, error: err.message });
+          }
+        });
+
+        socket.setTimeout(timeoutMs, () => {
+          socket.destroy();
+          resolve({ domain, ok: false, error: 'TLS handshake timed out' });
+        });
+
+        socket.on('error', (err) => {
+          resolve({ domain, ok: false, error: err.message });
+        });
+      });
+    };
+
+    return Promise.all(domains.map(d => checkDomain(d))).then(results => {
+      const ok = results.every(r => r.ok === true);
+      return { ok, results };
+    });
+  }
 }
 
 module.exports = new CaddyService();
-
-// Helper: perform TLS verification for a list of domains
-CaddyService.prototype.verifyTlsForDomains = function (domains = [], timeoutMs = 10000) {
-  const checkDomain = (domain) => {
-    return new Promise((resolve) => {
-      const socket = tls.connect({ host: domain, port: 443, servername: domain, rejectUnauthorized: false }, () => {
-        try {
-          const cert = socket.getPeerCertificate();
-          socket.end();
-          if (cert && Object.keys(cert).length > 0) {
-            resolve({ domain, ok: true, certSubject: cert.subject, validFrom: cert.valid_from, validTo: cert.valid_to });
-          } else {
-            resolve({ domain, ok: false, error: 'No certificate presented' });
-          }
-        } catch (err) {
-          resolve({ domain, ok: false, error: err.message });
-        }
-      });
-
-      socket.setTimeout(timeoutMs, () => {
-        socket.destroy();
-        resolve({ domain, ok: false, error: 'TLS handshake timed out' });
-      });
-
-      socket.on('error', (err) => {
-        resolve({ domain, ok: false, error: err.message });
-      });
-    });
-  };
-
-  return Promise.all(domains.map(d => checkDomain(d))).then(results => {
-    const ok = results.every(r => r.ok === true);
-    return { ok, results };
-  });
-};

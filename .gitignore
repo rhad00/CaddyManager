@@ -62,6 +62,7 @@ temp/
 backend/config_backups/
 backend/config/
 backend/backups/
+backend/uploads/
 *.sh
 docs
 CLAUDE.md
