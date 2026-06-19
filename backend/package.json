@@ -35,7 +35,7 @@
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
-    "nodemailer": "^8.0.2",
+    "nodemailer": "^9.0.1",
     "otplib": "^13.3.0",
     "pg": "^8.16.0",
     "qrcode": "^1.5.4",
