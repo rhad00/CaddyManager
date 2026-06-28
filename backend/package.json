@@ -32,7 +32,7 @@
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.2.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
     "nodemailer": "^8.0.2",
