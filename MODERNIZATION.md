@@ -25,6 +25,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.1 | Remove unused backend dependencies | done |
 | 0.2 | In-range dependency updates + `npm audit fix` | done |
 | 0.3 | Fix frontend lint error that fails CI | done |
+| 0.4 | Node 20 (EOL) → Node 24 LTS | done |
 
 ## Changes
 
@@ -59,3 +60,14 @@ so `git log --grep "(0.5)"` finds the change for any entry.
   browser globals to every file, so `npm run lint` (a CI step) failed with `no-undef`.
 - Added a block giving Node globals to `e2e/**` and root `*.config.{js,mjs}` files.
 - Verification: `npm run lint` → 0 errors (4 pre-existing `exhaustive-deps` warnings).
+
+### 0.4 Node 20 (EOL) → Node 24 LTS
+
+- Node 20 reached end-of-life in April 2026.
+- `backend/Dockerfile`: `node:20-slim` → `node:24-slim`; deprecated `npm ci --only=production`
+  → `npm ci --omit=dev`.
+- `frontend/Dockerfile`: `node:20-alpine` → `node:24-alpine` (and `as` → `AS`).
+- `.github/workflows/ci.yml` matrix and `version-and-release.yml`: 20 → 24.
+- `engines.node: ">=24"` in both `package.json` files; README tech-stack lines updated.
+- Verification: both Docker images build; in the backend image (Node v24.21.0)
+  `bcrypt` and `sqlite3` native modules load.

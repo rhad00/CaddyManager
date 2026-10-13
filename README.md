@@ -303,7 +303,7 @@ await caddyService.applyTemplate(proxy, template);
 ## 🛠 Technology Stack
 
 ### Backend
-- **Runtime**: Node.js 20.x LTS
+- **Runtime**: Node.js 24.x LTS
 - **Framework**: Express.js 5
 - **Database**: SQLite (default) or PostgreSQL via Sequelize ORM
 - **Authentication**: JWT + httpOnly cookies, bcrypt, speakeasy (TOTP)
@@ -324,7 +324,7 @@ await caddyService.applyTemplate(proxy, template);
 - **Container**: Docker & Docker Compose
 - **Reverse Proxy**: Caddy 2.x (custom build with `caddy-dns/cloudflare`)
 - **Web Server**: NGINX (serves SPA + proxies `/api` to backend)
-- **CI/CD**: GitHub Actions (Node 20, unit tests, build artifacts, coverage upload)
+- **CI/CD**: GitHub Actions (Node 24, unit tests, build artifacts, coverage upload)
 
 ## 🚀 Quick Start
 
