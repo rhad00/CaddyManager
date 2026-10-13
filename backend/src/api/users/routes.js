@@ -1,8 +1,8 @@
 const express = require('express');
-const User = require('../../models/user');
+const { sequelize, User, ApiKey } = require('../../models');
 const { generateToken } = require('../../services/authService');
 const { userValidation } = require('../../middleware/validation');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
+const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const router = express.Router();
 
 /**
@@ -35,7 +35,7 @@ const router = express.Router();
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin')], userValidation, async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], userValidation, async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
@@ -105,7 +105,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], userValidation, asyn
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const { page, limit } = req.query;
 
@@ -182,7 +182,7 @@ router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const userId = req.params.id;
     const { role, status, password } = req.body;
@@ -259,7 +259,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const userId = req.params.id;
 
@@ -281,7 +281,11 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
       }
     }
 
-    await user.destroy();
+    // API keys act as their owner, so they go with the user (created_by is NOT NULL)
+    await sequelize.transaction(async (transaction) => {
+      await ApiKey.destroy({ where: { created_by: user.id }, transaction });
+      await user.destroy({ transaction });
+    });
 
     res.status(200).json({ success: true, message: 'User deleted' });
   } catch (error) {

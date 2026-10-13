@@ -45,7 +45,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
 | 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
 | | **Phase 0+: remaining fixes from the review** | |
-| 0.19 | API keys: write-scope check and key owner status | pending |
+| 0.19 | API keys: write-scope check and key owner status | done |
 | 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | pending |
 | 0.21 | Alert webhooks: SSRF | pending |
 | 0.22 | Git: rollback to a commit | pending |
@@ -625,6 +625,40 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     string, so every discovered service is recorded as `stopped`.
   - `websocket_enabled` is not a Proxy column, so the label is silently dropped.
   - The Git export commits each proxy's basic-auth bcrypt hash to the repository.
+
+### 0.19 API key permissions and owner
+
+- Problem:
+  - `authMiddleware` turned an API key into `{ id: created_by, role }`, taking the role
+    from the key's scope alone. The owner was never loaded, so a key kept working after
+    its owner was locked, deleted or demoted. An `admin` key created by an admin stayed
+    admin for good.
+  - A `write` key got role `user`, which does not exist (the User enum is `admin`,
+    `read-only`). Every mutating route requires `admin`, so `write` keys could not
+    write anything. The UI and README document `write` as GET + POST + PUT.
+  - Scopes were only checked where a route called `requireApiKeyPermission` (5
+    routes). A `read` key of an admin passed every other admin-only mutation.
+  - The API key routes and user management had no scope check: a `write` key could
+    create new keys or manage users.
+  - Deleting a user who owns API keys failed with 500: `api_keys.created_by` is NOT NULL
+    with a foreign key to users.
+- Fix:
+  - A key authenticates as its owner, with the owner's current role. Owner missing or
+    not `active` → 401.
+  - `authMiddleware` enforces the key's scope by HTTP method on every route:
+    GET/HEAD/OPTIONS need `read`, POST/PUT/PATCH need `write`, DELETE (and anything
+    else) needs `admin`. Scopes are cumulative.
+  - `requireApiKeyPermission` uses the same scope order.
+  - User and API key management require the `admin` scope. Proxy create and update
+    require `write`, as documented; delete keeps `admin`.
+  - Deleting a user deletes their API keys in the same transaction.
+- Tests:
+  - New `tests/integration/apiKeyAuth.test.js` (19, real middleware and SQLite): the
+    scope × method matrix; user and key management need `admin`; the key acts as its
+    owner; a read-only owner caps an admin key; demotion applies at once; locked owner;
+    deleting an owner removes the keys.
+  - The users and keys route tests were updated for the new imports.
+- Verification: backend 342 passed, 21 skipped (49 suites passed, 1 skipped).
 
 ## Where this session stopped (usage limit)
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { ApiKey, User } = require('../../models');
-const { authMiddleware } = require('../../middleware/auth');
+const { authMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 
 const router = express.Router();
@@ -32,7 +32,7 @@ const generateRawKey = () => `cm_${crypto.randomBytes(20).toString('hex')}`;
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const where = req.user.role === 'admin' ? {} : { created_by: req.user.id };
     const keys = await ApiKey.findAll({
@@ -91,7 +91,7 @@ router.get('/', authMiddleware, async (req, res) => {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const { name, permissions = ['read'], expires_at } = req.body;
     if (!name || typeof name !== 'string') {
@@ -182,7 +182,7 @@ router.post('/', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const key = await ApiKey.findByPk(req.params.id);
     if (!key) return res.status(404).json({ success: false, message: 'Key not found' });
@@ -235,7 +235,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/:id', authMiddleware, async (req, res) => {
+router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const key = await ApiKey.findByPk(req.params.id);
     if (!key) return res.status(404).json({ success: false, message: 'Key not found' });

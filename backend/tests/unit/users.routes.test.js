@@ -1,8 +1,8 @@
 const request = require('supertest');
 const express = require('express');
 
-// Mock User model
-jest.mock('../../src/models/user', () => {
+// Mock the models the route uses (User, plus ApiKey and a transaction for deletes)
+jest.mock('../../src/models', () => {
   const mockUser = {
     findAll: jest.fn(),
     findByPk: jest.fn(),
@@ -11,7 +11,11 @@ jest.mock('../../src/models/user', () => {
     count: jest.fn(),
     findAndCountAll: jest.fn(),
   };
-  return mockUser;
+  return {
+    User: mockUser,
+    ApiKey: { destroy: jest.fn() },
+    sequelize: { transaction: (work) => work({}) },
+  };
 });
 
 jest.mock('../../src/services/authService', () => ({ generateToken: jest.fn().mockReturnValue('tok') }));
@@ -22,7 +26,7 @@ jest.mock('../../src/middleware/auth', () => ({
   requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
-const User = require('../../src/models/user');
+const { User } = require('../../src/models');
 const usersRouter = require('../../src/api/users/routes');
 
 describe('Users routes', () => {

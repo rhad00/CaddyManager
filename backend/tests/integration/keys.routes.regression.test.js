@@ -8,6 +8,7 @@ jest.mock('../../src/middleware/auth', () => ({
     req.user = mockUser;
     return next();
   },
+  requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
 const mockFindAll = jest.fn();

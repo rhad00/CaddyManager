@@ -217,7 +217,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {
@@ -386,7 +386,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
  * @desc Update a proxy
  * @access Private
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req, res) => {
   const transaction = await Proxy.sequelize.transaction();
   
   try {

@@ -18,6 +18,27 @@ const getApiKey = () => {
   if (!_ApiKey) _ApiKey = require('../models').ApiKey;
   return _ApiKey;
 };
+let _User;
+const getUser = () => {
+  if (!_User) _User = require('../models').User;
+  return _User;
+};
+
+// Scopes are cumulative: write includes read, admin includes everything
+const SCOPE_RANK = { read: 1, write: 2, admin: 3 };
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
+/** Scope an API key needs for an HTTP method; DELETE and unknown methods need admin. */
+const scopeForMethod = (method) => {
+  if (SAFE_METHODS.has(method)) return 'read';
+  if (WRITE_METHODS.has(method)) return 'write';
+  return 'admin';
+};
+
+/** @param {string[]} perms - the key's permissions @param {string} required */
+const hasScope = (perms, required) =>
+  Math.max(0, ...perms.map((p) => SCOPE_RANK[p] || 0)) >= SCOPE_RANK[required];
 
 /**
  * Authentication middleware to protect routes.
@@ -42,18 +63,28 @@ const authMiddleware = async (req, res, next) => {
       // Update last_used_at asynchronously (don't block the request)
       apiKey.update({ last_used_at: new Date() }).catch(() => {});
 
-      // Map API key permissions to a req.user-like object.
-      // 'admin' perm  → role 'admin'  (may pass roleMiddleware('admin'))
-      // 'write' perm  → role 'user'   (blocked from admin-only routes by design)
-      // 'read'  perm  → role 'read-only'
+      // The key acts as its owner, with the owner's current role: it dies with the owner
+      // (deleted or locked) and never grants more than the owner has now
+      const owner = await getUser().findByPk(apiKey.created_by);
+      if (!owner || owner.status !== 'active') {
+        return res.status(401).json({ success: false, message: 'API key owner is not active' });
+      }
+
+      // Scope by HTTP method, for every route: read = GET, write = + POST/PUT/PATCH,
+      // admin = everything (DELETE, user and key management)
       const perms = apiKey.permissions || ['read'];
-      let role = 'read-only';
-      if (perms.includes('admin')) role = 'admin';
-      else if (perms.includes('write')) role = 'user';
+      const required = scopeForMethod(req.method);
+      if (!hasScope(perms, required)) {
+        return res.status(403).json({
+          success: false,
+          message: `This API key does not have the required '${required}' permission`
+        });
+      }
 
       req.user = {
-        id: apiKey.created_by,
-        role,
+        id: owner.id,
+        email: owner.email,
+        role: owner.role,
         api_key_id: apiKey.id,
         api_key_permissions: perms,
       };
@@ -139,10 +170,7 @@ const requireApiKeyPermission = (permission) => (req, res, next) => {
   if (!req.user || !req.user.api_key_id) return next();
 
   const perms = req.user.api_key_permissions || [];
-  // 'admin' permission on a key grants all scopes.
-  if (perms.includes('admin')) return next();
-
-  if (!perms.includes(permission)) {
+  if (!hasScope(perms, permission)) {
     return res.status(403).json({
       success: false,
       message: `This API key does not have the required '${permission}' permission`
