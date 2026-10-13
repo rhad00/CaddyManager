@@ -3,7 +3,7 @@ const Proxy = require('../../models/proxy');
 const Header = require('../../models/header');
 const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
-const { discardProxy, restoreProxy } = require('../../services/proxyCompensation');
+const { discardProxy, restoreProxy, tryCompensation } = require('../../services/proxyCompensation');
 const securityHeadersService = require('../../services/securityHeadersService');
 const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
@@ -571,8 +571,9 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       caddyResult = await caddyService.addProxy(reloadedProxy);
     } catch (caddyError) {
       console.error('Caddy rejected the new proxy, removing it from the database:', caddyError);
-      await discardProxy(proxy.id);
-      return res.status(502).json({ success: false, message: `Caddy rejected the proxy: ${caddyError.message}` });
+      const removed = await tryCompensation(() => discardProxy(proxy.id));
+      const note = removed ? '' : ' The proxy could not be removed from the database; delete it manually.';
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy: ${caddyError.message}.${note}` });
     }
     
     // Log proxy creation
@@ -737,13 +738,15 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
     });
     
     // Update Caddy; if Caddy rejects the change, restore the previous proxy
+    const committedUpdatedAt = reloadedProxy.updatedAt;
     let caddyResult;
     try {
       caddyResult = await caddyService.updateProxy(reloadedProxy);
     } catch (caddyError) {
       console.error('Caddy rejected the proxy update, restoring the previous version:', caddyError);
-      await restoreProxy(oldValues);
-      return res.status(502).json({ success: false, message: `Caddy rejected the proxy update: ${caddyError.message}` });
+      const restored = await tryCompensation(() => restoreProxy(oldValues, committedUpdatedAt));
+      const note = restored ? '' : ' The previous version could not be restored (it was changed again or the database failed); review the proxy.';
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy update: ${caddyError.message}.${note}` });
     }
     
     // Log proxy update

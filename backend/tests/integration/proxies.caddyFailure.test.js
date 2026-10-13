@@ -69,6 +69,18 @@ describe('create', () => {
     expect(await Header.count()).toBe(0);
   });
 
+  test('a failed cleanup still reports the Caddy error as 502', async () => {
+    caddyService.addProxy.mockImplementation(caddyRejects);
+    const destroy = jest.spyOn(Proxy, 'destroy').mockRejectedValueOnce(new Error('database is locked'));
+
+    const res = await request(app).post('/api/proxies').send(baseBody);
+    destroy.mockRestore();
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toMatch(/invalid handler/);
+    expect(res.body.message).toMatch(/could not be removed/);
+  });
+
   test('the same proxy can be created again once Caddy accepts it', async () => {
     caddyService.addProxy.mockImplementationOnce(caddyRejects);
     await request(app).post('/api/proxies').send(baseBody);
@@ -96,6 +108,24 @@ describe('update', () => {
     const stored = await Proxy.findByPk(id, { include: [{ model: Header, as: 'headers' }] });
     expect(stored.upstream_url).toBe('http://app:8080');
     expect(stored.headers.map((h) => h.header_name)).toEqual(['X-Original']);
+  });
+});
+
+describe('update with a concurrent edit', () => {
+  test('the restore does not overwrite a change made while Caddy was being called', async () => {
+    const created = await request(app).post('/api/proxies').send(baseBody);
+    const id = created.body.proxy.id;
+    caddyService.updateProxy.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5)); // a distinct updatedAt
+      await Proxy.update({ name: 'edited-elsewhere' }, { where: { id } });
+      throw new Error('loading config: invalid handler');
+    });
+
+    const res = await request(app).put(`/api/proxies/${id}`).send({ upstream_url: 'http://other:9090' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toMatch(/could not be restored/);
+    expect((await Proxy.findByPk(id)).name).toBe('edited-elsewhere');
   });
 });
 

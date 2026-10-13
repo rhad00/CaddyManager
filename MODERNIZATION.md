@@ -494,15 +494,27 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - The `catch` blocks only roll back unfinished transactions.
   - `deleteProxy` no longer touches the database.
   - The post-change backup is best-effort (`backupAfterChange`).
-- Known gap: if `addProxy` fails after its route POST succeeded (Caddy becomes
-  unreachable between calls, or the route-index update fails in the database), the
-  route stays in Caddy until the next rebuild.
+- Review follow-up (code review and background security review of the first commit):
+  - `restoreProxy` no longer writes back `caddy_route_index`, `tls_status` or
+    `tls_checked_at`. A concurrent delete may have shifted the index since the snapshot.
+  - The restore only applies while the row's `updatedAt` still matches the value the
+    failed update committed, so an edit made in the meantime is not overwritten. In
+    that case the 502 says the previous version could not be restored.
+  - A failing compensation step (`tryCompensation`) no longer turns the 502 into a
+    generic 500. The response keeps Caddy's error and says what needs manual cleanup.
+  - `addProxy` takes the new route's index from the routes it already read (appending
+    under the config mutex). If a later step fails, it deletes that route, so a
+    discarded proxy never stays live in Caddy.
 - Tests:
-  - New `tests/integration/proxies.caddyFailure.test.js` (4): create and update
-    rollbacks, retry after a failed create, and the delete hand-off.
+  - New `tests/integration/proxies.caddyFailure.test.js` (6): create and update
+    rollbacks, retry after a failed create, a failed cleanup, a concurrent edit during
+    the Caddy call, and the delete hand-off.
   - `caddyService.real`: the delete test asserted the double destroy; it is replaced by
-    index-shift and DNS-01 cleanup tests, plus a backup-failure test.
-- Verification: backend 269 passed, 21 skipped (contract, no local Caddy).
+    index-shift and DNS-01 cleanup tests. Added tests for a failed backup, and for
+    `addProxy` removing its posted route (and not deleting anything when the POST
+    itself failed).
+- Verification: backend 273 passed, 21 skipped (contract, no local Caddy); the
+  compensation tests also pass 6/6 against PostgreSQL 16.
 - Found while here, logged as 0.18: `caddyService.updateCaddyConfig()` does not exist,
   but GitOps sync (`gitService`), Docker discovery (3 calls) and the discovery delete
   route call it. Proxies created or removed by those paths never reach Caddy, and the

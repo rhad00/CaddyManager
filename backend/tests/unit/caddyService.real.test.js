@@ -54,6 +54,36 @@ describe('CaddyService', () => {
     expect(proxy.update).toHaveBeenCalled();
   });
 
+  // The route then rolls back the DB row, so the posted route must go too (0.15)
+  test('addProxy removes the route it posted when a later step fails', async () => {
+    const config = { apps: { http: { servers: { srv0: { routes: [{}, {}] } } } } };
+    axios.get.mockResolvedValue({ data: config });
+    axios.post.mockResolvedValue({});
+    axios.delete.mockResolvedValue({});
+    try {
+      const proxy = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn().mockRejectedValue(new Error('database is locked')) };
+      await expect(caddyService.addProxy(proxy)).rejects.toThrow(/database is locked/);
+      expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/routes\/2$/));
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+      axios.delete.mockReset();
+    }
+  });
+
+  test('addProxy does not delete anything when the route POST itself fails', async () => {
+    axios.get.mockResolvedValue({ data: { apps: { http: { servers: { srv0: { routes: [] } } } } } });
+    axios.post.mockRejectedValue(new Error('400 invalid handler'));
+    try {
+      const proxy = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.addProxy(proxy)).rejects.toThrow(/invalid handler/);
+      expect(axios.delete).not.toHaveBeenCalled();
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
   // Caddy already runs the change at that point; failing would roll back the DB (0.15)
   test('a failed config backup does not fail addProxy or updateProxy', async () => {
     const config = { apps: { http: { servers: { srv0: { routes: [{}] } } } } };

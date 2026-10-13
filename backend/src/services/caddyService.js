@@ -676,6 +676,8 @@ class CaddyService {
    */
   async addProxy(proxy) {
     const release = await this._configMutex.acquire();
+    let newRouteIndex = null;
+    let routePosted = false;
     try {
       // Get current config
       const config = await this.getConfig();
@@ -711,7 +713,8 @@ class CaddyService {
       // Create the route for this proxy
       const route = this.createRouteFromProxy(proxy);
 
-      // Use POST to add the route
+      // POST appends; the config mutex keeps the index stable until we are done
+      newRouteIndex = existingRoutes.length;
       await axios.post(
         this.getServerRoutesApiPath(),
         route,
@@ -721,11 +724,7 @@ class CaddyService {
           }
         }
       );
-
-      // Get updated config to find the new route's index
-      const updatedConfig = await this.getConfig();
-      const updatedServerConfig = this.ensureHttpServer(updatedConfig);
-      const newRouteIndex = updatedServerConfig.routes.length - 1;
+      routePosted = true;
 
       // Update the proxy with its route index
       await proxy.update({
@@ -774,6 +773,14 @@ class CaddyService {
       };
     } catch (error) {
       console.error('Failed to add proxy to Caddy configuration:', error);
+      // The caller discards the proxy, so the route must not stay live in Caddy
+      if (routePosted) {
+        try {
+          await axios.delete(`${this.getServerRoutesApiPath()}/${newRouteIndex}`);
+        } catch (cleanupError) {
+          console.error(`Failed to remove route ${newRouteIndex} after a failed add:`, cleanupError.message);
+        }
+      }
       throw new Error(`Failed to add proxy: ${error.message}`);
     } finally {
       release();
