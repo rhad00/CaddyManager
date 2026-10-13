@@ -7,18 +7,28 @@ const { channelProblem, redactChannel } = require('../../utils/notificationChann
 
 const REDACTED = '***';
 
-/** Replace "***" placeholders (from the redacted list) with the stored values. */
-function keepRedacted(incoming, stored) {
+/**
+ * Replace "***" placeholders (from the redacted list) with the stored values. Stored
+ * secrets are only kept while the destination stays the same: a new URL or channel
+ * type must come with its header values, or they could be sent somewhere new.
+ * @returns {{config?: Object, problem?: string}}
+ */
+function keepRedacted(incoming, stored, sameType) {
   const merged = { ...incoming };
   for (const key of ['url', 'webhook_url']) {
     if (merged[key] === REDACTED) merged[key] = stored[key];
   }
+  const sameDestination = sameType && merged.url === stored.url && merged.webhook_url === stored.webhook_url;
   if (merged.headers && typeof merged.headers === 'object') {
+    const kept = Object.entries(merged.headers).filter(([, value]) => value === REDACTED);
+    if (kept.length > 0 && !sameDestination) {
+      return { problem: 'Re-enter the header values when changing the URL or channel type' };
+    }
     merged.headers = Object.fromEntries(Object.entries(merged.headers).map(([name, value]) => [
       name, value === REDACTED ? stored.headers?.[name] : value,
     ]));
   }
-  return merged;
+  return { config: merged };
 }
 
 const router = express.Router();
@@ -144,7 +154,11 @@ router.put('/channels/:id', adminOnly, async (req, res) => {
     const { name, type, config, enabled } = req.body;
     // The UI edits from the redacted list: "***" means "keep the stored value"
     const nextType = type ?? channel.type;
-    const nextConfig = config ? keepRedacted(config, channel.config || {}) : channel.config;
+    const kept = config ? keepRedacted(config, channel.config || {}, nextType === channel.type) : { config: channel.config };
+    if (kept.problem) {
+      return res.status(400).json({ success: false, message: kept.problem });
+    }
+    const nextConfig = kept.config;
     const problem = channelProblem(nextType, nextConfig);
     if (problem) {
       return res.status(400).json({ success: false, message: problem });

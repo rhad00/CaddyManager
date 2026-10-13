@@ -73,6 +73,20 @@ test('editing from the redacted list keeps the stored secrets', async () => {
   expect(stored.config).toEqual({ url: 'https://hooks.example.com/token', headers: { Authorization: 'Bearer s3cret' }, method: 'PUT' });
 });
 
+test('stored header secrets cannot be redirected to a new URL', async () => {
+  const channel = await NotificationChannel.create({
+    name: 'hook', type: 'webhook', config: { url: 'https://hooks.example.com/token', headers: { Authorization: 'Bearer s3cret' } },
+  });
+
+  const res = await request(app).put(`/api/alerts/channels/${channel.id}`).send({
+    config: { url: 'https://attacker.example.net/collect', headers: { Authorization: '***' } },
+  });
+
+  expect(res.status).toBe(400);
+  expect(res.body.message).toMatch(/re-enter/i);
+  expect((await NotificationChannel.findByPk(channel.id)).config.url).toBe('https://hooks.example.com/token');
+});
+
 test('a channel stored before validation existed is refused when sending', async () => {
   const { sendToChannel } = require('../../src/services/alertService');
   const legacy = await NotificationChannel.create({ name: 'old', type: 'webhook', config: { url: 'http://169.254.169.254/latest' } });

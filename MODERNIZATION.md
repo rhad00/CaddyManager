@@ -776,6 +776,13 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - Backend 403 passed, 21 skipped.
   - Live DNS check: `localtest.me` (public name resolving to `127.0.0.1`/`::1`) is
     refused by the guard inside axios's real request path.
+- Review follow-up (background security review):
+  - Problem: the `***` placeholder let an admin keep the stored `Authorization`
+    header while pointing the webhook at a new URL, sending another admin's secret to
+    a server of their choice.
+  - Fix: stored header values are only kept while the URL and channel type stay the
+    same; otherwise the values must be re-entered (400).
+  - Test: +1 in `alertChannels.validation`.
 
 ## Where this session stopped (usage limit)
 
