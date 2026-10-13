@@ -10,6 +10,10 @@ const {
   assertKeyMatchesCertificate,
   resolveCertificateDomains,
 } = require('../utils/certificates');
+const caddyService = require('./caddyService');
+
+// Certificate types CaddyManager loads into Caddy itself (ACME ones Caddy manages)
+const MANAGED_CERTIFICATE_TYPES = ['uploaded', 'self-signed'];
 require('dotenv').config();
 
 /**
@@ -184,10 +188,7 @@ class CertificateService {
 
       const certId = crypto.randomUUID();
 
-      // Load certificate into Caddy
-      await this.loadCertificateIntoCaddy(certId, domainList, certificatePem, privateKeyPem);
-
-      // Create certificate in database
+      // Create certificate in database, then push it to Caddy
       const certificate = await Certificate.create({
         name,
         domains: domainList.join(','),
@@ -203,6 +204,7 @@ class CertificateService {
         created_by: userId
       });
 
+      await this.activateCertificate(certificate);
       return certificate;
     } catch (error) {
       console.error('Failed to upload certificate:', error);
@@ -277,10 +279,7 @@ class CertificateService {
       const certInfo = parsePemCertificate(certificatePem);
       const certId = crypto.randomUUID();
 
-      // Load certificate into Caddy
-      await this.loadCertificateIntoCaddy(certId, domainList, certificatePem, privateKeyPem);
-
-      // Create certificate in database
+      // Create certificate in database, then push it to Caddy
       const certificate = await Certificate.create({
         name,
         domains: domainList.join(','),
@@ -296,6 +295,7 @@ class CertificateService {
         created_by: userId
       });
 
+      await this.activateCertificate(certificate);
       return certificate;
     } catch (error) {
       console.error('Failed to generate self-signed certificate:', error);
@@ -306,25 +306,37 @@ class CertificateService {
   }
   
   /**
+   * Make a newly stored custom certificate live in Caddy; remove it again if Caddy
+   * rejects the resulting config so the database never lists a certificate Caddy lacks.
+   * @param {Object} certificate - Certificate instance just created
+   */
+  async activateCertificate(certificate) {
+    try {
+      await caddyService.syncCustomCertificates();
+    } catch (error) {
+      await certificate.destroy().catch((cleanupError) => {
+        console.error('Failed to remove certificate after Caddy rejected it:', cleanupError);
+      });
+      throw new Error(`Caddy rejected the certificate: ${error.message}`);
+    }
+  }
+
+  /**
    * Delete a certificate
    * @param {Object} certificate - Certificate object
    * @returns {Promise<Object>} Result of the operation
    */
   async deleteCertificate(certificate) {
     try {
-      // If certificate has a Caddy ID, delete it from Caddy
-      if (certificate.caddy_cert_id) {
-        try {
-          await axios.delete(`${this.apiUrl}/certificates/${certificate.caddy_cert_id}`);
-        } catch (error) {
-          console.error('Failed to delete certificate from Caddy:', error);
-          // Continue with deletion from database even if Caddy deletion fails
-        }
-      }
-      
-      // Delete certificate from database
+      const servedByCaddy = MANAGED_CERTIFICATE_TYPES.includes(certificate.type);
+
+      // Delete from the database first: Caddy's copy is rebuilt from the database
       await certificate.destroy();
-      
+
+      if (servedByCaddy) {
+        await caddyService.syncCustomCertificates();
+      }
+
       return {
         success: true,
         message: 'Certificate deleted successfully'
@@ -574,44 +586,7 @@ class CertificateService {
       throw new Error(`Failed to delete ACME account: ${error.message}`);
     }
   }
-  
-  /**
-   * Load a certificate into Caddy
-   * @param {string} certId - Certificate ID
-   * @param {Array} domains - List of domains
-   * @param {string} certificatePem - PEM-encoded certificate
-   * @param {string} privateKeyPem - PEM-encoded private key
-   * @returns {Promise<Object>} Result of the operation
-   */
-  async loadCertificateIntoCaddy(certId, domains, certificatePem, privateKeyPem) {
-    try {
-      const payload = {
-        certificates: [
-          {
-            certificate: certificatePem,
-            key: privateKeyPem,
-            tags: ['manual', 'caddymanager'],
-            subjects: domains
-          }
-        ]
-      };
-      
-      await axios.post(`${this.apiUrl}/load/certificates`, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      return {
-        success: true,
-        message: 'Certificate loaded into Caddy successfully'
-      };
-    } catch (error) {
-      console.error('Failed to load certificate into Caddy:', error);
-      throw new Error(`Failed to load certificate into Caddy: ${error.message}`);
-    }
-  }
-  
+
   /**
    * Trust a CA certificate
    * @param {string} certificatePem - PEM-encoded CA certificate

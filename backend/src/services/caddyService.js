@@ -2,10 +2,11 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
 const tls = require('tls');
-const { sequelize, Proxy, Header, Middleware } = require('../models');
+const { sequelize, Proxy, Header, Middleware, Certificate } = require('../models');
 const { Op } = require('sequelize');
 const { parseUpstream } = require('../utils/upstream');
 const { toCaddyAuthHandler } = require('../utils/basicAuth');
+const { withCustomCertificates, withoutCustomCertificates } = require('../utils/caddyTls');
 require('dotenv').config();
 
 /**
@@ -323,12 +324,51 @@ class CaddyService {
   }
 
   /**
-   * Load a complete configuration into Caddy
+   * Current config with CaddyManager-managed private keys removed; safe to persist or export
+   * @returns {Promise<Object>}
+   */
+  async getCaddyConfig() {
+    return withoutCustomCertificates(await this.getConfig());
+  }
+
+  /**
+   * Uploaded and self-signed certificates to serve (private keys decrypted by the model)
+   * @returns {Promise<Array>}
+   */
+  async loadCustomCertificates() {
+    const certificates = await Certificate.findAll({
+      where: {
+        type: ['uploaded', 'self-signed'],
+        status: { [Op.ne]: 'revoked' }
+      }
+    });
+    return certificates.filter(c => c.certificate_pem && c.private_key_pem);
+  }
+
+  /**
+   * Re-push the running config so Caddy picks up added or removed custom certificates
+   */
+  async syncCustomCertificates() {
+    const release = await this._configMutex.acquire();
+    try {
+      const config = await this.getConfig();
+      await this.loadConfig(config);
+      await this.backupConfig(config);
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Load a complete configuration into Caddy.
+   * Custom certificates live only in the database (backups and exports strip their
+   * keys), so they are merged into every config pushed to Caddy.
    * @param {Object} config - The configuration to load
    */
   async loadConfig(config) {
     try {
-      await axios.post(`${this.apiUrl}/load`, config, {
+      const fullConfig = withCustomCertificates(config, await this.loadCustomCertificates());
+      await axios.post(`${this.apiUrl}/load`, fullConfig, {
         headers: {
           'Content-Type': 'application/json'
         }
@@ -358,9 +398,10 @@ class CaddyService {
    */
   async backupConfig(config) {
     try {
+      // Never write custom certificate private keys to disk in plaintext
       await fs.writeFile(
         this.configBackupFile,
-        JSON.stringify(config, null, 2),
+        JSON.stringify(withoutCustomCertificates(config), null, 2),
         'utf8'
       );
       console.log(`Configuration backed up to ${this.configBackupFile}`);
@@ -918,8 +959,8 @@ class CaddyService {
       // Get current config
       const config = await this.getConfig();
 
-      // Add to backup data
-      backupData.caddy_config = config;
+      // Add to backup data; custom certificates are restored from the database instead
+      backupData.caddy_config = withoutCustomCertificates(config);
 
       return backupData;
     } catch (error) {

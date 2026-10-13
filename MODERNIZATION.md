@@ -33,7 +33,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.9 | Active health checks rejected by Caddy | done |
 | 0.10 | "weighted" load balancing policy | done |
 | 0.11a | Certificates: parsing, key/cert match, `created_by`, ids | done |
-| 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | pending |
+| 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | done |
 | 0.11c | Certificates: self-signed generation needs `openssl` in the image | pending |
 | 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | pending |
 | 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | pending |
@@ -286,3 +286,41 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   metadata stored; a mismatched key is rejected before Caddy or the database is touched).
 - Still broken after this item: loading into Caddy (0.11b).
 - Verification: backend 243 passed.
+
+### 0.11b Certificates: load custom certs via `apps.tls.certificates.load_pem`
+
+- Problems:
+  - Uploaded and self-signed certificates were pushed to `POST /load/certificates`, which
+    does not exist, so no custom certificate ever reached Caddy.
+  - `gitService.exportConfigToFile` called `caddyService.getCaddyConfig()`, which did not
+    exist either. Every Git export, and therefore every auto-commit, threw.
+- New `backend/src/utils/caddyTls.js` (pure, non-mutating):
+  - `withCustomCertificates(config, certs)` replaces the `load_pem` entries tagged
+    `caddymanager` with the given certificates and keeps foreign entries.
+  - `withoutCustomCertificates(config)` removes them, private keys included.
+- `caddyService`:
+  - `loadConfig()` merges every stored uploaded or self-signed certificate (not revoked)
+    into each config it pushes. Certificates survive rebuilds, startup from the backup
+    file, and backup restore without any path needing to remember them.
+  - `backupConfig()` (plaintext `caddy_config_backup.json`), `includeInBackup()` and
+    the new `getCaddyConfig()` (used by the Git export) strip managed certificates, so
+    private keys never land on disk or in Git.
+  - New `loadCustomCertificates()` and `syncCustomCertificates()` (read-modify-write
+    under the existing config mutex).
+- `certificateService`:
+  - Upload and generate store the row first, then `activateCertificate()` syncs Caddy. If
+    Caddy rejects the config, the row is removed again and the error is reported.
+  - Delete removes the row, then syncs.
+  - The fake `loadCertificateIntoCaddy` and its `DELETE /certificates/:id` call are gone.
+- Runtime check (live `caddy:2.10.2`, fixture certificate via `load_pem`, HTTPS route for
+  `app.example.com`): the response is 200 with the fixture certificate (CN
+  `app.example.com`, expires 2126), and there are no ACME attempts. Caddy logs "skipping
+  automatic certificate management because one or more matching certificates are already
+  loaded".
+- Tests:
+  - New: `tests/unit/caddyTls.test.js` (6) and `tests/unit/caddyService.certificates.test.js`
+    (5: merged on load; only uploaded/self-signed queried; no keys in the backup file,
+    backup archive or Git export; sync re-pushes).
+  - New contract case with the real fixture PEM.
+  - Five `caddyService` test files gained a `Certificate` model mock.
+- Verification: backend 254 passed; contract 21/21.

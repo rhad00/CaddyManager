@@ -17,6 +17,7 @@ process.env.CADDY_ACCESS_LOG = path.join(os.tmpdir(), 'caddymanager-contract-acc
 
 const caddyService = require('../../src/services/caddyService');
 const { createValidator } = require('./caddyValidator');
+const { withCustomCertificates } = require('../../src/utils/caddyTls');
 
 const validator = createValidator();
 
@@ -186,6 +187,18 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
   const cloudflareTest = validator.hasModules(['dns.providers.cloudflare']) ? test : test.skip;
   cloudflareTest('Cloudflare DNS-01 automation policy (requires caddy-dns/cloudflare)', () => {
     expectValid(buildConfig([baseProxy({ ssl_type: 'cloudflare' })], { cloudflare: true }));
+  });
+
+  // Regression for MODERNIZATION.md 0.11b: custom certificates go through tls.certificates.load_pem
+  test('custom certificate loaded via load_pem', () => {
+    const fixtures = path.join(__dirname, '../fixtures/certs');
+    const fs = require('fs');
+    const config = withCustomCertificates(buildConfig([baseProxy({ ssl_type: 'custom' })]), [{
+      id: 1,
+      certificate_pem: fs.readFileSync(path.join(fixtures, 'app.cert.pem'), 'utf8'),
+      private_key_pem: fs.readFileSync(path.join(fixtures, 'app.key.pem'), 'utf8'),
+    }]);
+    expectValid(config);
   });
 
   test('several proxies in one config', () => {

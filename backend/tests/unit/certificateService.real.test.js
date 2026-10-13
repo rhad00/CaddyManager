@@ -47,7 +47,7 @@ describe('CertificateService real tests', () => {
 
     beforeEach(() => {
       tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'cert-upload-'));
-      jest.spyOn(certificateService, 'loadCertificateIntoCaddy').mockResolvedValue({ success: true });
+      jest.spyOn(certificateService, 'activateCertificate').mockResolvedValue();
       Certificate.create = jest.fn(async (data) => ({ id: 7, ...data }));
     });
 
@@ -75,7 +75,7 @@ describe('CertificateService real tests', () => {
       await expect(certificateService.uploadCertificate(
         'app', 'app.example.com', stage('app.cert.pem'), stage('other.key.pem'), 'user-1'
       )).rejects.toBeInstanceOf(CertificateError);
-      expect(certificateService.loadCertificateIntoCaddy).not.toHaveBeenCalled();
+      expect(certificateService.activateCertificate).not.toHaveBeenCalled();
       expect(Certificate.create).not.toHaveBeenCalled();
     });
   });

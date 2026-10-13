@@ -7,6 +7,8 @@ jest.mock('../../src/models', () => ({
   Proxy: { findAll: jest.fn() },
   Header: { destroy: jest.fn(), create: jest.fn() },
   Middleware: { destroy: jest.fn(), create: jest.fn() },
+  // loadConfig merges custom certificates from the database
+  Certificate: { findAll: jest.fn(async () => []) },
   sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
 }));
 
