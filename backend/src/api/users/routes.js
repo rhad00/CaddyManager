@@ -5,6 +5,34 @@ const { userValidation } = require('../../middleware/validation');
 const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const router = express.Router();
 
+class LastAdminError extends Error {}
+
+const isActiveAdmin = (user) => user.role === 'admin' && user.status === 'active';
+
+/**
+ * Apply a change to a user in a transaction, refusing it when it would leave no active
+ * admin. The admin rows are locked so two concurrent requests cannot both pass the check.
+ * @param {Object} user - the user being changed
+ * @param {boolean} staysActiveAdmin - whether the user is still an active admin afterwards
+ * @param {(transaction) => Promise<void>} change
+ */
+async function changeUserKeepingAnAdmin(user, staysActiveAdmin, change) {
+  await sequelize.transaction(async (transaction) => {
+    if (isActiveAdmin(user) && !staysActiveAdmin) {
+      const admins = await User.findAll({
+        where: { role: 'admin', status: 'active' },
+        attributes: ['id'],
+        lock: true,
+        transaction,
+      });
+      if (!admins.some((admin) => admin.id !== user.id)) {
+        throw new LastAdminError('This would leave no active admin user');
+      }
+    }
+    await change(transaction);
+  });
+}
+
 /**
  * @swagger
  * tags:
@@ -192,17 +220,12 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Prevent demoting self from admin
+    // Prevent demoting or locking self
     if (role && role !== 'admin' && req.user.id === userId) {
       return res.status(400).json({ success: false, message: 'Cannot change your own admin role' });
     }
-
-    // Prevent removing the last admin
-    if (role && role !== 'admin' && user.role === 'admin') {
-      const adminCount = await User.count({ where: { role: 'admin' } });
-      if (adminCount <= 1) {
-        return res.status(400).json({ success: false, message: 'Cannot demote the last admin user' });
-      }
+    if (status === 'locked' && req.user.id === userId) {
+      return res.status(400).json({ success: false, message: 'Cannot lock your own account' });
     }
 
     const updates = {};
@@ -220,7 +243,8 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       updates.password_hash = password; // Will be hashed by model hook
     }
 
-    await user.update(updates);
+    const staysActiveAdmin = isActiveAdmin({ role: updates.role ?? user.role, status: updates.status ?? user.status });
+    await changeUserKeepingAnAdmin(user, staysActiveAdmin, (transaction) => user.update(updates, { transaction }));
 
     res.status(200).json({
       success: true,
@@ -232,6 +256,9 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       },
     });
   } catch (error) {
+    if (error instanceof LastAdminError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error('Update user error:', error);
     res.status(500).json({ success: false, message: 'Server error while updating user' });
   }
@@ -273,22 +300,17 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // If user is an admin, ensure at least one other admin remains
-    if (user.role === 'admin') {
-      const adminCount = await User.count({ where: { role: 'admin' } });
-      if (adminCount <= 1) {
-        return res.status(400).json({ success: false, message: 'Cannot delete the last admin user' });
-      }
-    }
-
     // API keys act as their owner, so they go with the user (created_by is NOT NULL)
-    await sequelize.transaction(async (transaction) => {
+    await changeUserKeepingAnAdmin(user, false, async (transaction) => {
       await ApiKey.destroy({ where: { created_by: user.id }, transaction });
       await user.destroy({ transaction });
     });
 
     res.status(200).json({ success: true, message: 'User deleted' });
   } catch (error) {
+    if (error instanceof LastAdminError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error('Delete user error:', error);
     res.status(500).json({ success: false, message: 'Server error while deleting user' });
   }

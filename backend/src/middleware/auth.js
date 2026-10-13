@@ -36,6 +36,15 @@ const scopeForMethod = (method) => {
   return 'admin';
 };
 
+// Administration areas need the admin scope for every method; account security (2FA) is
+// never available to API keys, whatever their scope. Paths are relative to /api or /api/v1.
+const ADMIN_SCOPE_AREAS = ['/users', '/keys', '/backups', '/alerts', '/git', '/audit'];
+const NO_API_KEY_AREAS = ['/auth/2fa'];
+
+/** Mount path of the router handling the request, without the /api or /api/v1 prefix. */
+const apiArea = (req) => (req.baseUrl || '').replace(/^\/api(\/v1)?(?=\/|$)/, '');
+const inArea = (area, areas) => areas.some((a) => area === a || area.startsWith(`${a}/`));
+
 /** @param {string[]} perms - the key's permissions @param {string} required */
 const hasScope = (perms, required) =>
   Math.max(0, ...perms.map((p) => SCOPE_RANK[p] || 0)) >= SCOPE_RANK[required];
@@ -72,8 +81,12 @@ const authMiddleware = async (req, res, next) => {
 
       // Scope by HTTP method, for every route: read = GET, write = + POST/PUT/PATCH,
       // admin = everything (DELETE, user and key management)
+      const area = apiArea(req);
+      if (inArea(area, NO_API_KEY_AREAS)) {
+        return res.status(403).json({ success: false, message: 'This endpoint is not available with an API key' });
+      }
       const perms = apiKey.permissions || ['read'];
-      const required = scopeForMethod(req.method);
+      const required = inArea(area, ADMIN_SCOPE_AREAS) ? 'admin' : scopeForMethod(req.method);
       if (!hasScope(perms, required)) {
         return res.status(403).json({
           success: false,

@@ -659,6 +659,25 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     deleting an owner removes the keys.
   - The users and keys route tests were updated for the new imports.
 - Verification: backend 342 passed, 21 skipped (49 suites passed, 1 skipped).
+- Review follow-up (security review of the first commit):
+  - Account security refuses API keys: `/auth/2fa/*` answers 403 to any key. A
+    `write` key could otherwise call `/2fa/setup` + `/2fa/verify` for its owner,
+    replace the TOTP secret and lock the owner out. This was open before 0.19.
+  - Administration areas need the `admin` scope for every method: users, keys,
+    backups, alerts, Git and audit. `write` keys reached some of their POST/PUT routes
+    (create backup, alert tests, Git sync) through the method rule. This is enforced in
+    `authMiddleware` from the router mount path (`/api` and `/api/v1`), so new routes in
+    those areas are covered without per-route checks.
+  - Proxy create/update requiring `write` (no longer `admin`) is intentional: it is the
+    documented meaning of `write` ("create/update"), and the role check still requires
+    the owner to be an admin.
+  - Last-admin guard: demoting, locking or deleting the last *active* admin is
+    refused. Locked admins no longer count. The check runs in the change's transaction
+    with the admin rows locked, so concurrent requests cannot both pass. Admins cannot
+    lock their own account.
+  - Tests: `apiKeyAuth` +7 (admin areas, 2FA); new `users.lastAdmin` (5).
+  - Verification: backend 354 passed, 21 skipped. Both files also pass against
+    PostgreSQL 16.
 
 ## Where this session stopped (usage limit)
 

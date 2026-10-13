@@ -23,8 +23,13 @@ app.get('/thing', authMiddleware, ok);
 app.post('/thing', authMiddleware, roleMiddleware('admin'), ok);
 app.put('/thing', authMiddleware, roleMiddleware('admin'), ok);
 app.delete('/thing', authMiddleware, roleMiddleware('admin'), ok);
-app.use('/api/users', require('../../src/api/users/routes'));
-app.use('/api/keys', require('../../src/api/keys/routes'));
+// Mounted like app.js does, including the versioned prefix
+const api = express.Router();
+for (const area of ['users', 'keys', 'backups', 'audit', 'alerts', 'git', 'auth']) {
+  api.use(`/${area}`, require(`../../src/api/${area}/routes`));
+}
+app.use('/api/v1', api);
+app.use('/api', api);
 
 let counter = 0;
 async function makeUser(role, status = 'active') {
@@ -63,6 +68,24 @@ describe('scopes', () => {
     const res = await request(app)[method]('/thing').set('X-API-Key', key);
     expect(res.status).toBe(status);
   });
+
+  test.each([
+    ['post', '/api/backups'],
+    ['get', '/api/audit/logs'],
+    ['get', '/api/alerts/rules'],
+    ['get', '/api/git/repositories'],
+  ])('administration (%s %s) needs the admin scope', async (method, path) => {
+    const writeKey = await makeKey(admin, ['write']);
+    expect((await request(app)[method](path).set('X-API-Key', writeKey)).status).toBe(403);
+  });
+
+  test.each(['/api/auth/2fa/setup', '/api/auth/2fa/verify', '/api/auth/2fa/disable'])(
+    'account security at %s refuses API keys, even admin ones', async (path) => {
+      const adminKey = await makeKey(admin, ['admin']);
+      const res = await request(app).post(path).set('X-API-Key', adminKey).send({ token: '000000' });
+      expect(res.status).toBe(403);
+    }
+  );
 
   test.each(['/api/users', '/api/keys'])('user and key management at %s needs the admin scope', async (path) => {
     const writeKey = await makeKey(admin, ['write']);
