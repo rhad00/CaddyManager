@@ -97,6 +97,19 @@ test('GET responses never include the hash', async () => {
   expect(JSON.stringify(res.body)).not.toMatch(/hashed_password|\$2[aby]\$/);
 });
 
+// Regression for MODERNIZATION.md 0.12 (ssl_type enum lacked 'cloudflare')
+test('creates a Cloudflare DNS-01 proxy', async () => {
+  const res = await request(app).post('/api/proxies').send({ ...baseBody, ssl_type: 'cloudflare' });
+  expect(res.status).toBe(201);
+  expect((await Proxy.findByPk(res.body.proxy.id)).ssl_type).toBe('cloudflare');
+});
+
+test('rejects an unknown ssl_type', async () => {
+  const res = await request(app).post('/api/proxies').send({ ...baseBody, ssl_type: 'letsencrypt' });
+  expect(res.status).toBe(400);
+  expect(res.body.message).toMatch(/ssl_type must be one of/);
+});
+
 test('migration hashes legacy plaintext passwords', async () => {
   const legacy = await Proxy.create({
     ...baseBody,

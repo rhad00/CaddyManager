@@ -31,7 +31,9 @@ const PROXY_ALLOWED_FIELDS = [
   'path_routing', 'load_balancing', 'health_checks'
 ];
 
-const PROXY_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._\-\s]{1,98}[a-zA-Z0-9]$/;
+const SSL_TYPES = ['acme', 'cloudflare', 'custom', 'none'];
+
+const PROXY_NAME_REGEX =/^[a-zA-Z0-9][a-zA-Z0-9._\-\s]{1,98}[a-zA-Z0-9]$/;
 
 /**
  * Validate a domain name (RFC 1035 compliant, allows wildcards)
@@ -250,6 +252,9 @@ const validateMiddlewaresConfig = (middlewares) => {
 const validateProxyInput = (body) => {
   const validators = [
     () => validateProxyName(body.name),
+    () => (body.ssl_type === undefined || SSL_TYPES.includes(body.ssl_type)
+      ? { valid: true }
+      : { valid: false, message: `ssl_type must be one of: ${SSL_TYPES.join(', ')}` }),
     () => validateProxyDomains(body.domains),
     () => (body.upstream_url ? validateUpstreamUrl(body.upstream_url) : { valid: true }),
     () => validateLoadBalancingConfig(body.load_balancing),
@@ -282,8 +287,8 @@ router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async
       return res.status(404).json({ success: false, message: 'Proxy not found' });
     }
 
-    // Only allow if ACME is enabled for this proxy
-    if (proxy.ssl_type !== 'acme') {
+    // Only allow for ACME-managed proxies (HTTP-01 or Cloudflare DNS-01)
+    if (!['acme', 'cloudflare'].includes(proxy.ssl_type)) {
       return res.status(400).json({ success: false, message: 'TLS recheck only applicable for ACME-managed proxies' });
     }
 

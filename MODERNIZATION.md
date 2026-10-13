@@ -37,7 +37,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.11c | Certificates: self-signed generation needs `openssl` in the image | done |
 | 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | done |
 | 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | done |
-| 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
+| 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | done |
 | 0.13 | Access log file not shared between Caddy and backend | pending |
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | pending |
 | 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | pending |
@@ -393,6 +393,26 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     Applying them globally is not safe, because a custom root pool would replace the
     system roots for public upstreams.
 - Verification: backend 258 passed.
+
+### 0.12 `ssl_type` enum lacks `cloudflare` (Postgres)
+
+- Problem: `Proxies.ssl_type` was `ENUM('acme','custom','none')`, while `cloudflare` is
+  used throughout (UI, route builder, discovery labels). SQLite does not enforce ENUMs,
+  so this only broke on PostgreSQL, the recommended production database: saving a
+  Cloudflare proxy failed with `invalid input value for enum`. The API did not validate
+  `ssl_type` at all, and the TLS recheck route rejected Cloudflare proxies.
+- Changes:
+  - Model enum is now `acme | cloudflare | custom | none`.
+  - Migration `20261014-add-cloudflare-ssl-type.js` runs
+    `ALTER TYPE "enum_Proxies_ssl_type" ADD VALUE IF NOT EXISTS 'cloudflare'` on
+    PostgreSQL. It is a no-op on SQLite and idempotent.
+  - API rejects unknown `ssl_type` values with 400.
+  - `POST /proxies/:id/recheck-tls` accepts Cloudflare proxies.
+- Verification on PostgreSQL 16 (throwaway container, old schema recreated): the insert
+  is rejected before the migration and succeeds after it; running the migration twice
+  is harmless.
+- Tests: two cases added to `tests/integration/basicAuth.proxies.test.js` (create a
+  Cloudflare proxy; reject an unknown type). Backend 260 passed.
 
 ## Where this session stopped (usage limit)
 

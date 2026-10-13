@@ -21,7 +21,7 @@ const Proxy = sequelize.define('Proxy', {
     allowNull: false
   },
   ssl_type: {
-    type: DataTypes.ENUM('acme', 'custom', 'none'),
+    type: DataTypes.ENUM('acme', 'cloudflare', 'custom', 'none'),
     defaultValue: 'acme',
     allowNull: false
   },
