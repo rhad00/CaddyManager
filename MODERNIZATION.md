@@ -42,7 +42,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | done |
 | 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | done |
 | 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
-| 0.17 | Dev/prod compose files mount a non-existent `./Caddyfile` | pending |
+| 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
 | 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | pending |
 
 ## Changes
@@ -507,6 +507,16 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   but GitOps sync (`gitService`), Docker discovery (3 calls) and the discovery delete
   route call it. Proxies created or removed by those paths never reach Caddy, and the
   TypeError is swallowed or turned into a 500.
+
+### 0.17 Prod compose Caddyfile mount
+
+- Problem: `docker-compose.prod.yml` bind-mounted `./Caddyfile`, which does not exist
+  (the file is `caddy/Caddyfile`; the dev compose file already used that path). Docker
+  creates a missing bind source as an empty directory, so Caddy failed at startup
+  reading `/etc/caddy/Caddyfile`.
+- Fix: mount `./caddy/Caddyfile`.
+- Verification: `docker compose -f docker-compose.prod.yml config` resolves the source to
+  the existing file, and `caddy adapt` on it succeeds in the project Caddy image.
 
 ## Where this session stopped (usage limit)
 
