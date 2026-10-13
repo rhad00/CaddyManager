@@ -380,6 +380,18 @@ class CaddyService {
   }
 
   /**
+   * Backup after Caddy has accepted a change. Caddy already runs the new config, so a
+   * failed backup is logged instead of failing (and rolling back) the change.
+   */
+  async backupAfterChange() {
+    try {
+      await this.backupCurrentConfig();
+    } catch (error) {
+      console.error('Config backup failed after a successful Caddy change:', error.message);
+    }
+  }
+
+  /**
    * Backup a Caddy configuration
    * @param {Object} config - The configuration to backup
    */
@@ -720,8 +732,7 @@ class CaddyService {
         caddy_route_index: newRouteIndex
       });
 
-      // Backup the updated configuration
-      await this.backupCurrentConfig();
+      await this.backupAfterChange();
 
       // If the proxy uses ACME or Cloudflare for TLS, ensure Cloudflare policy and perform a short TLS verification to detect ACME failures
       let tlsStatus = null;
@@ -798,8 +809,7 @@ class CaddyService {
       this.setCloudflarePolicy(config, await this.cloudflareDomains());
       await this.loadConfig(config);
 
-      // Backup the configuration
-      await this.backupCurrentConfig();
+      await this.backupAfterChange();
       // If the proxy uses ACME for TLS, perform a short TLS verification
       let tlsStatus = null;
       try {
@@ -837,8 +847,9 @@ class CaddyService {
   }
 
   /**
-   * Delete a proxy from Caddy configuration
-   * @param {Object} proxy - The proxy object to delete
+   * Delete a proxy from Caddy configuration. The caller deletes the database row first;
+   * this only removes the route, shifts later route indices and updates the DNS-01 policy.
+   * @param {Object} proxy - Plain data of the deleted proxy (id, caddy_route_index, ssl_type)
    * @returns {Promise<Object>} The result of the operation
    */
   async deleteProxy(proxy) {
@@ -874,9 +885,6 @@ class CaddyService {
           console.error('Failed to delete proxy from Caddy (continuing anyway):', error);
         }
       }
-
-      // Always delete the proxy from the database
-      await proxy.destroy();
 
       // Drop its domains from the DNS-01 policy
       if (proxy.ssl_type === 'cloudflare') {

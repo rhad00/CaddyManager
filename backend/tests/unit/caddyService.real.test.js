@@ -54,13 +54,47 @@ describe('CaddyService', () => {
     expect(proxy.update).toHaveBeenCalled();
   });
 
-  test('deleteProxy deletes route and adjusts indices', async () => {
+  // Caddy already runs the change at that point; failing would roll back the DB (0.15)
+  test('a failed config backup does not fail addProxy or updateProxy', async () => {
+    const config = { apps: { http: { servers: { srv0: { routes: [{}] } } } } };
+    axios.get.mockResolvedValue({ data: config });
+    axios.post.mockResolvedValue({});
+    Proxy.findAll.mockResolvedValue([]);
+    fs.promises.writeFile.mockRejectedValue(new Error('EROFS: read-only file system'));
+
+    try {
+      const added = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.addProxy(added)).resolves.toMatchObject({ success: true });
+
+      const updated = { id: 'p', caddy_route_index: 0, domains: ['a.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.updateProxy(updated)).resolves.toMatchObject({ success: true });
+    } finally {
+      fs.promises.writeFile.mockReset();
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
+  // The route deletes the row and passes the proxy's plain data (MODERNIZATION.md 0.15)
+  test('deleteProxy removes the route and shifts later indices for an already-deleted proxy', async () => {
     axios.delete.mockResolvedValue({});
-    Proxy.findAll.mockResolvedValue([{ id: 'p2', caddy_route_index: 3, update: jest.fn() }]);
-    const proxy = { caddy_route_index: 2, destroy: jest.fn() };
-    const res = await caddyService.deleteProxy(proxy);
+    const later = { id: 'p2', caddy_route_index: 3, update: jest.fn() };
+    Proxy.findAll.mockResolvedValue([later]);
+    const proxyData = { id: 'p1', caddy_route_index: 2, ssl_type: 'acme' };
+    const res = await caddyService.deleteProxy(proxyData);
     expect(res.success).toBe(true);
-    expect(proxy.destroy).toHaveBeenCalled();
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/routes\/2$/));
+    expect(later.update).toHaveBeenCalledWith({ caddy_route_index: 2 });
+  });
+
+  test('deleteProxy recomputes the DNS-01 policy when a Cloudflare proxy is removed', async () => {
+    axios.delete.mockResolvedValue({});
+    axios.get.mockResolvedValue({ data: caddyService.setCloudflarePolicy({}, ['gone.example.com']) });
+    axios.post.mockResolvedValue({});
+    Proxy.findAll.mockResolvedValue([]);
+    await caddyService.deleteProxy({ id: 'p1', caddy_route_index: 0, ssl_type: 'cloudflare' });
+    const load = axios.post.mock.calls.find((c) => String(c[0]).includes('/load'));
+    expect(load[1].apps.tls.automation.policies).toEqual([]);
   });
 
   test('applyTemplate removes headers and creates new ones then updates proxy', async () => {

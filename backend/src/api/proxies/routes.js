@@ -3,6 +3,7 @@ const Proxy = require('../../models/proxy');
 const Header = require('../../models/header');
 const Middleware = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
+const { discardProxy, restoreProxy } = require('../../services/proxyCompensation');
 const securityHeadersService = require('../../services/securityHeadersService');
 const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
@@ -564,8 +565,15 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       ]
     });
     
-    // Add the proxy to Caddy configuration using PATCH
-    const caddyResult = await caddyService.addProxy(reloadedProxy);
+    // Add the proxy to Caddy; if Caddy rejects it, drop the row so DB and Caddy agree
+    let caddyResult;
+    try {
+      caddyResult = await caddyService.addProxy(reloadedProxy);
+    } catch (caddyError) {
+      console.error('Caddy rejected the new proxy, removing it from the database:', caddyError);
+      await discardProxy(proxy.id);
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy: ${caddyError.message}` });
+    }
     
     // Log proxy creation
     await logAction({
@@ -611,8 +619,8 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
   } catch (error) {
-    // Rollback the transaction if there was an error
-    await transaction.rollback();
+    // Roll back unless the error happened after the commit
+    if (!transaction.finished) await transaction.rollback();
     
     console.error('Create proxy error:', error);
     res.status(500).json({ 
@@ -728,8 +736,15 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       ]
     });
     
-    // Update the proxy in Caddy configuration using PATCH
-    const caddyResult = await caddyService.updateProxy(reloadedProxy);
+    // Update Caddy; if Caddy rejects the change, restore the previous proxy
+    let caddyResult;
+    try {
+      caddyResult = await caddyService.updateProxy(reloadedProxy);
+    } catch (caddyError) {
+      console.error('Caddy rejected the proxy update, restoring the previous version:', caddyError);
+      await restoreProxy(oldValues);
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy update: ${caddyError.message}` });
+    }
     
     // Log proxy update
     await logAction({
@@ -775,8 +790,8 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
   } catch (error) {
-    // Rollback the transaction if there was an error
-    await transaction.rollback();
+    // Roll back unless the error happened after the commit
+    if (!transaction.finished) await transaction.rollback();
     
     console.error('Update proxy error:', error);
     res.status(500).json({ 
@@ -880,8 +895,8 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
       caddy: caddyResult
     });
   } catch (error) {
-    // Rollback the transaction if there was an error
-    await transaction.rollback();
+    // Roll back unless the error happened after the commit
+    if (!transaction.finished) await transaction.rollback();
     
     console.error('Delete proxy error:', error);
     res.status(500).json({ 

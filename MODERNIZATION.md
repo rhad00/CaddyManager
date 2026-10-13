@@ -40,9 +40,10 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | done |
 | 0.13 | Access log never written, and not shared between Caddy and backend | done |
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | done |
-| 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | pending |
+| 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | done |
 | 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
 | 0.17 | Dev/prod compose files mount a non-existent `./Caddyfile` | pending |
+| 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | pending |
 
 ## Changes
 
@@ -467,6 +468,45 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - Removed `policyDedup` and `cloudflare` tests, which tested the old merge semantics;
     the `test:regression` script now points at the new file.
 - Verification: backend 263 passed; contract 21/21 (Cloudflare case on the plugin image).
+
+### 0.15 Database and Caddy drift on failed proxy changes
+
+- Problem:
+  - Create and update commit the transaction, then call Caddy. When Caddy rejected the
+    change, the `catch` called `rollback()` on the finished transaction, which threw
+    again. The client got a 500 and the row stayed in the database without a matching
+    Caddy route.
+  - Retrying a failed create then returned 400 "already exists".
+  - A rejected update left the database describing a config Caddy was not running, and
+    the next full rebuild would push it.
+  - Delete: the route deletes the row and passes `proxy.toJSON()` to
+    `caddyService.deleteProxy`, which called `proxy.destroy()` again on that plain
+    object. The resulting TypeError skipped the Cloudflare policy cleanup after the
+    route removal.
+  - `addProxy` and `updateProxy` failed when writing the local config backup failed,
+    even though Caddy had already applied the change.
+- Fix:
+  - New `src/services/proxyCompensation.js`. If Caddy rejects a create, `discardProxy`
+    removes the new proxy with its headers and middlewares. If Caddy rejects an update,
+    `restoreProxy` writes back the snapshot taken before the update (row, headers,
+    middlewares). Caddy's `/load` is atomic, so its config is unchanged in that case.
+  - Both cases answer 502 with Caddy's error; the form already shows `message`.
+  - The `catch` blocks only roll back unfinished transactions.
+  - `deleteProxy` no longer touches the database.
+  - The post-change backup is best-effort (`backupAfterChange`).
+- Known gap: if `addProxy` fails after its route POST succeeded (Caddy becomes
+  unreachable between calls, or the route-index update fails in the database), the
+  route stays in Caddy until the next rebuild.
+- Tests:
+  - New `tests/integration/proxies.caddyFailure.test.js` (4): create and update
+    rollbacks, retry after a failed create, and the delete hand-off.
+  - `caddyService.real`: the delete test asserted the double destroy; it is replaced by
+    index-shift and DNS-01 cleanup tests, plus a backup-failure test.
+- Verification: backend 269 passed, 21 skipped (contract, no local Caddy).
+- Found while here, logged as 0.18: `caddyService.updateCaddyConfig()` does not exist,
+  but GitOps sync (`gitService`), Docker discovery (3 calls) and the discovery delete
+  route call it. Proxies created or removed by those paths never reach Caddy, and the
+  TypeError is swallowed or turned into a 500.
 
 ## Where this session stopped (usage limit)
 
