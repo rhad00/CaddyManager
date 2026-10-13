@@ -26,6 +26,14 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.2 | In-range dependency updates + `npm audit fix` | done |
 | 0.3 | Fix frontend lint error that fails CI | done |
 | 0.4 | Node 20 (EOL) → Node 24 LTS | done |
+| 0.5 | Caddy config contract test (`caddy validate`) | done |
+| 0.6 | Upstream URL copied verbatim into Caddy `dial` | pending |
+| 0.7 | Basic auth: invalid handler + plaintext password | pending |
+| 0.8 | Active health checks rejected by Caddy | pending |
+| 0.9 | "weighted" load balancing policy | pending |
+| 0.10 | Certificate service calls non-existent Caddy admin endpoints | pending |
+| 0.11 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
+| 0.12 | Access log file not shared between Caddy and backend | pending |
 
 ## Changes
 
@@ -71,3 +79,30 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - `engines.node: ">=24"` in both `package.json` files; README tech-stack lines updated.
 - Verification: both Docker images build; in the backend image (Node v24.21.0)
   `bcrypt` and `sqlite3` native modules load.
+
+### 0.5 Caddy config contract test (`caddy validate`)
+
+- New suite `backend/tests/contract/caddyConfig.contract.test.js` (+ `caddyValidator.js`,
+  `jest.contract.config.js`, `npm run test:contract`).
+- Builds full configs exactly like `rebuildConfigFromDatabase` (routes from
+  `createRouteFromProxy`, access logging, Cloudflare policy) for every proxy feature and
+  runs them through a real `caddy validate`.
+- Caddy source: `CADDY_BIN`, `CADDY_IMAGE` (Docker), or `caddy` on `PATH`; skipped when
+  none is available unless `CADDY_CONTRACT_REQUIRED=true`.
+- Plugin-dependent cases (rate limit, Cloudflare DNS) run only when `caddy list-modules`
+  reports the module; `CADDY_REQUIRED_MODULES` makes CI fail if the project image was
+  built without them (the `caddy/Dockerfile` silently falls back to stock Caddy).
+- `caddy validate` does not parse `dial` addresses (resolved per request), so the suite
+  also checks every upstream `dial` is a plain `host:port`.
+- CI: builds `./caddy` and runs the suite with `CADDY_CONTRACT_REQUIRED=true`.
+- Known-broken cases are recorded with `test.failing` so CI stays green; each fix flips
+  its case to a normal `test`:
+  - 0.6 `http://app:8080` upstream → `dial: "http://app:8080"` (new finding: the API has
+    required an `http(s)://` URL since `fa5a042`, but Caddy's `dial` needs `host:port`,
+    so every request through such a proxy fails with "too many colons in address").
+  - 0.7 `basic_auth` → `unknown module: http.handlers.basic_auth`
+  - 0.8 health checks → `unknown field "max_fails"`
+  - 0.9 `weighted` policy → `unknown module: http.reverse_proxy.selection_policies.weighted`
+- Verification: against the project image (`caddy/Dockerfile`, Caddy 2.10.2 + plugins)
+  18/18 pass (14 valid + 4 expected failures); against stock `caddy:2.10.2` 16 pass,
+  2 plugin cases skipped; without Caddy the suite is skipped and the main suite passes.

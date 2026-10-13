@@ -17,7 +17,8 @@
     "audit:check": "npm audit --audit-level=high",
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "start:cluster": "CLUSTER_MODE=true node src/cluster.js"
+    "start:cluster": "CLUSTER_MODE=true node src/cluster.js",
+    "test:contract": "jest --config jest.contract.config.js"
   },
   "keywords": [],
   "author": "",
