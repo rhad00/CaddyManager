@@ -30,7 +30,7 @@ const pick = (source, fields) => Object.fromEntries(
  * plaintext password, which is hashed like an API request.
  */
 async function importBasicAuth(input) {
-  if (input === undefined || input === null) return input;
+  if (input === undefined) return input;
   if (input?.hashed_password !== undefined && !BCRYPT_HASH.test(String(input.hashed_password))) {
     throw new Error('basic_auth hashed_password is not a bcrypt hash');
   }
@@ -76,9 +76,24 @@ async function prepareImportedProxies(proxies) {
   }
 
   const results = await Promise.allSettled(proxies.map(prepareOne));
+  const label = (i) => `#${i + 1} "${proxies[i]?.name ?? 'unnamed'}"`;
   const errors = results.flatMap((result, i) => (result.status === 'rejected'
-    ? [`#${i + 1} "${proxies[i]?.name ?? 'unnamed'}": ${result.reason.message}`]
+    ? [`${label(i)}: ${result.reason.message}`]
     : []));
+
+  // The API refuses a domain another proxy already serves; so does an import
+  const owner = new Map();
+  results.forEach((result, i) => {
+    if (result.status !== 'fulfilled') return;
+    const domains = [].concat(result.value.fields.domains ?? []);
+    for (const domain of domains) {
+      if (owner.has(domain)) {
+        errors.push(`${label(i)}: domain ${domain} is already used by #${owner.get(domain) + 1}`);
+      } else {
+        owner.set(domain, i);
+      }
+    }
+  });
   if (errors.length > 0) throw new ProxyImportError(errors);
 
   return results.map((result) => result.value);

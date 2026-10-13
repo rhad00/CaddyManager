@@ -44,6 +44,18 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | done |
 | 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
 | 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
+| | **Phase 0+: remaining fixes from the review** | |
+| 0.19 | API keys: write-scope check and key owner status | pending |
+| 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | pending |
+| 0.21 | Alert webhooks: SSRF | pending |
+| 0.22 | Git: rollback to a commit | pending |
+| 0.23 | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
+| 0.24 | Discovery: container state, unused labels | pending |
+| 0.25 | Cluster mode: schedulers run in every instance | pending |
+| 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
+| 0.27 | README references missing files | pending |
+| 0.28 | Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5 | pending |
+| 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
 ## Changes
 
@@ -599,6 +611,15 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - `dockerDiscovery.validation` (8).
   - `importRoutes.errors` (3).
 - Verification: backend 321 passed, 21 skipped.
+- Review follow-up (code review of the first commit):
+  - An import is refused when two entries share a domain, as the API refuses a domain
+    another proxy already serves.
+  - `basic_auth: null` is refused, as in the API.
+  - The review also noted that `validateMiddlewaresConfig` checks fields
+    (`type`, `requests_per_second`) that stored middlewares do not have. Caddy route
+    building never reads Middleware rows, so this has no effect on Caddy. Logged under
+    0.29 (middlewares stored but never applied) instead of validating dead data.
+  - Verification: backend 323 passed, 21 skipped.
 - Found while here (added to the discovery and Git fix tier):
   - Discovery reads `container.State.Running`, but the list API returns `State` as a
     string, so every discovered service is recorded as `stopped`.

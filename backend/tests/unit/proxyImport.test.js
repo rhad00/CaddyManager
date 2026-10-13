@@ -78,6 +78,17 @@ describe('prepareImportedProxies', () => {
     expect(error.message).toMatch(/#3 "bad-domain"/);
   });
 
+  test('rejects two entries that share a domain, as the API would', async () => {
+    await expect(prepareImportedProxies([
+      exported({ name: 'first', domains: ['shared.example.com'] }),
+      exported({ name: 'second', domains: ['other.example.com', 'shared.example.com'] }),
+    ])).rejects.toThrow(/#2 "second".*shared\.example\.com.*#1/);
+  });
+
+  test('rejects basic_auth: null, as the API would', async () => {
+    await expect(prepareImportedProxies([exported({ basic_auth: null })])).rejects.toThrow(/basic_auth must be an object/);
+  });
+
   test('rejects input that is not a list of objects', async () => {
     await expect(prepareImportedProxies({ name: 'x' })).rejects.toThrow(/list/);
     await expect(prepareImportedProxies([null])).rejects.toThrow(/object/);
