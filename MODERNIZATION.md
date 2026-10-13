@@ -34,7 +34,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.10 | "weighted" load balancing policy | done |
 | 0.11a | Certificates: parsing, key/cert match, `created_by`, ids | done |
 | 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | done |
-| 0.11c | Certificates: self-signed generation needs `openssl` in the image | pending |
+| 0.11c | Certificates: self-signed generation needs `openssl` in the image | done |
 | 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | pending |
 | 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | pending |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
@@ -324,3 +324,15 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - New contract case with the real fixture PEM.
   - Five `caddyService` test files gained a `Certificate` model mock.
 - Verification: backend 254 passed; contract 21/21.
+
+### 0.11c Certificates: self-signed generation needs `openssl` in the image
+
+- Problem: `generateSelfSignedCertificate` shells out to the `openssl` CLI (with
+  `execFileSync`), but `node:24-slim` (and the earlier `node:20-slim`) does not include it,
+  so generation always failed in the shipped container. CI and dev machines have openssl,
+  which hid the gap.
+- Fix: `backend/Dockerfile` installs `openssl` (`--no-install-recommends`, apt lists
+  removed).
+- Verification: built the image and ran the real `generateSelfSignedCertificate` inside it
+  (in-memory SQLite, Caddy push stubbed). Result: type `self-signed`, both SANs, 30-day
+  validity, PEM produced.

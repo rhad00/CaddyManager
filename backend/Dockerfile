@@ -1,5 +1,10 @@
 FROM node:24-slim
 
+# openssl CLI is used to generate self-signed certificates (certificateService)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy package files
