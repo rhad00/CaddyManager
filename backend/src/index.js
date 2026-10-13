@@ -82,6 +82,9 @@ const initialize = async () => {
     const { startAlertScheduler } = require('./services/alertService');
     startAlertScheduler(15); // check every 15 minutes
 
+    // Keep the certificate list and expiry dates current
+    require('./services/certificateService').scheduleCertificateSync(6);
+
     // TODO: Initialize Kubernetes discovery service if enabled
     // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {
     //   const k8sDiscoveryService = require('./services/kubernetesDiscoveryService');

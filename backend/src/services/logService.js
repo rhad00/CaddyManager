@@ -185,4 +185,4 @@ function getLogStats() {
   }
 }
 
-module.exports = { getLogs, streamLogs, getLogStats, LOG_FILE };
+module.exports = { getLogs, streamLogs, getLogStats, parseLine, LOG_FILE };

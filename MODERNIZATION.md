@@ -46,7 +46,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
 | | **Phase 0+: remaining fixes from the review** | |
 | 0.19 | API keys: write-scope check and key owner status | done |
-| 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | pending |
+| 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | done |
 | 0.21 | Alert webhooks: SSRF | pending |
 | 0.22 | Git: rollback to a commit | pending |
 | 0.23 | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
@@ -689,6 +689,45 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     single place listing the areas. The tests mount that same router.
   - Tests: `apiKeyAuth` +6 (case and prefix variants for admin areas and 2FA, on the
     real API router).
+
+### 0.20 Alerts evaluate real data
+
+- Problem:
+  - `error_rate` and `no_traffic` rules could be created in the UI but always returned
+    "not triggered".
+  - `cert_expiry` read `proxy.tls_status`, which is only written when a proxy is saved
+    or rechecked by hand, so expiry warnings were based on data of any age.
+  - `upstream_down` fired when that same stale TLS check of the proxy's own domain had
+    failed, which says nothing about the upstream.
+  - Alerts also ran for disabled proxies, which are not in Caddy.
+  - `certificateService.syncCertificates` existed but was never scheduled.
+- Fix:
+  - New `services/trafficStats.js` counts requests and 5xx per host from the access
+    log (shared with the backend since 0.13). Hosts are normalised (case, port).
+  - `error_rate`: share of 5xx over the last 15 minutes, at least 20 requests;
+    `threshold` = percent, default 5.
+  - `no_traffic`: no request to any of the proxy's domains for `threshold` minutes
+    (default 60). Only when the log covers the whole window (not new or rotated) and
+    the proxy is older than the window.
+  - `upstream_down`: new `utils/upstreamProbe.js` opens a TCP connection to every
+    upstream (main, load-balanced, path-routed) and reports the ones that refuse or
+    time out.
+  - `cert_expiry` refreshes a TLS status older than 6 hours before judging it and
+    skips proxies without TLS.
+  - Only active proxies are evaluated. The log is read once per window per run.
+    Messages describe each condition.
+  - `scheduleCertificateSync(6)` runs the sync a minute after startup and every 6
+    hours.
+- Tests:
+  - New `trafficStats` (3), `upstreamProbe` (3, real TCP server and a closed port),
+    `alertService.conditions` (10, every condition incl. quiet cases),
+    `certificateService.schedule` (1, fake timers, survives a failed run).
+- Verification:
+  - Backend 378 passed, 21 skipped.
+  - Live check: a Caddy 2.10.2 using CaddyManager's access-log config served 30× 200
+    for one host and 30× 502 for another. `trafficStats` read 30/0 and 30/30 from the
+    real log; `error_rate` fired for the failing host (100%) and stayed quiet for the
+    other.
 
 ## Where this session stopped (usage limit)
 

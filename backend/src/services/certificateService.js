@@ -477,6 +477,21 @@ subjectAltName = @alt_names
 ${altNames}
     `;
   }
+
+  /**
+   * Run syncCertificates a minute after startup and then every `intervalHours`, so the
+   * certificate list and expiry dates stay current without a manual sync.
+   * @param {number} intervalHours
+   * @returns {NodeJS.Timeout} the interval, for tests and shutdown
+   */
+  scheduleCertificateSync(intervalHours = 6) {
+    const run = () => this.syncCertificates().catch((error) => {
+      console.error('Scheduled certificate sync failed:', error.message);
+    });
+    setTimeout(run, 60 * 1000);
+    console.log(`Scheduled certificate sync every ${intervalHours} hours`);
+    return setInterval(run, intervalHours * 60 * 60 * 1000);
+  }
 }
 
 module.exports = new CertificateService();

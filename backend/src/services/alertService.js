@@ -1,5 +1,14 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const { hostTrafficSince, trafficForDomains } = require('./trafficStats');
+const { unreachableUpstreams } = require('../utils/upstreamProbe');
+
+// error_rate looks at the last 15 minutes and needs enough requests to mean something
+const ERROR_RATE_WINDOW_MINUTES = 15;
+const ERROR_RATE_MIN_REQUESTS = 20;
+// cert_expiry refreshes a TLS status older than this before judging it
+const TLS_STATUS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const TLS_CHECK_TIMEOUT_MS = 10000;
 
 let AlertRule, NotificationChannel, Proxy;
 
@@ -20,6 +29,22 @@ function getModels() {
 const notifiedAt = new Map();
 
 /**
+ * Shared state for one evaluation run: the access log is read at most once per window.
+ */
+function createRunContext() {
+  const trafficByWindow = new Map();
+  return {
+    traffic(windowMinutes) {
+      if (!trafficByWindow.has(windowMinutes)) {
+        const sinceTs = Date.now() / 1000 - windowMinutes * 60;
+        trafficByWindow.set(windowMinutes, hostTrafficSince(sinceTs));
+      }
+      return trafficByWindow.get(windowMinutes);
+    },
+  };
+}
+
+/**
  * Evaluate all enabled alert rules and dispatch notifications if conditions are met.
  */
 async function runAlertChecks() {
@@ -27,7 +52,9 @@ async function runAlertChecks() {
     const { AlertRule: AR, NotificationChannel: NC, Proxy: P } = getModels();
 
     const rules = await AR.findAll({ where: { enabled: true } });
-    const proxies = await P.findAll();
+    // Disabled proxies are not in Caddy; nothing about them can be "down"
+    const proxies = await P.findAll({ where: { status: 'active' } });
+    const ctx = createRunContext();
 
     for (const rule of rules) {
       const ruleProxies = rule.proxy_id
@@ -43,7 +70,7 @@ async function runAlertChecks() {
           continue; // still in cooldown
         }
 
-        const triggered = await checkCondition(rule, proxy);
+        const triggered = await checkCondition(rule, proxy, ctx);
         if (!triggered) continue;
 
         const subject = buildSubject(rule, proxy);
@@ -61,16 +88,38 @@ async function runAlertChecks() {
   }
 }
 
+const proxyDomains = (proxy) => (Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]);
+
+/**
+ * TLS status is only written when a proxy is saved or rechecked by hand; refresh it when
+ * it is older than TLS_STATUS_MAX_AGE_MS so expiry alerts do not judge months-old data.
+ */
+async function freshTlsStatus(proxy) {
+  const checkedAt = proxy.tls_checked_at ? new Date(proxy.tls_checked_at).getTime() : 0;
+  if (proxy.tls_status && Date.now() - checkedAt < TLS_STATUS_MAX_AGE_MS) {
+    return proxy.tls_status;
+  }
+  const caddyService = require('./caddyService');
+  const tlsStatus = await caddyService.verifyTlsForDomains(proxyDomains(proxy), TLS_CHECK_TIMEOUT_MS);
+  await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
+  return tlsStatus;
+}
+
 /**
  * Check whether a specific rule condition is met for a proxy.
  * Returns a details object if triggered, null otherwise.
+ * Thresholds: cert_expiry → days, error_rate → percent, no_traffic → minutes.
+ * @param {Object} rule
+ * @param {Object} proxy
+ * @param {ReturnType<typeof createRunContext>} ctx
  */
-async function checkCondition(rule, proxy) {
+async function checkCondition(rule, proxy, ctx) {
   switch (rule.condition_type) {
     case 'cert_expiry': {
-      if (!proxy.tls_status || !proxy.tls_status.results) return null;
+      if (proxy.ssl_type === 'none') return null;
+      const tlsStatus = await freshTlsStatus(proxy);
       const threshold = rule.threshold ?? 14; // days
-      for (const r of proxy.tls_status.results) {
+      for (const r of tlsStatus?.results || []) {
         if (!r.ok || !r.validTo) continue;
         const expiresIn = (new Date(r.validTo) - Date.now()) / (1000 * 60 * 60 * 24);
         if (expiresIn < threshold) {
@@ -81,18 +130,32 @@ async function checkCondition(rule, proxy) {
     }
 
     case 'upstream_down': {
-      if (!proxy.tls_status) return null;
-      // Consider upstream "down" if last TLS check failed overall
-      if (!proxy.tls_status.ok) {
-        return { reason: 'TLS health check reported failure' };
-      }
-      return null;
+      const unreachable = await unreachableUpstreams(proxy);
+      return unreachable.length > 0 ? { unreachable } : null;
     }
 
-    // Future implementations (require log data)
-    case 'error_rate':
-    case 'no_traffic':
-      return null;
+    case 'error_rate': {
+      const stats = await ctx.traffic(ERROR_RATE_WINDOW_MINUTES);
+      const { total, errors } = trafficForDomains(stats, proxyDomains(proxy));
+      if (total < ERROR_RATE_MIN_REQUESTS) return null; // too few requests to judge
+      const rate = (errors / total) * 100;
+      const threshold = rule.threshold ?? 5; // percent
+      return rate > threshold
+        ? { rate: rate.toFixed(1), errors, total, windowMinutes: ERROR_RATE_WINDOW_MINUTES }
+        : null;
+    }
+
+    case 'no_traffic': {
+      const minutes = rule.threshold ?? 60;
+      // A proxy younger than the window cannot have been silent for all of it
+      if (proxy.createdAt && Date.now() - new Date(proxy.createdAt).getTime() < minutes * 60 * 1000) {
+        return null;
+      }
+      const stats = await ctx.traffic(minutes);
+      if (!stats.coversWindow) return null; // new or rotated log: silence means nothing
+      const { total } = trafficForDomains(stats, proxyDomains(proxy));
+      return total === 0 ? { minutes } : null;
+    }
 
     default:
       return null;
@@ -103,23 +166,24 @@ function buildSubject(rule, proxy) {
   const domains = Array.isArray(proxy.domains) ? proxy.domains.join(', ') : proxy.domains;
   const typeLabels = {
     cert_expiry: 'Certificate Expiry Warning',
-    upstream_down: 'Upstream Health Check Failed',
+    upstream_down: 'Upstream Unreachable',
     error_rate: 'High Error Rate',
     no_traffic: 'No Traffic Detected',
   };
   return `[CaddyManager Alert] ${typeLabels[rule.condition_type] || rule.condition_type}: ${proxy.name} (${domains})`;
 }
 
+const DETAIL_TEXT = {
+  cert_expiry: (d) => `Domain "${d.domain}" certificate expires in ${d.expiresIn} days (${d.validTo}).`,
+  upstream_down: (d) => `Upstream(s) not accepting connections: ${d.unreachable.join(', ')}.`,
+  error_rate: (d) => `${d.rate}% of requests (${d.errors} of ${d.total}) returned a 5xx error in the last ${d.windowMinutes} minutes.`,
+  no_traffic: (d) => `No requests in the last ${d.minutes} minutes.`,
+};
+
 function buildBody(rule, proxy, details) {
   const domains = Array.isArray(proxy.domains) ? proxy.domains.join(', ') : proxy.domains;
   const time = new Date().toUTCString();
-
-  let detail = '';
-  if (rule.condition_type === 'cert_expiry') {
-    detail = `Domain "${details.domain}" certificate expires in ${details.expiresIn} days (${details.validTo}).`;
-  } else if (rule.condition_type === 'upstream_down') {
-    detail = `Upstream health check failure: ${details.reason}`;
-  }
+  const detail = DETAIL_TEXT[rule.condition_type] ? DETAIL_TEXT[rule.condition_type](details) : '';
 
   return `CaddyManager Alert — ${time}\n\nRule: ${rule.name}\nProxy: ${proxy.name}\nDomains: ${domains}\n\n${detail}\n\nLog in to CaddyManager to investigate.`;
 }
@@ -212,4 +276,4 @@ function startAlertScheduler(intervalMinutes = 15) {
   setTimeout(runAlertChecks, 10000);
 }
 
-module.exports = { startAlertScheduler, runAlertChecks, sendToChannel };
+module.exports = { startAlertScheduler, runAlertChecks, sendToChannel, checkCondition, createRunContext };
