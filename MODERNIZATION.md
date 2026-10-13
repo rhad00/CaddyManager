@@ -23,6 +23,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | ID | Item | Status |
 |----|------|--------|
 | 0.1 | Remove unused backend dependencies | done |
+| 0.2 | In-range dependency updates + `npm audit fix` | done |
 
 ## Changes
 
@@ -35,3 +36,18 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - Removed `sequelize-cli` (no `.sequelizerc`; migrations run through `migrationService`).
 - `pg` and `sqlite3` are kept: Sequelize loads them dynamically by dialect.
 - Verification: backend suite 32/32 suites, 136/136 tests passing.
+
+### 0.2 In-range dependency updates + `npm audit fix`
+
+- Backend: `npm update` + `npm audit fix`, then raised every caret floor in `package.json`
+  to the installed version so fresh installs cannot resolve back to vulnerable minimums
+  (e.g. `express-rate-limit ^8.7.1` fixes the IPv4-mapped IPv6 rate-limit bypass,
+  `axios ^1.20.0`, `multer ^2.4.0`, `js-yaml ^4.3.2`, `express ^5.3.0`).
+- Backend production audit: **41 → 14** (critical 8 → 3). The remaining 14 need major
+  upgrades (`simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5) and are
+  handled as separate items.
+- Frontend: lockfile resynced (it was missing Tailwind's optional platform binaries,
+  so `npm ci` failed on npm 11), `npm update` + `npm audit fix`, floors raised
+  (`vite ^6.4.4`, `react ^19.3.0`, `react-router-dom ^7.18.4`, `tailwindcss ^4.3.3`).
+- Frontend audit: **23 → 0**.
+- Verification: backend 136/136 tests; frontend 15/15 tests; `vite build` succeeds.
