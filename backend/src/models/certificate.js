@@ -61,7 +61,7 @@ const { encrypt, decrypt } = require('../utils/encryption');
     },
     created_by: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true, // null for certificates discovered by sync rather than created by a user
       references: {
         model: 'Users',
         key: 'id'

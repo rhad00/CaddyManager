@@ -5,6 +5,7 @@ const certificateService = require('../../services/certificateService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const { certificateUploadLimiter } = require('../../middleware/rateLimiter');
 const { logAction } = require('../../services/auditService');
+const { CertificateError, toCertificateResponse } = require('../../utils/certificates');
 const multer = require('multer');
 const upload = multer({
   dest: 'uploads/',
@@ -139,10 +140,10 @@ router.get('/domains/:domain', authMiddleware, async (req, res) => {
   try {
     const domain = req.params.domain;
     const certificates = await certificateService.getCertificatesForDomain(domain);
-    
+
     res.status(200).json({
       success: true,
-      certificates
+      certificates: certificates.map(toCertificateResponse)
     });
   } catch (error) {
     console.error('Get certificates for domain error:', error);
@@ -201,12 +202,13 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
       });
     }
     
+    // domains is optional: it defaults to the certificate's DNS names
     const { name, domains } = req.body;
-    
-    if (!name || !domains) {
+
+    if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Name and domains are required'
+        message: 'Name is required'
       });
     }
 
@@ -224,7 +226,8 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
       name,
       domains,
       req.files.certificate[0].path,
-      req.files.privateKey[0].path
+      req.files.privateKey[0].path,
+      req.user.id || null
     );
     
     // Log certificate upload
@@ -243,11 +246,14 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
     res.status(201).json({
       success: true,
       message: 'Certificate uploaded successfully',
-      certificate: result
+      certificate: toCertificateResponse(result)
     });
   } catch (error) {
     console.error('Upload certificate error:', error);
-    res.status(500).json({ 
+    if (error instanceof CertificateError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({
       success: false, 
       message: 'Server error while uploading certificate' 
     });
@@ -357,7 +363,8 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
     const result = await certificateService.generateSelfSignedCertificate(
       name,
       domains,
-      validityDays || 365
+      validityDays || 365,
+      req.user.id || null
     );
     
     // Log certificate generation
@@ -378,11 +385,14 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
     res.status(201).json({
       success: true,
       message: 'Self-signed certificate generated successfully',
-      certificate: result
+      certificate: toCertificateResponse(result)
     });
   } catch (error) {
     console.error('Generate certificate error:', error);
-    res.status(500).json({ 
+    if (error instanceof CertificateError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({
       success: false, 
       message: 'Server error while generating certificate' 
     });

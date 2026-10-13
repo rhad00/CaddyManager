@@ -1,9 +1,15 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { v4: uuidv4 } = require('uuid');
 const { sequelize, Certificate, CertificateAuthority } = require('../models');
+const {
+  CertificateError,
+  parsePemCertificate,
+  assertKeyMatchesCertificate,
+  resolveCertificateDomains,
+} = require('../utils/certificates');
 require('dotenv').config();
 
 /**
@@ -159,31 +165,33 @@ class CertificateService {
   /**
    * Upload a custom certificate
    * @param {string} name - Certificate name
-   * @param {string} domains - Comma-separated list of domains
+   * @param {string|undefined} domains - Comma-separated list of domains (defaults to the certificate's SANs)
    * @param {string} certificatePath - Path to certificate file
    * @param {string} privateKeyPath - Path to private key file
+   * @param {string|null} userId - Uploading user
    * @returns {Promise<Object>} The created certificate
    */
-  async uploadCertificate(name, domains, certificatePath, privateKeyPath) {
+  async uploadCertificate(name, domains, certificatePath, privateKeyPath, userId = null) {
     try {
       // Read certificate and private key files
       const certificatePem = await fs.readFile(certificatePath, 'utf8');
       const privateKeyPem = await fs.readFile(privateKeyPath, 'utf8');
-      
-      // Parse certificate to get validity dates
-      const certInfo = this.parseCertificateInfo(certificatePem);
-      
-      // Create a unique ID for the certificate
-      const certId = uuidv4();
-      
+
+      // Reject unparseable certificates, mismatched keys and uncovered domains (400s)
+      const certInfo = parsePemCertificate(certificatePem);
+      assertKeyMatchesCertificate(certificatePem, privateKeyPem);
+      const domainList = resolveCertificateDomains(domains, certInfo);
+
+      const certId = crypto.randomUUID();
+
       // Load certificate into Caddy
-      await this.loadCertificateIntoCaddy(certId, domains.split(','), certificatePem, privateKeyPem);
-      
+      await this.loadCertificateIntoCaddy(certId, domainList, certificatePem, privateKeyPem);
+
       // Create certificate in database
       const certificate = await Certificate.create({
         name,
-        domains,
-        issuer: certInfo.issuer || 'Custom Upload',
+        domains: domainList.join(','),
+        issuer: certInfo.issuer,
         valid_from: certInfo.validFrom,
         valid_to: certInfo.validTo,
         certificate_pem: certificatePem,
@@ -191,12 +199,14 @@ class CertificateService {
         caddy_cert_id: certId,
         type: 'uploaded',
         auto_renew: false,
-        status: new Date(certInfo.validTo) > new Date() ? 'valid' : 'expired'
+        status: certInfo.validTo > new Date() ? 'valid' : 'expired',
+        created_by: userId
       });
-      
+
       return certificate;
     } catch (error) {
       console.error('Failed to upload certificate:', error);
+      if (error instanceof CertificateError) throw error;
       throw new Error(`Failed to upload certificate: ${error.message}`);
     } finally {
       // Clean up temporary files
@@ -216,37 +226,36 @@ class CertificateService {
    * @param {number} validityDays - Validity period in days
    * @returns {Promise<Object>} The created certificate
    */
-  async generateSelfSignedCertificate(name, domains, validityDays) {
+  async generateSelfSignedCertificate(name, domains, validityDays, userId = null) {
+    // Validate before touching disk; these are user errors (400)
+    const domainList = String(domains).split(',').map(d => d.trim()).filter(Boolean);
+    const primaryDomain = domainList[0];
+    // Also prevents injection into the OpenSSL config and -subj argument
+    const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
+    if (domainList.length === 0) {
+      throw new CertificateError('At least one domain is required');
+    }
+    for (const d of domainList) {
+      if (!domainRegex.test(d)) {
+        throw new CertificateError(`Invalid domain name: ${d}`);
+      }
+    }
+    const days = Number(validityDays);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      throw new CertificateError('Validity days must be an integer between 1 and 3650');
+    }
+
+    const certDir = path.join(this.tempDir, `cert_${crypto.randomUUID()}`);
     try {
-      // Create temporary directory for certificate generation
-      const certDir = path.join(this.tempDir, `cert_${Date.now()}`);
       await fs.mkdir(certDir, { recursive: true });
-      
-      const domainList = domains.split(',').map(d => d.trim());
-      const primaryDomain = domainList[0];
-      
+
       // Generate self-signed certificate using OpenSSL
       const certPath = path.join(certDir, 'cert.pem');
       const keyPath = path.join(certDir, 'key.pem');
-      
+
       // Create OpenSSL config file
       const configPath = path.join(certDir, 'openssl.cnf');
-      const configContent = this.generateOpenSSLConfig(domainList);
-      await fs.writeFile(configPath, configContent);
-      
-      // Validate domain names to prevent command injection
-      const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
-      for (const d of domainList) {
-        if (!domainRegex.test(d)) {
-          throw new Error(`Invalid domain name: ${d}`);
-        }
-      }
-
-      // Validate validityDays is a positive integer
-      const days = parseInt(validityDays, 10);
-      if (!Number.isInteger(days) || days < 1 || days > 3650) {
-        throw new Error('Validity days must be an integer between 1 and 3650');
-      }
+      await fs.writeFile(configPath, this.generateOpenSSLConfig(domainList));
 
       // Generate private key (use execFileSync to prevent command injection)
       execFileSync('openssl', ['genrsa', '-out', keyPath, '2048']);
@@ -265,19 +274,16 @@ class CertificateService {
       const certificatePem = await fs.readFile(certPath, 'utf8');
       const privateKeyPem = await fs.readFile(keyPath, 'utf8');
       
-      // Parse certificate to get validity dates
-      const certInfo = this.parseCertificateInfo(certificatePem);
-      
-      // Create a unique ID for the certificate
-      const certId = uuidv4();
-      
+      const certInfo = parsePemCertificate(certificatePem);
+      const certId = crypto.randomUUID();
+
       // Load certificate into Caddy
       await this.loadCertificateIntoCaddy(certId, domainList, certificatePem, privateKeyPem);
-      
+
       // Create certificate in database
       const certificate = await Certificate.create({
         name,
-        domains,
+        domains: domainList.join(','),
         issuer: 'Self-Signed',
         valid_from: certInfo.validFrom,
         valid_to: certInfo.validTo,
@@ -286,16 +292,16 @@ class CertificateService {
         caddy_cert_id: certId,
         type: 'self-signed',
         auto_renew: false,
-        status: 'valid'
+        status: 'valid',
+        created_by: userId
       });
-      
-      // Clean up
-      await fs.rm(certDir, { recursive: true, force: true });
-      
+
       return certificate;
     } catch (error) {
       console.error('Failed to generate self-signed certificate:', error);
       throw new Error(`Failed to generate self-signed certificate: ${error.message}`);
+    } finally {
+      await fs.rm(certDir, { recursive: true, force: true }).catch(() => {});
     }
   }
   
@@ -707,51 +713,6 @@ class CertificateService {
     } catch (error) {
       console.error('Failed to register ACME account:', error);
       throw new Error(`Failed to register ACME account: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Parse certificate information
-   * @param {string} certificatePem - PEM-encoded certificate
-   * @returns {Object} Certificate information
-   */
-  parseCertificateInfo(certificatePem) {
-    try {
-      // Create temporary file for certificate
-      const certPath = path.join(this.tempDir, `cert_${Date.now()}.pem`);
-      fs.writeFileSync(certPath, certificatePem);
-      
-      // Use OpenSSL to get certificate information
-      const output = execSync(`openssl x509 -in "${certPath}" -noout -text`).toString();
-      
-      // Parse issuer
-      const issuerMatch = output.match(/Issuer: (.+)/);
-      const issuer = issuerMatch ? issuerMatch[1] : 'Unknown';
-      
-      // Parse validity dates
-      const validFromMatch = output.match(/Not Before: (.+)/);
-      const validToMatch = output.match(/Not After : (.+)/);
-      
-      const validFrom = validFromMatch ? new Date(validFromMatch[1]) : new Date();
-      const validTo = validToMatch ? new Date(validToMatch[1]) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-      
-      // Clean up
-      fs.unlinkSync(certPath);
-      
-      return {
-        issuer,
-        validFrom,
-        validTo
-      };
-    } catch (error) {
-      console.error('Failed to parse certificate information:', error);
-      
-      // Return default values if parsing fails
-      return {
-        issuer: 'Unknown',
-        validFrom: new Date(),
-        validTo: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-      };
     }
   }
   

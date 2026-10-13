@@ -32,9 +32,16 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | done |
 | 0.9 | Active health checks rejected by Caddy | done |
 | 0.10 | "weighted" load balancing policy | done |
-| 0.11 | Certificate service calls non-existent Caddy admin endpoints | pending |
+| 0.11a | Certificates: parsing, key/cert match, `created_by`, ids | done |
+| 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | pending |
+| 0.11c | Certificates: self-signed generation needs `openssl` in the image | pending |
+| 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | pending |
+| 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | pending |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
 | 0.13 | Access log file not shared between Caddy and backend | pending |
+| 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | pending |
+| 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | pending |
+| 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
 
 ## Changes
 
@@ -236,3 +243,46 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - Tests: `tests/unit/loadBalancing.test.js` (4); contract case flipped to `test` and
   `weighted_round_robin` added to the policy matrix. No `test.failing` cases remain.
 - Verification: backend 233 passed; contract 20/20; frontend lint clean.
+
+### 0.11 Certificate subsystem (overview)
+
+Checked against a live Caddy 2.10.2: `GET /certificates`, `DELETE /certificates/:id`,
+`/acme/accounts` and `POST /load/certificates` all return 404, because they are not part
+of Caddy's admin API. Most certificate features failed at runtime, and the unit tests hid
+this by mocking axios. The fix is split into 0.11a–e, one commit each. The goal is
+"works against a real Caddy, or fails with an honest error", not new features.
+
+### 0.11a Certificates: parsing, key/cert match, `created_by`, ids
+
+- Problems found besides the fake endpoints:
+  - `parseCertificateInfo` called `fs.writeFileSync` on `fs.promises` and an `execSync`
+    that was never imported. It always threw, and the catch silently recorded issuer
+    "Unknown" and a fake validity of now → +365 days for every certificate.
+  - `Certificate.created_by` is NOT NULL, but upload and sync never set it, so the insert
+    failed.
+  - There was no check that the private key matches the certificate.
+  - The service required `uuid`, which is not a declared dependency.
+  - Upload and generate responses returned the stored (encrypted) private key.
+  - `GET /certificates/domains/:domain` returned full rows, including decrypted private
+    keys, to any authenticated user. It was hidden only because that route always
+    failed earlier on the fake sync endpoint.
+- New `backend/src/utils/certificates.js` (Node `crypto.X509Certificate`, no openssl CLI):
+  - `parsePemCertificate()`: issuer, subject, validity, DNS SANs, fingerprint.
+  - `assertKeyMatchesCertificate()`.
+  - `resolveCertificateDomains()`: domains default to the certificate SANs; requested
+    domains must be covered (single-label wildcard matching).
+  - `toCertificateResponse()` strips `private_key_pem`.
+  - `CertificateError` maps to HTTP 400.
+- Service: upload and generate use the parser, record `created_by`, use
+  `crypto.randomUUID()`, and validate input before touching disk. Generate always
+  cleans up its temp directory. `parseCertificateInfo` was removed.
+- Routes: pass `req.user.id`; `domains` is optional on upload; `CertificateError` → 400;
+  every certificate response is sanitized.
+- Model and migration `20261013-certificates-created-by-nullable.js`: `created_by` is
+  nullable, for rows created by sync rather than by a user.
+- Test fixtures: `tests/fixtures/certs/` (test-only EC P-256 pair plus an unrelated key).
+- Tests: `tests/unit/certificateUtils.test.js` (9). In `certificateService.real.test.js`,
+  the test that asserted the silent fallback was replaced with upload tests (real
+  metadata stored; a mismatched key is rejected before Caddy or the database is touched).
+- Still broken after this item: loading into Caddy (0.11b).
+- Verification: backend 243 passed.
