@@ -47,7 +47,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | | **Phase 0+: remaining fixes from the review** | |
 | 0.19 | API keys: write-scope check and key owner status | done |
 | 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | done |
-| 0.21 | Alert webhooks: SSRF | pending |
+| 0.21 | Alert webhooks: SSRF | done |
 | 0.22 | Git: rollback to a commit | pending |
 | 0.23 | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
 | 0.24 | Discovery: container state, unused labels | pending |
@@ -728,6 +728,54 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     for one host and 30× 502 for another. `trafficStats` read 30/0 and 30/30 from the
     real log; `error_rate` fired for the failing host (100%) and stayed quiet for the
     other.
+- Review note (background security review): it flagged the TCP probe as SSRF. Kept as
+  is:
+  - The probe only connects to upstreams of active proxies. Those are admin-created and
+    pass the SSRF rule on save, and Caddy already proxies to them on the same compose
+    network.
+  - It only learns reachable or not, reported to admin channels. An admin can already
+    have Caddy fetch full content from those hosts.
+  - Discovered proxies start disabled and are not probed.
+
+### 0.21 Alert channels: SSRF and secret exposure
+
+- Problem:
+  - Slack, Discord and webhook channels stored any URL and posted to it with
+    redirects followed. Any configured URL was requested by the backend, including
+    cloud metadata (`169.254.169.254`), the Caddy admin API (`localhost:2019`) and
+    internal services. The "test" button made this an on-demand request.
+  - Webhooks accepted any HTTP method and headers, including `Host`.
+  - `GET /alerts/channels` (any logged-in user) redacted only `webhook_url`: webhook
+    `url` and header values (typically `Authorization`) were visible to read-only
+    users.
+- Fix:
+  - New `utils/outboundRequest.js` (`sendOutbound`) checks the URL (http/https, no
+    restricted IP literal) and resolves names through `guardedLookup`. The lookup
+    refuses any restricted address at connection time, so a DNS answer cannot be
+    swapped after the check. Redirects are not followed; 10 s timeout.
+  - `ALERT_WEBHOOK_ALLOW_PRIVATE=true` (documented in `.env.example`) allows private
+    ranges for internal receivers. Loopback and link-local stay blocked.
+  - New `utils/notificationChannels.js` validates per type: email needs valid
+    addresses; Slack/Discord an https `webhook_url`; webhook a safe `url`, method
+    POST/PUT/PATCH, header names without `Host`/`Content-Length`/... and single-line
+    values.
+  - Create and update validate; update validates the merged channel. `***`
+    placeholders from the redacted list keep the stored secret, so editing in the UI
+    still works.
+  - The list and create/update responses redact URLs and header values; header names
+    stay visible.
+  - `sendToChannel` re-validates stored channels (created before this change) before
+    sending.
+- Tests:
+  - New `outboundRequest` (13: URL rules, the private-range switch, lookup guard,
+    no redirects).
+  - New `alertChannels.validation` integration (12: per-type rejections,
+    merged-update validation, redaction, keeping secrets on edit, legacy channel
+    refused at send).
+- Verification:
+  - Backend 403 passed, 21 skipped.
+  - Live DNS check: `localtest.me` (public name resolving to `127.0.0.1`/`::1`) is
+    refused by the guard inside axios's real request path.
 
 ## Where this session stopped (usage limit)
 

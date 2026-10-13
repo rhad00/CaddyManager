@@ -3,6 +3,23 @@ const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const AlertRule = require('../../models/alertRule');
 const NotificationChannel = require('../../models/notificationChannel');
 const { runAlertChecks, sendToChannel } = require('../../services/alertService');
+const { channelProblem, redactChannel } = require('../../utils/notificationChannels');
+
+const REDACTED = '***';
+
+/** Replace "***" placeholders (from the redacted list) with the stored values. */
+function keepRedacted(incoming, stored) {
+  const merged = { ...incoming };
+  for (const key of ['url', 'webhook_url']) {
+    if (merged[key] === REDACTED) merged[key] = stored[key];
+  }
+  if (merged.headers && typeof merged.headers === 'object') {
+    merged.headers = Object.fromEntries(Object.entries(merged.headers).map(([name, value]) => [
+      name, value === REDACTED ? stored.headers?.[name] : value,
+    ]));
+  }
+  return merged;
+}
 
 const router = express.Router();
 const adminOnly = [authMiddleware, roleMiddleware('admin')];
@@ -34,12 +51,8 @@ const adminOnly = [authMiddleware, roleMiddleware('admin')];
 router.get('/channels', authMiddleware, async (req, res) => {
   try {
     const channels = await NotificationChannel.findAll({ order: [['createdAt', 'DESC']] });
-    // Redact sensitive fields from response
-    const safe = channels.map(c => {
-      const j = c.toJSON();
-      if (j.config?.webhook_url) j.config = { ...j.config, webhook_url: '***' };
-      return j;
-    });
+    // URLs often embed tokens and headers carry credentials
+    const safe = channels.map(c => redactChannel(c.toJSON()));
     res.json({ success: true, channels: safe });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to fetch channels' });
@@ -81,12 +94,12 @@ router.post('/channels', adminOnly, async (req, res) => {
     if (!name || !type || !config) {
       return res.status(400).json({ success: false, message: 'name, type, and config are required' });
     }
-    const validTypes = ['email', 'slack', 'discord', 'webhook'];
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({ success: false, message: `type must be one of: ${validTypes.join(', ')}` });
+    const problem = channelProblem(type, config);
+    if (problem) {
+      return res.status(400).json({ success: false, message: problem });
     }
     const channel = await NotificationChannel.create({ name, type, config, enabled: enabled !== false });
-    res.status(201).json({ success: true, channel });
+    res.status(201).json({ success: true, channel: redactChannel(channel.toJSON()) });
   } catch (err) {
     console.error('Create channel error:', err);
     res.status(500).json({ success: false, message: 'Failed to create channel' });
@@ -129,8 +142,15 @@ router.put('/channels/:id', adminOnly, async (req, res) => {
     const channel = await NotificationChannel.findByPk(req.params.id);
     if (!channel) return res.status(404).json({ success: false, message: 'Channel not found' });
     const { name, type, config, enabled } = req.body;
-    await channel.update({ name, type, config, enabled });
-    res.json({ success: true, channel });
+    // The UI edits from the redacted list: "***" means "keep the stored value"
+    const nextType = type ?? channel.type;
+    const nextConfig = config ? keepRedacted(config, channel.config || {}) : channel.config;
+    const problem = channelProblem(nextType, nextConfig);
+    if (problem) {
+      return res.status(400).json({ success: false, message: problem });
+    }
+    await channel.update({ name, type: nextType, config: nextConfig, enabled });
+    res.json({ success: true, channel: redactChannel(channel.toJSON()) });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to update channel' });
   }

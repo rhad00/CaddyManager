@@ -1,5 +1,6 @@
-const axios = require('axios');
 const nodemailer = require('nodemailer');
+const { sendOutbound } = require('../utils/outboundRequest');
+const { channelProblem } = require('../utils/notificationChannels');
 const { hostTrafficSince, trafficForDomains } = require('./trafficStats');
 const { unreachableUpstreams } = require('../utils/upstreamProbe');
 
@@ -207,6 +208,12 @@ async function dispatchNotifications(rule, subject, body, NC) {
 }
 
 async function sendToChannel(channel, subject, body) {
+  // Channels saved before validation existed are checked again before anything is sent
+  const problem = channelProblem(channel.type, channel.config);
+  if (problem) {
+    throw new Error(`Channel ${channel.id} is not usable: ${problem}`);
+  }
+
   switch (channel.type) {
     case 'email': {
       if (!process.env.SMTP_HOST) {
@@ -232,27 +239,30 @@ async function sendToChannel(channel, subject, body) {
     }
 
     case 'slack': {
-      await axios.post(channel.config.webhook_url, {
-        text: `*${subject}*\n\`\`\`${body}\`\`\``,
+      await sendOutbound({
+        url: channel.config.webhook_url,
+        data: { text: `*${subject}*\n\`\`\`${body}\`\`\`` },
       });
       break;
     }
 
     case 'discord': {
-      await axios.post(channel.config.webhook_url, {
-        embeds: [{
-          title: subject,
-          description: body,
-          color: 0xFF4444,
-        }],
+      await sendOutbound({
+        url: channel.config.webhook_url,
+        data: {
+          embeds: [{
+            title: subject,
+            description: body,
+            color: 0xFF4444,
+          }],
+        },
       });
       break;
     }
 
     case 'webhook': {
-      const method = (channel.config.method || 'POST').toUpperCase();
-      await axios({
-        method,
+      await sendOutbound({
+        method: (channel.config.method || 'POST').toUpperCase(),
         url: channel.config.url,
         headers: channel.config.headers || {},
         data: { subject, body, timestamp: new Date().toISOString() },
