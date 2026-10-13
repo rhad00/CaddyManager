@@ -184,7 +184,7 @@ Example header configurations:
 
 - **Load Balancing & Health Checks** ✨
   - Multiple upstream URLs per proxy
-  - Strategies: `round_robin`, `least_conn`, `ip_hash`, `random`, `weighted`
+  - Strategies: `round_robin`, `weighted_round_robin`, `least_conn`, `ip_hash`, `random`, `first`
   - Active HTTP health checks with configurable path, interval, timeout and failure threshold
   - Automatic failover to healthy upstreams
 
@@ -1271,7 +1271,7 @@ When creating or editing a proxy, add multiple upstream URLs and choose a balanc
 | `least_conn` | Route to the upstream with fewest active connections |
 | `ip_hash` | Sticky sessions — same client IP always hits same upstream |
 | `random` | Random upstream selection |
-| `weighted` | Weighted distribution (specify weight per upstream) |
+| `weighted_round_robin` | Weighted distribution (specify weight per upstream; setting weights with `round_robin` also enables it) |
 
 #### Configure Health Checks
 

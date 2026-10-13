@@ -142,7 +142,7 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     })]));
   });
 
-  test.each(['round_robin', 'least_conn', 'ip_hash', 'random', 'first'])(
+  test.each(['round_robin', 'weighted_round_robin', 'least_conn', 'ip_hash', 'random', 'first'])(
     'load balancing with %s policy',
     (policy) => {
       expectValid(buildConfig([baseProxy({
@@ -151,8 +151,8 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     }
   );
 
-  // Known broken (see MODERNIZATION.md 0.10): "weighted" is not a Caddy selection policy
-  test.failing('load balancing with weighted policy', () => {
+  // Regression for MODERNIZATION.md 0.10: "weighted" is not a Caddy selection policy
+  test('load balancing with weighted policy', () => {
     expectValid(buildConfig([baseProxy({
       load_balancing: {
         enabled: true,

@@ -31,7 +31,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.7 | Basic auth: invalid handler + plaintext password | done |
 | 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | done |
 | 0.9 | Active health checks rejected by Caddy | done |
-| 0.10 | "weighted" load balancing policy | pending |
+| 0.10 | "weighted" load balancing policy | done |
 | 0.11 | Certificate service calls non-existent Caddy admin endpoints | pending |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
 | 0.13 | Access log file not shared between Caddy and backend | pending |
@@ -214,3 +214,25 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - README: Caddy's active checks are HTTP only, so the "TCP/HTTP" claims were corrected.
 - Tests: `tests/unit/healthChecks.test.js` (3); contract case flipped to `test`.
 - Verification: backend 229 passed; contract 19/19.
+
+### 0.10 "weighted" load balancing policy
+
+- Problems:
+  - The README advertised a `weighted` strategy, but Caddy has no such module, so the
+    config was rejected.
+  - Per-upstream weights from the UI were written to `max_requests`, which is a
+    per-upstream concurrency cap, not a weight. Weights therefore never affected
+    distribution, and low "weights" throttled upstreams instead.
+- Fix: new `caddyService.buildSelectionPolicy()`:
+  - Round robin with any weight set, `weighted`, or `weighted_round_robin` →
+    `{ policy: "weighted_round_robin", weights: [...] }` in upstream order. A missing or
+    invalid weight counts as 1.
+  - Other policies (`least_conn`, `ip_hash`, `random`, `first`) pass through and ignore
+    weights.
+  - `max_requests` is no longer emitted.
+- API accepts `weighted_round_robin` and `weighted`; weights must be integers 1–1000.
+- UI adds a "Weighted Round Robin" option and labels round robin "(weighted when weights
+  are set)". README strategy lists updated.
+- Tests: `tests/unit/loadBalancing.test.js` (4); contract case flipped to `test` and
+  `weighted_round_robin` added to the policy matrix. No `test.failing` cases remain.
+- Verification: backend 233 passed; contract 20/20; frontend lint clean.

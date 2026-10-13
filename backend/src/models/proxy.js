@@ -82,7 +82,7 @@ const Proxy = sequelize.define('Proxy', {
     type: DataTypes.JSON,
     allowNull: true,
     defaultValue: null,
-    comment: 'Load balancing config: {enabled: boolean, policy: "round_robin"|"least_conn"|"ip_hash"|"random"|"first", upstreams: [{url: string, weight?: number}]}'
+    comment: 'Load balancing config: {enabled: boolean, policy: "round_robin"|"weighted_round_robin"|"least_conn"|"ip_hash"|"random"|"first", upstreams: [{url: string, weight?: number (round robin only)}]}'
   },
   health_checks: {
     type: DataTypes.JSON,

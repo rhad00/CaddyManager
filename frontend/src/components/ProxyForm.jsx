@@ -663,7 +663,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                       onChange={(e) => setLbPolicy(e.target.value)}
                       className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     >
-                      <option value="round_robin">Round Robin</option>
+                      <option value="round_robin">Round Robin (weighted when weights are set)</option>
+                      <option value="weighted_round_robin">Weighted Round Robin</option>
                       <option value="least_conn">Least Connections</option>
                       <option value="ip_hash">IP Hash</option>
                       <option value="random">Random</option>

@@ -115,7 +115,7 @@ const validateLoadBalancingConfig = (loadBalancing) => {
     return { valid: true };
   }
 
-  const validPolicies = ['round_robin', 'least_conn', 'ip_hash', 'random', 'first'];
+  const validPolicies = ['round_robin', 'weighted_round_robin', 'weighted', 'least_conn', 'ip_hash', 'random', 'first'];
   if (loadBalancing.policy && !validPolicies.includes(loadBalancing.policy)) {
     return { valid: false, message: `Invalid load balancing policy. Use one of: ${validPolicies.join(', ')}` };
   }
@@ -132,6 +132,13 @@ const validateLoadBalancingConfig = (loadBalancing) => {
     const upstreamCheck = validateUpstreamUrl(upstream.url);
     if (!upstreamCheck.valid) {
       return { valid: false, message: `Invalid load balancing upstream URL: ${upstream.url}` };
+    }
+
+    if (upstream.weight !== undefined && upstream.weight !== null && upstream.weight !== '') {
+      const weight = Number(upstream.weight);
+      if (!Number.isInteger(weight) || weight < 1 || weight > 1000) {
+        return { valid: false, message: 'Load balancing upstream weight must be an integer between 1 and 1000' };
+      }
     }
   }
 

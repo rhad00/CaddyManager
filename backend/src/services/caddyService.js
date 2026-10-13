@@ -485,13 +485,8 @@ class CaddyService {
       let lbPolicy = null;
 
       if (proxy.load_balancing && proxy.load_balancing.enabled && proxy.load_balancing.upstreams && proxy.load_balancing.upstreams.length > 0) {
-        upstreams = proxy.load_balancing.upstreams.map(u => {
-          const entry = { dial: parseUpstream(u.url).dial };
-          if (u.weight !== undefined && u.weight !== null) entry.max_requests = u.weight; // weight maps to max_requests for weighted round-robin
-          return entry;
-        });
-        const policy = proxy.load_balancing.policy || 'round_robin';
-        lbPolicy = { selection_policy: { policy } };
+        upstreams = proxy.load_balancing.upstreams.map(u => ({ dial: parseUpstream(u.url).dial }));
+        lbPolicy = { selection_policy: this.buildSelectionPolicy(proxy.load_balancing) };
       } else {
         upstreams = [{ dial: parseUpstream(proxy.upstream_url).dial }];
       }
@@ -593,6 +588,31 @@ class CaddyService {
    */
   shouldUseHTTPSTransport(upstreamUrl) {
     return parseUpstream(upstreamUrl).useTls;
+  }
+
+  /**
+   * Caddy selection policy for a load-balanced pool.
+   * Weights only apply to round robin: Caddy's weighted_round_robin takes a `weights`
+   * array in upstream order. "weighted" is accepted as the documented alias.
+   * @param {Object} loadBalancing - proxy.load_balancing
+   * @returns {Object} selection_policy config
+   */
+  buildSelectionPolicy(loadBalancing) {
+    const requested = loadBalancing.policy || 'round_robin';
+    const upstreams = loadBalancing.upstreams || [];
+    const hasWeights = upstreams.some(u => u.weight !== undefined && u.weight !== null && u.weight !== '');
+    const roundRobin = ['round_robin', 'weighted', 'weighted_round_robin'].includes(requested);
+
+    if (roundRobin && (hasWeights || requested !== 'round_robin')) {
+      return {
+        policy: 'weighted_round_robin',
+        weights: upstreams.map(u => {
+          const weight = parseInt(u.weight, 10);
+          return Number.isInteger(weight) && weight > 0 ? weight : 1;
+        })
+      };
+    }
+    return { policy: requested };
   }
 
   /**
