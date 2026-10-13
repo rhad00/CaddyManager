@@ -447,12 +447,15 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
     
     res.status(200).json({
       success: true,
-      message: 'Certificate renewal initiated',
+      message: result.message,
       result
     });
   } catch (error) {
     console.error('Renew certificate error:', error);
-    res.status(500).json({ 
+    if (error instanceof CertificateError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({
       success: false, 
       message: 'Server error while renewing certificate' 
     });

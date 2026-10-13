@@ -35,7 +35,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.11a | Certificates: parsing, key/cert match, `created_by`, ids | done |
 | 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | done |
 | 0.11c | Certificates: self-signed generation needs `openssl` in the image | done |
-| 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | pending |
+| 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | done |
 | 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | pending |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
 | 0.13 | Access log file not shared between Caddy and backend | pending |
@@ -336,3 +336,33 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
 - Verification: built the image and ran the real `generateSelfSignedCertificate` inside it
   (in-memory SQLite, Caddy push stubbed). Result: type `self-signed`, both SANs, 30-day
   validity, PEM produced.
+
+### 0.11d Certificates: sync / renew / per-domain lookup without fake endpoints
+
+- Problems:
+  - `syncCertificates` read `GET /certificates`, which does not exist.
+    `GET /certificates/domains/:domain` called sync first, so it always failed with 500.
+  - Renew sent `DELETE /certificates/:id`, which does not exist, and was only allowed
+    for ACME certificates, which Caddy renews on its own anyway.
+  - Domain lookup used `LIKE %domain%`, so `app.example.com` also matched
+    `myapp.example.com`.
+- Changes:
+  - `syncCertificates()` probes active ACME/Cloudflare proxy domains over TLS, using the
+    existing `verifyTlsForDomains`, which now also reports `issuer`. Wildcards are skipped.
+    Results are upserted as "observed" ACME rows (`caddy_cert_id = observed:<domain>`);
+    rows for domains no longer proxied are marked `revoked`. Per-domain probe failures are
+    returned instead of aborting the sync. It is not wired to a schedule yet; the alerts
+    item uses it to refresh expiry data.
+  - `getCertificatesForDomain()` reads stored data only and matches domains exactly.
+  - `renewCertificate()`:
+    - ACME → 400 "Caddy renews ACME certificates automatically…".
+    - Uploaded → 400 "upload a replacement".
+    - Self-signed → regenerated in place with the same domains and validity period,
+      then Caddy is synced.
+  - Self-signed generation is split into `validateSelfSignedInput()` and
+    `createSelfSignedPem()` for reuse by renew. The renew route maps `CertificateError`
+    to 400. The fake `getCertificatesFromCaddy` was removed.
+- Tests: in `certificateService.real.test.js`, the test of the fake endpoint was replaced
+  with sync (upsert, revoke, failures reported, wildcards skipped, no axios), exact domain
+  lookup, and renew for all three types.
+- Verification: backend 258 passed.

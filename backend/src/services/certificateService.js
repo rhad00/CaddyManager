@@ -3,7 +3,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { sequelize, Certificate, CertificateAuthority } = require('../models');
+const { Op } = require('sequelize');
+const { sequelize, Certificate, CertificateAuthority, Proxy } = require('../models');
 const {
   CertificateError,
   parsePemCertificate,
@@ -14,6 +15,8 @@ const caddyService = require('./caddyService');
 
 // Certificate types CaddyManager loads into Caddy itself (ACME ones Caddy manages)
 const MANAGED_CERTIFICATE_TYPES = ['uploaded', 'self-signed'];
+// caddy_cert_id prefix for ACME certificates recorded by probing a domain over TLS
+const OBSERVED_PREFIX = 'observed:';
 require('dotenv').config();
 
 /**
@@ -43,127 +46,86 @@ class CertificateService {
   }
   
   /**
-   * Get all certificates from Caddy
-   * @returns {Promise<Array>} List of certificates
-   */
-  async getCertificatesFromCaddy() {
-    try {
-      const response = await axios.get(`${this.apiUrl}/certificates`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get certificates from Caddy:', error);
-      throw new Error(`Failed to get certificates: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Sync certificates from Caddy to database
-   * @returns {Promise<Object>} Result of the operation
+   * Record the certificates Caddy is actually serving for ACME-managed proxies.
+   *
+   * Caddy's admin API cannot list managed certificates, so each active ACME/Cloudflare
+   * proxy domain is probed over TLS (wildcards skipped). Results are upserted as
+   * "observed" rows keyed by domain; rows for domains no longer proxied are marked
+   * revoked.
+   * @returns {Promise<Object>} counts and per-domain failures
    */
   async syncCertificates() {
-    try {
-      const caddyCertificates = await this.getCertificatesFromCaddy();
-      const transaction = await sequelize.transaction();
-      
-      try {
-        // Get existing certificates from database
-        const dbCertificates = await Certificate.findAll({
-          where: {
-            caddy_cert_id: {
-              [sequelize.Op.not]: null
-            }
-          }
-        });
-        
-        // Map of existing certificate IDs
-        const existingCertIds = new Map(
-          dbCertificates.map(cert => [cert.caddy_cert_id, cert])
-        );
-        
-        // Process each certificate from Caddy
-        for (const caddyCert of caddyCertificates) {
-          const certId = caddyCert.id;
-          
-          // Check if certificate already exists in database
-          if (existingCertIds.has(certId)) {
-            // Update existing certificate
-            const dbCert = existingCertIds.get(certId);
-            await dbCert.update({
-              domains: caddyCert.subjects.join(','),
-              issuer: caddyCert.issuer || 'Unknown',
-              valid_from: new Date(caddyCert.not_before),
-              valid_to: new Date(caddyCert.not_after),
-              status: new Date(caddyCert.not_after) > new Date() ? 'valid' : 'expired'
-            }, { transaction });
-            
-            // Remove from map to track processed certificates
-            existingCertIds.delete(certId);
-          } else {
-            // Create new certificate
-            await Certificate.create({
-              name: caddyCert.subjects[0] || 'Unnamed Certificate',
-              domains: caddyCert.subjects.join(','),
-              issuer: caddyCert.issuer || 'Unknown',
-              valid_from: new Date(caddyCert.not_before),
-              valid_to: new Date(caddyCert.not_after),
-              caddy_cert_id: certId,
-              type: 'acme',
-              auto_renew: true,
-              status: new Date(caddyCert.not_after) > new Date() ? 'valid' : 'expired'
-            }, { transaction });
-          }
-        }
-        
-        // Any certificates left in the map no longer exist in Caddy
-        for (const [certId, dbCert] of existingCertIds.entries()) {
-          // Mark as revoked instead of deleting
-          await dbCert.update({
-            status: 'revoked'
-          }, { transaction });
-        }
-        
-        await transaction.commit();
-        
-        return {
-          success: true,
-          message: 'Certificates synced successfully',
-          added: caddyCertificates.length - existingCertIds.size,
-          updated: caddyCertificates.length - (caddyCertificates.length - existingCertIds.size),
-          revoked: existingCertIds.size
-        };
-      } catch (error) {
-        await transaction.rollback();
-        throw error;
+    const proxies = await Proxy.findAll({
+      where: { ssl_type: ['acme', 'cloudflare'], status: 'active' }
+    });
+    const domains = [...new Set(proxies.flatMap(p => (Array.isArray(p.domains) ? p.domains : [p.domains])))]
+      .filter(d => d && !d.startsWith('*.'));
+
+    const { results } = await caddyService.verifyTlsForDomains(domains);
+    const observed = await Certificate.findAll({
+      where: { caddy_cert_id: { [Op.like]: `${OBSERVED_PREFIX}%` } }
+    });
+    const byKey = new Map(observed.map(cert => [cert.caddy_cert_id, cert]));
+
+    const summary = { success: true, added: 0, updated: 0, revoked: 0, failed: [] };
+    for (const result of results) {
+      if (!result.ok || !result.validTo) {
+        summary.failed.push({ domain: result.domain, error: result.error || 'No certificate' });
+        continue;
       }
-    } catch (error) {
-      console.error('Failed to sync certificates:', error);
-      throw new Error(`Failed to sync certificates: ${error.message}`);
+      const key = `${OBSERVED_PREFIX}${result.domain}`;
+      const validTo = new Date(result.validTo);
+      const fields = {
+        issuer: result.issuer || 'Unknown',
+        valid_from: new Date(result.validFrom),
+        valid_to: validTo,
+        status: validTo > new Date() ? 'valid' : 'expired'
+      };
+      const existing = byKey.get(key);
+      if (existing) {
+        await existing.update(fields);
+        byKey.delete(key);
+        summary.updated += 1;
+      } else {
+        await Certificate.create({
+          ...fields,
+          name: result.domain,
+          domains: result.domain,
+          caddy_cert_id: key,
+          type: 'acme',
+          auto_renew: true,
+          created_by: null
+        });
+        summary.added += 1;
+      }
     }
+
+    // Observed rows whose domain is no longer served by any ACME proxy
+    const probed = new Set(results.map(r => `${OBSERVED_PREFIX}${r.domain}`));
+    for (const [key, cert] of byKey.entries()) {
+      if (!probed.has(key) && cert.status !== 'revoked') {
+        await cert.update({ status: 'revoked' });
+        summary.revoked += 1;
+      }
+    }
+
+    return summary;
   }
-  
+
   /**
-   * Get certificates for a specific domain
-   * @param {string} domain - Domain to get certificates for
+   * Certificates covering exactly this domain (stored data only; no network calls)
+   * @param {string} domain
    * @returns {Promise<Array>} List of certificates
    */
   async getCertificatesForDomain(domain) {
-    try {
-      // First, sync certificates to ensure we have the latest data
-      await this.syncCertificates();
-      
-      // Query certificates that match the domain (use parameterized query to prevent SQL injection)
-      const { Op } = require('sequelize');
-      const certificates = await Certificate.findAll({
-        where: {
-          domains: { [Op.like]: `%${domain}%` }
-        }
-      });
-      
-      return certificates;
-    } catch (error) {
-      console.error('Failed to get certificates for domain:', error);
-      throw new Error(`Failed to get certificates for domain: ${error.message}`);
-    }
+    const wanted = String(domain).trim().toLowerCase();
+    const candidates = await Certificate.findAll({
+      where: { domains: { [Op.like]: `%${wanted}%` } }
+    });
+    // LIKE narrows the query; exact matching avoids "app.example.com" matching "myapp.example.com"
+    return candidates.filter(cert =>
+      String(cert.domains).split(',').map(d => d.trim().toLowerCase()).includes(wanted)
+    );
   }
   
   /**
@@ -222,16 +184,13 @@ class CertificateService {
   }
   
   /**
-   * Generate a self-signed certificate
-   * @param {string} name - Certificate name
+   * Validate self-signed generation input (user errors → CertificateError / 400)
    * @param {string} domains - Comma-separated list of domains
-   * @param {number} validityDays - Validity period in days
-   * @returns {Promise<Object>} The created certificate
+   * @param {number} validityDays
+   * @returns {{ domainList: string[], days: number }}
    */
-  async generateSelfSignedCertificate(name, domains, validityDays, userId = null) {
-    // Validate before touching disk; these are user errors (400)
+  validateSelfSignedInput(domains, validityDays) {
     const domainList = String(domains).split(',').map(d => d.trim()).filter(Boolean);
-    const primaryDomain = domainList[0];
     // Also prevents injection into the OpenSSL config and -subj argument
     const domainRegex = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/;
     if (domainList.length === 0) {
@@ -246,38 +205,58 @@ class CertificateService {
     if (!Number.isInteger(days) || days < 1 || days > 3650) {
       throw new CertificateError('Validity days must be an integer between 1 and 3650');
     }
+    return { domainList, days };
+  }
 
+  /**
+   * Create a self-signed key pair with the openssl CLI
+   * @param {string[]} domainList - validated domains
+   * @param {number} days - validated validity
+   * @returns {Promise<{ certificatePem: string, privateKeyPem: string }>}
+   */
+  async createSelfSignedPem(domainList, days) {
     const certDir = path.join(this.tempDir, `cert_${crypto.randomUUID()}`);
     try {
       await fs.mkdir(certDir, { recursive: true });
-
-      // Generate self-signed certificate using OpenSSL
       const certPath = path.join(certDir, 'cert.pem');
       const keyPath = path.join(certDir, 'key.pem');
-
-      // Create OpenSSL config file
       const configPath = path.join(certDir, 'openssl.cnf');
       await fs.writeFile(configPath, this.generateOpenSSLConfig(domainList));
 
-      // Generate private key (use execFileSync to prevent command injection)
+      // execFileSync (no shell) prevents command injection
       execFileSync('openssl', ['genrsa', '-out', keyPath, '2048']);
-      
-      // Generate certificate (use execFileSync to prevent command injection)
       execFileSync('openssl', [
         'req', '-new', '-x509',
         '-key', keyPath,
         '-out', certPath,
         '-days', String(days),
         '-config', configPath,
-        '-subj', `/CN=${primaryDomain}`
+        '-subj', `/CN=${domainList[0]}`
       ]);
-      
-      // Read generated files
-      const certificatePem = await fs.readFile(certPath, 'utf8');
-      const privateKeyPem = await fs.readFile(keyPath, 'utf8');
-      
+
+      return {
+        certificatePem: await fs.readFile(certPath, 'utf8'),
+        privateKeyPem: await fs.readFile(keyPath, 'utf8')
+      };
+    } finally {
+      await fs.rm(certDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  /**
+   * Generate a self-signed certificate
+   * @param {string} name - Certificate name
+   * @param {string} domains - Comma-separated list of domains
+   * @param {number} validityDays - Validity period in days
+   * @param {string|null} userId - Creating user
+   * @returns {Promise<Object>} The created certificate
+   */
+  async generateSelfSignedCertificate(name, domains, validityDays, userId = null) {
+    const { domainList, days } = this.validateSelfSignedInput(domains, validityDays);
+
+    try {
+      const { certificatePem, privateKeyPem } = await this.createSelfSignedPem(domainList, days);
       const certInfo = parsePemCertificate(certificatePem);
-      const certId = crypto.randomUUID();
 
       // Create certificate in database, then push it to Caddy
       const certificate = await Certificate.create({
@@ -288,7 +267,7 @@ class CertificateService {
         valid_to: certInfo.validTo,
         certificate_pem: certificatePem,
         private_key_pem: privateKeyPem,
-        caddy_cert_id: certId,
+        caddy_cert_id: crypto.randomUUID(),
         type: 'self-signed',
         auto_renew: false,
         status: 'valid',
@@ -300,11 +279,9 @@ class CertificateService {
     } catch (error) {
       console.error('Failed to generate self-signed certificate:', error);
       throw new Error(`Failed to generate self-signed certificate: ${error.message}`);
-    } finally {
-      await fs.rm(certDir, { recursive: true, force: true }).catch(() => {});
     }
   }
-  
+
   /**
    * Make a newly stored custom certificate live in Caddy; remove it again if Caddy
    * rejects the resulting config so the database never lists a certificate Caddy lacks.
@@ -346,35 +323,50 @@ class CertificateService {
       throw new Error(`Failed to delete certificate: ${error.message}`);
     }
   }
-  
+
   /**
-   * Renew a certificate
+   * Renew a certificate.
+   * Caddy has no renew endpoint and renews ACME certificates on its own, so only
+   * self-signed certificates can be renewed here (regenerated with the same domains
+   * and validity period).
    * @param {Object} certificate - Certificate object
    * @returns {Promise<Object>} Result of the operation
+   * @throws {CertificateError} for ACME and uploaded certificates
    */
   async renewCertificate(certificate) {
+    if (certificate.type === 'acme') {
+      throw new CertificateError(
+        'Caddy renews ACME certificates automatically (about 30 days before expiry); no manual renewal is needed'
+      );
+    }
+    if (certificate.type !== 'self-signed') {
+      throw new CertificateError('Uploaded certificates cannot be renewed here; upload a replacement certificate');
+    }
+
+    const previousDays = Math.round(
+      (new Date(certificate.valid_to) - new Date(certificate.valid_from)) / (24 * 60 * 60 * 1000)
+    );
+    const { domainList, days } = this.validateSelfSignedInput(
+      certificate.domains,
+      Math.min(Math.max(previousDays, 1), 3650)
+    );
+
     try {
-      if (certificate.type !== 'acme') {
-        throw new Error('Only ACME certificates can be renewed');
-      }
-      
-      // For ACME certificates, we need to trigger Caddy to renew
-      if (certificate.caddy_cert_id) {
-        // Caddy doesn't have a direct "renew" endpoint, so we delete and let it re-obtain
-        await axios.delete(`${this.apiUrl}/certificates/${certificate.caddy_cert_id}`);
-        
-        // Update certificate status
-        await certificate.update({
-          status: 'pending'
-        });
-        
-        return {
-          success: true,
-          message: 'Certificate renewal initiated'
-        };
-      } else {
-        throw new Error('Certificate does not have a Caddy ID');
-      }
+      const { certificatePem, privateKeyPem } = await this.createSelfSignedPem(domainList, days);
+      const certInfo = parsePemCertificate(certificatePem);
+      await certificate.update({
+        certificate_pem: certificatePem,
+        private_key_pem: privateKeyPem,
+        valid_from: certInfo.validFrom,
+        valid_to: certInfo.validTo,
+        status: 'valid'
+      });
+      await caddyService.syncCustomCertificates();
+
+      return {
+        success: true,
+        message: `Self-signed certificate regenerated, valid for ${days} days`
+      };
     } catch (error) {
       console.error('Failed to renew certificate:', error);
       throw new Error(`Failed to renew certificate: ${error.message}`);

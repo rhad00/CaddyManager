@@ -21,7 +21,8 @@ jest.mock('../../src/models', () => ({
 }));
 
 const certificateService = require('../../src/services/certificateService');
-const { Certificate } = require('../../src/models');
+const { Certificate, Proxy } = require('../../src/models');
+const caddyService = require('../../src/services/caddyService');
 const { CertificateError } = require('../../src/utils/certificates');
 
 describe('CertificateService real tests', () => {
@@ -29,11 +30,86 @@ describe('CertificateService real tests', () => {
     jest.clearAllMocks();
   });
 
-  test('getCertificatesFromCaddy returns data from axios', async () => {
-    axios.get.mockResolvedValue({ data: [{ id: 'cert1' }] });
-    const res = await certificateService.getCertificatesFromCaddy();
-    expect(Array.isArray(res)).toBe(true);
-    expect(res[0].id).toBe('cert1');
+  describe('syncCertificates (TLS probe, no fake Caddy endpoint)', () => {
+    const observedRow = (domain, status = 'valid') => ({
+      caddy_cert_id: `observed:${domain}`, status, update: jest.fn(),
+    });
+
+    test('upserts observed ACME certificates and revokes ones no longer proxied', async () => {
+      Proxy.findAll = jest.fn().mockResolvedValue([
+        { domains: ['a.example.com', '*.wild.example.com'] },
+        { domains: ['b.example.com'] },
+      ]);
+      const existingA = observedRow('a.example.com');
+      const stale = observedRow('gone.example.com');
+      Certificate.findAll = jest.fn().mockResolvedValue([existingA, stale]);
+      Certificate.create = jest.fn().mockResolvedValue({});
+      jest.spyOn(caddyService, 'verifyTlsForDomains').mockResolvedValue({
+        ok: false,
+        results: [
+          { domain: 'a.example.com', ok: true, issuer: "Let's Encrypt", validFrom: 'Jan 1 00:00:00 2026 GMT', validTo: 'Jan 1 00:00:00 2099 GMT' },
+          { domain: 'b.example.com', ok: false, error: 'ECONNREFUSED' },
+        ],
+      });
+
+      const summary = await certificateService.syncCertificates();
+
+      // wildcards are not probed
+      expect(caddyService.verifyTlsForDomains).toHaveBeenCalledWith(['a.example.com', 'b.example.com']);
+      expect(existingA.update).toHaveBeenCalledWith(expect.objectContaining({ issuer: "Let's Encrypt", status: 'valid' }));
+      expect(stale.update).toHaveBeenCalledWith({ status: 'revoked' });
+      expect(Certificate.create).not.toHaveBeenCalled();
+      expect(summary).toMatchObject({ added: 0, updated: 1, revoked: 1, failed: [{ domain: 'b.example.com', error: 'ECONNREFUSED' }] });
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+  });
+
+  test('getCertificatesForDomain matches exact domains only and never probes', async () => {
+    Certificate.findAll = jest.fn().mockResolvedValue([
+      { domains: 'app.example.com,www.example.com' },
+      { domains: 'myapp.example.com' },
+    ]);
+    const spy = jest.spyOn(caddyService, 'verifyTlsForDomains');
+
+    const result = await certificateService.getCertificatesForDomain('APP.example.com');
+
+    expect(result).toEqual([{ domains: 'app.example.com,www.example.com' }]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  describe('renewCertificate', () => {
+    test('rejects ACME certificates with an explanation (Caddy renews them)', async () => {
+      await expect(certificateService.renewCertificate({ type: 'acme' }))
+        .rejects.toThrow(/renews ACME certificates automatically/);
+      await expect(certificateService.renewCertificate({ type: 'acme' })).rejects.toBeInstanceOf(CertificateError);
+    });
+
+    test('rejects uploaded certificates', async () => {
+      await expect(certificateService.renewCertificate({ type: 'uploaded' })).rejects.toBeInstanceOf(CertificateError);
+    });
+
+    test('regenerates self-signed certificates with the same domains and validity', async () => {
+      const pems = {
+        certificatePem: fs.readFileSync(path.join(__dirname, '../fixtures/certs/app.cert.pem'), 'utf8'),
+        privateKeyPem: 'KEY',
+      };
+      jest.spyOn(certificateService, 'createSelfSignedPem').mockResolvedValue(pems);
+      jest.spyOn(caddyService, 'syncCustomCertificates').mockResolvedValue();
+      const cert = {
+        type: 'self-signed',
+        domains: 'app.example.com',
+        valid_from: '2026-01-01T00:00:00Z',
+        valid_to: '2026-03-02T00:00:00Z',
+        update: jest.fn(),
+      };
+
+      const result = await certificateService.renewCertificate(cert);
+
+      expect(certificateService.createSelfSignedPem).toHaveBeenCalledWith(['app.example.com'], 60);
+      expect(cert.update).toHaveBeenCalledWith(expect.objectContaining({ certificate_pem: pems.certificatePem, status: 'valid' }));
+      expect(caddyService.syncCustomCertificates).toHaveBeenCalled();
+      expect(result.message).toMatch(/60 days/);
+    });
   });
 
   describe('uploadCertificate', () => {

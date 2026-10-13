@@ -1008,7 +1008,8 @@ class CaddyService {
             const cert = socket.getPeerCertificate();
             socket.end();
             if (cert && Object.keys(cert).length > 0) {
-              resolve({ domain, ok: true, certSubject: cert.subject, validFrom: cert.valid_from, validTo: cert.valid_to });
+              const issuer = cert.issuer ? (cert.issuer.O || cert.issuer.CN || null) : null;
+              resolve({ domain, ok: true, certSubject: cert.subject, issuer, validFrom: cert.valid_from, validTo: cert.valid_to });
             } else {
               resolve({ domain, ok: false, error: 'No certificate presented' });
             }
