@@ -23,11 +23,8 @@ app.get('/thing', authMiddleware, ok);
 app.post('/thing', authMiddleware, roleMiddleware('admin'), ok);
 app.put('/thing', authMiddleware, roleMiddleware('admin'), ok);
 app.delete('/thing', authMiddleware, roleMiddleware('admin'), ok);
-// Mounted like app.js does, including the versioned prefix
-const api = express.Router();
-for (const area of ['users', 'keys', 'backups', 'audit', 'alerts', 'git', 'auth']) {
-  api.use(`/${area}`, require(`../../src/api/${area}/routes`));
-}
+// The real API router, mounted like app.js does (versioned and legacy prefix)
+const api = require('../../src/api').buildApiRouter();
 app.use('/api/v1', api);
 app.use('/api', api);
 
@@ -77,6 +74,20 @@ describe('scopes', () => {
   ])('administration (%s %s) needs the admin scope', async (method, path) => {
     const writeKey = await makeKey(admin, ['write']);
     expect((await request(app)[method](path).set('X-API-Key', writeKey)).status).toBe(403);
+  });
+
+  // Express matches routes case-insensitively; the area rule must follow its routing
+  test.each(['/api/USERS', '/api/Users/', '/api/v1/KEYS', '/API/BACKUPS'])(
+    'the admin area rule holds for %s', async (path) => {
+      const writeKey = await makeKey(admin, ['write']);
+      const res = await request(app).post(path).set('X-API-Key', writeKey).send({});
+      expect(res.status).toBe(403);
+    }
+  );
+
+  test.each(['/api/AUTH/2FA/setup', '/api/v1/auth/2fa/setup'])('2FA refuses API keys at %s', async (path) => {
+    const adminKey = await makeKey(admin, ['admin']);
+    expect((await request(app).post(path).set('X-API-Key', adminKey)).status).toBe(403);
   });
 
   test.each(['/api/auth/2fa/setup', '/api/auth/2fa/verify', '/api/auth/2fa/disable'])(

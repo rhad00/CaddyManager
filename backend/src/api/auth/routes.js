@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticateUser } = require('../../services/authService');
-const { authMiddleware } = require('../../middleware/auth');
+const { authMiddleware, noApiKeyArea } = require('../../middleware/auth');
 const { logAction } = require('../../services/auditService');
 const passwordResetRoutes = require('./passwordReset');
 const twoFactorRoutes = require('./twoFactor');
@@ -164,6 +164,6 @@ router.get('/me', authMiddleware, (req, res) => {
 router.use('/password-reset', passwordResetRoutes);
 
 // 2FA routes
-router.use('/2fa', twoFactorRoutes);
+router.use('/2fa', noApiKeyArea, twoFactorRoutes);
 
 module.exports = router;

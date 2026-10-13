@@ -678,6 +678,17 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - Tests: `apiKeyAuth` +7 (admin areas, 2FA); new `users.lastAdmin` (5).
   - Verification: backend 354 passed, 21 skipped. Both files also pass against
     PostgreSQL 16.
+- Second follow-up (background security review of the first follow-up):
+  - The area check parsed `req.baseUrl`. Express matches routes case-insensitively:
+    `POST /api/USERS` reaches the users router with `req.baseUrl` `/api/USERS`, so a
+    `write` key bypassed the admin-scope rule. Verified against Express.
+  - Areas are now marked by mounting `adminScopeArea` / `noApiKeyArea` in front of the
+    router, so Express's own routing decides what is inside an area. No path
+    parsing is left.
+  - The API router moved from `app.js` to `src/api/index.js` (`buildApiRouter`), the
+    single place listing the areas. The tests mount that same router.
+  - Tests: `apiKeyAuth` +6 (case and prefix variants for admin areas and 2FA, on the
+    real API router).
 
 ## Where this session stopped (usage limit)
 

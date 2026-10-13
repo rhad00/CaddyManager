@@ -6,20 +6,7 @@ const morgan = require('morgan');
 const { testConnection } = require('./config/database');
 
 // Import routes
-const authRoutes = require('./api/auth/routes');
-const proxyRoutes = require('./api/proxies/routes');
-const templateRoutes = require('./api/templates/routes');
-const userRoutes = require('./api/users/routes');
-const backupRoutes = require('./api/backups/routes');
-const certificateRoutes = require('./api/certificates/routes');
-const metricsRoutes = require('./api/metrics/routes');
-const auditRoutes = require('./api/audit/routes');
-const featuresRoutes = require('./api/features/routes');
-const discoveryRoutes = require('./api/discovery/routes');
-const gitRoutes = require('./api/git/routes');
-const logsRoutes = require('./api/logs/routes');
-const alertsRoutes = require('./api/alerts/routes');
-const keysRoutes = require('./api/keys/routes');
+const { buildApiRouter } = require('./api');
 const { setupSwagger } = require('./config/swagger');
 
 // Create Express app
@@ -142,21 +129,7 @@ app.get('/ready', async (req, res) => {
 });
 
 // API routes — mounted under both /api (legacy) and /api/v1 (versioned)
-const apiRouter = express.Router();
-apiRouter.use('/auth', authRoutes);
-apiRouter.use('/proxies', proxyRoutes);
-apiRouter.use('/templates', templateRoutes);
-apiRouter.use('/users', userRoutes);
-apiRouter.use('/backups', backupRoutes);
-apiRouter.use('/certificates', certificateRoutes);
-apiRouter.use('/metrics', metricsRoutes);
-apiRouter.use('/audit', auditRoutes);
-apiRouter.use('/features', featuresRoutes);
-apiRouter.use('/discovery', discoveryRoutes);
-apiRouter.use('/git', gitRoutes);
-apiRouter.use('/logs', logsRoutes);
-apiRouter.use('/alerts', alertsRoutes);
-apiRouter.use('/keys', keysRoutes);
+const apiRouter = buildApiRouter();
 
 app.use('/api/v1', apiRouter);
 app.use('/api', apiRouter); // backward compatible
