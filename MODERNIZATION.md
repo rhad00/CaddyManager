@@ -29,7 +29,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.5 | Caddy config contract test (`caddy validate`) | done |
 | 0.6 | Upstream URL copied verbatim into Caddy `dial` | done |
 | 0.7 | Basic auth: invalid handler + plaintext password | done |
-| 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | pending |
+| 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | done |
 | 0.9 | Active health checks rejected by Caddy | pending |
 | 0.10 | "weighted" load balancing policy | pending |
 | 0.11 | Certificate service calls non-existent Caddy admin endpoints | pending |
@@ -175,3 +175,28 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - Renumbering: a background security review after 0.6 led to finding SSRF guard bypasses
   that already existed before this work. They are now item 0.8, and the following items
   shifted by one.
+
+### 0.8 SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts
+
+- Problem (existed before this work): the upstream SSRF guard compared hostname strings,
+  so these all passed:
+  - `http://[::ffff:127.0.0.1]` (loopback)
+  - `http://[::ffff:a9fe:a9fe]` (the cloud metadata IP 169.254.169.254)
+  - `http://localhost.:8080`
+  - `*.localhost` names
+- New `backend/src/utils/ssrf.js` `isRestrictedHost()`:
+  - Uses Node's `net.BlockList`, which matches IPv4-mapped IPv6 addresses against the
+    IPv4 rules.
+  - Blocks the same IPv4 ranges as before, plus IPv6 `::/96` (unspecified, loopback,
+    IPv4-compatible), `64:ff9b::/96` (NAT64), `fc00::/7` and `fe80::/10`.
+  - Normalises case and trailing dots and treats `*.localhost` as loopback (RFC 6761).
+- `validateUpstreamUrl` uses it in place of the hand-written IPv4/IPv6 helpers. Numeric
+  forms such as `2130706433` and `0x7f.1` were already normalised by `URL` and are
+  covered by regression tests.
+- Follow-ups not addressed here:
+  - DNS names that resolve to private addresses are not checked.
+  - Alert webhook URLs and Git repository URLs are fetched without any SSRF check
+    (tracked with the alert and Git items).
+- Tests: `tests/unit/ssrf.test.js` (43 cases); 6 bypass regressions added to
+  `tests/integration/proxies.routes.real.test.js`.
+- Verification: backend 226 passed.

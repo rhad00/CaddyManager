@@ -10,6 +10,7 @@ const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
 const { parseUpstream, upstreamHostname } = require('../../utils/upstream');
 const { prepareBasicAuth, redactBasicAuth } = require('../../utils/basicAuth');
+const { isRestrictedHost } = require('../../utils/ssrf');
 
 /**
  * Proxy as returned by the API: basic auth hash is never exposed.
@@ -59,56 +60,7 @@ const validateUpstreamUrl = (url) => {
   }
 
   // Block loopback, link-local, private ranges, and cloud metadata endpoints (SSRF prevention)
-
-  const blockedHosts = [
-    'localhost',
-    '169.254.169.254',        // AWS/Azure link-local metadata
-    'metadata.google.internal',
-    'metadata.internal',
-  ];
-  if (blockedHosts.includes(hostname.toLowerCase())) {
-    return { valid: false, message: 'Upstream URL points to a restricted address' };
-  }
-
-  // Block numeric IPv4 addresses in private/loopback/link-local/reserved ranges
-  const isPrivateIpv4 = (host) => {
-    const h = host.replace(/^\[|\]$/g, '');
-    const parts = h.split('.').map(Number);
-    if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return false;
-    const [a, b, c] = parts;
-    return (
-      a === 0 ||                                    // 0.0.0.0/8 (this network)
-      a === 10 ||                                   // 10.0.0.0/8
-      a === 127 ||                                  // 127.0.0.0/8 loopback
-      (a === 100 && b >= 64 && b <= 127) ||         // 100.64.0.0/10 CGNAT
-      (a === 169 && b === 254) ||                   // 169.254.0.0/16 link-local (all)
-      (a === 172 && b >= 16 && b <= 31) ||          // 172.16.0.0/12
-      (a === 192 && b === 0 && c === 2) ||          // 192.0.2.0/24 TEST-NET-1
-      (a === 192 && b === 168) ||                   // 192.168.0.0/16
-      (a === 198 && b >= 18 && b <= 19) ||          // 198.18.0.0/15 benchmark
-      (a === 198 && b === 51 && c === 100) ||       // 198.51.100.0/24 TEST-NET-2
-      (a === 203 && b === 0 && c === 113) ||        // 203.0.113.0/24 TEST-NET-3
-      a >= 240                                      // 240.0.0.0/4 reserved + 255.255.255.255
-    );
-  };
-
-  // Block private/loopback/link-local IPv6 addresses
-  const isPrivateIpv6 = (host) => {
-    const h = host.replace(/^\[|\]$/g, '').toLowerCase();
-    // Loopback ::1
-    if (h === '::1') return true;
-    // Unspecified ::
-    if (h === '::') return true;
-    // Link-local fe80::/10
-    if (/^fe[89ab][0-9a-f]:/i.test(h)) return true;
-    // Unique Local (ULA) fc00::/7 — covers fc and fd prefixes
-    if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true;
-    // Loopback 0:0:0:0:0:0:0:1
-    if (h === '0:0:0:0:0:0:0:1') return true;
-    return false;
-  };
-
-  if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) {
+  if (isRestrictedHost(hostname)) {
     return { valid: false, message: 'Upstream URL points to a restricted address' };
   }
 

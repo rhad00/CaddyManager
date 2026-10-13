@@ -78,6 +78,13 @@ describe('Proxies routes (integration-style with mocks)', () => {
     'http://[fe80::1]:8080',
     'http://[fd00::1]:8080',
     'http://[::1]:8080',
+    // Regressions for MODERNIZATION.md 0.8 (IPv4-mapped IPv6, trailing dot, bare form)
+    'http://[::ffff:127.0.0.1]:8080',
+    'http://[::ffff:a9fe:a9fe]/',
+    'http://localhost.:8080',
+    'app.localhost:3000',
+    '169.254.169.254:80',
+    'http://2130706433:8080',
   ])('POST /api/proxies rejects restricted upstream URL: %s', async (upstreamUrl) => {
     const res = await request(app).post('/api/proxies').send({
       name: 'restricted-upstream-check',
