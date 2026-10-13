@@ -508,12 +508,15 @@ class CaddyService {
 
       // Add active health checks if enabled
       if (proxy.health_checks && proxy.health_checks.enabled) {
+        // Caddy's active checks use `uri` (`path` is deprecated) and `fails`
+        // (consecutive failures before an upstream is marked down); `max_fails`
+        // only exists on passive checks and makes Caddy reject the config.
         reverseProxyHandler.health_checks = {
           active: {
-            path: proxy.health_checks.path || '/health',
+            uri: proxy.health_checks.path || '/health',
             interval: proxy.health_checks.interval || '30s',
             timeout: proxy.health_checks.timeout || '5s',
-            max_fails: proxy.health_checks.max_fails || 3
+            fails: proxy.health_checks.max_fails || 3
           }
         };
       }

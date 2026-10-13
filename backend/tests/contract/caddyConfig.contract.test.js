@@ -162,8 +162,8 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     })]));
   });
 
-  // Known broken (see MODERNIZATION.md 0.9): "max_fails" is not an active health check field
-  test.failing('active health checks', () => {
+  // Regression for MODERNIZATION.md 0.9: "max_fails" is not an active health check field
+  test('active health checks', () => {
     expectValid(buildConfig([baseProxy({
       health_checks: { enabled: true, path: '/healthz', interval: '10s', timeout: '2s', max_fails: 3 },
     })]));

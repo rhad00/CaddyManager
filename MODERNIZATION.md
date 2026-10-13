@@ -30,7 +30,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.6 | Upstream URL copied verbatim into Caddy `dial` | done |
 | 0.7 | Basic auth: invalid handler + plaintext password | done |
 | 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | done |
-| 0.9 | Active health checks rejected by Caddy | pending |
+| 0.9 | Active health checks rejected by Caddy | done |
 | 0.10 | "weighted" load balancing policy | pending |
 | 0.11 | Certificate service calls non-existent Caddy admin endpoints | pending |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
@@ -200,3 +200,17 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - Tests: `tests/unit/ssrf.test.js` (43 cases); 6 bypass regressions added to
   `tests/integration/proxies.routes.real.test.js`.
 - Verification: backend 226 passed.
+
+### 0.9 Active health checks rejected by Caddy
+
+- Problem: the route builder always emitted `max_fails` inside `health_checks.active`.
+  That field only exists on passive checks, so Caddy rejected the whole config
+  (`unknown field "max_fails"`) whenever a proxy enabled health checks. It also used the
+  deprecated `path` field.
+- Fix: `active: { uri, interval, timeout, fails }`. The stored and UI field names are
+  unchanged: `path` → `uri`, and "Max Fails" → `fails` (consecutive failures before an
+  upstream is marked unhealthy).
+- API: `health_checks.path` must start with `/` and contain no spaces.
+- README: Caddy's active checks are HTTP only, so the "TCP/HTTP" claims were corrected.
+- Tests: `tests/unit/healthChecks.test.js` (3); contract case flipped to `test`.
+- Verification: backend 229 passed; contract 19/19.

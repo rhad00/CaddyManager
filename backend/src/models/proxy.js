@@ -88,7 +88,7 @@ const Proxy = sequelize.define('Proxy', {
     type: DataTypes.JSON,
     allowNull: true,
     defaultValue: null,
-    comment: 'Active health check config: {enabled: boolean, path: string, interval: string, timeout: string, max_fails: number}'
+    comment: 'Active health check config: {enabled: boolean, path: string (Caddy uri), interval: string, timeout: string, max_fails: number (Caddy active.fails)}'
   },
   caddy_route_index: {
     type: DataTypes.INTEGER,

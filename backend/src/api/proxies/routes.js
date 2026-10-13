@@ -143,6 +143,11 @@ const validateHealthChecksConfig = (healthChecks) => {
     return { valid: true };
   }
 
+  if (healthChecks.path !== undefined &&
+      (typeof healthChecks.path !== 'string' || !/^\/[^\s]*$/.test(healthChecks.path))) {
+    return { valid: false, message: 'health_checks.path must start with "/" and contain no spaces' };
+  }
+
   if (healthChecks.interval && !/^\d+(\.\d+)?(s|m|h)$/.test(healthChecks.interval)) {
     return { valid: false, message: 'health_checks.interval must be a duration string e.g. "30s", "1m"' };
   }

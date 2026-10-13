@@ -70,7 +70,7 @@ docker run -d \
 | **API Key Authentication** | Long-lived API keys with scoped permissions for CI/CD and automation. |
 | **Proxy Management** | Multi-domain support, auto-SSL (Let's Encrypt), custom certs, HTTP→HTTPS redirects. |
 | **Load Balancing** | Multiple upstreams per proxy with round-robin, least-connections, IP-hash, weighted strategies. |
-| **Health Checks** | Active TCP/HTTP upstream health monitoring with automatic failover. |
+| **Health Checks** | Active HTTP upstream health checks; unhealthy upstreams are removed from the pool. |
 | **Access Log Viewer** | Live SSE log tail + historical search with domain/status code filters. |
 | **Alerting & Notifications** | Certificate expiry, upstream failure, and error-rate alerts via email, Slack, Discord, or webhook. |
 | **Security Headers** | One-click HSTS, CSP, X-Frame-Options, IP filtering, rate limiting. |
@@ -185,7 +185,7 @@ Example header configurations:
 - **Load Balancing & Health Checks** ✨
   - Multiple upstream URLs per proxy
   - Strategies: `round_robin`, `least_conn`, `ip_hash`, `random`, `weighted`
-  - Active HTTP/TCP health checks with configurable interval, timeout, thresholds
+  - Active HTTP health checks with configurable path, interval, timeout and failure threshold
   - Automatic failover to healthy upstreams
 
 - **Header & Middleware Configuration**
