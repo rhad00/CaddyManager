@@ -27,7 +27,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.3 | Fix frontend lint error that fails CI | done |
 | 0.4 | Node 20 (EOL) → Node 24 LTS | done |
 | 0.5 | Caddy config contract test (`caddy validate`) | done |
-| 0.6 | Upstream URL copied verbatim into Caddy `dial` | pending |
+| 0.6 | Upstream URL copied verbatim into Caddy `dial` | done |
 | 0.7 | Basic auth: invalid handler + plaintext password | pending |
 | 0.8 | Active health checks rejected by Caddy | pending |
 | 0.9 | "weighted" load balancing policy | pending |
@@ -106,3 +106,34 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 - Verification: against the project image (`caddy/Dockerfile`, Caddy 2.10.2 + plugins)
   18/18 pass (14 valid + 4 expected failures); against stock `caddy:2.10.2` 16 pass,
   2 plugin cases skipped; without Caddy the suite is skipped and the main suite passes.
+
+### 0.6 Upstream URL copied verbatim into Caddy `dial`
+
+- Problem: since `fa5a042` the proxies API requires `upstream_url` to be an `http(s)://`
+  URL, while the UI hinted `localhost:8080`, and `createRouteFromProxy` wrote the URL
+  straight into `dial`. Caddy accepts that config but every request fails with
+  "too many colons in address". Load-balancing and path-routing upstreams had the same
+  problem, and path-route upstreams were not validated at all.
+- New `backend/src/utils/upstream.js`:
+  - `parseUpstream()` accepts `http(s)://host[:port]` or bare `host[:port]` and returns
+    `{ dial: "host:port", useTls, hostname }`. Default ports are 80/443; port 443 implies
+    TLS (as before). Paths, queries and credentials are rejected.
+  - `upstreamHostname()` for host-only checks.
+- `caddyService.createRouteFromProxy` uses it for the single upstream, every
+  load-balancing member and every path route. Path routes to `https://` upstreams now get
+  a TLS transport. A load-balanced pool gets a TLS transport if any member uses TLS.
+  New `buildTlsTransport()` helper.
+- `addProxy` duplicate detection compares against both the normalised dial and the raw
+  URL, so routes written before this fix are still detected.
+- API `validateUpstreamUrl` accepts both input forms. It runs the existing SSRF host
+  checks first, then the structural rules. New `validatePathRoutingConfig` validates
+  path-route paths and upstreams.
+- UI placeholder updated to `http://app:8080, https://api or app:3000`.
+- Existing proxies get correct `dial` values on the next config rebuild or update.
+- Open question (not changed): the SSRF guard rejects private ranges such as
+  `10.0.0.0/8` and `192.168.0.0/16`, which are common upstreams for a self-hosted
+  reverse proxy. Docker service names are unaffected.
+- Tests: new `tests/unit/upstream.test.js` (19 cases); contract case flipped from
+  `test.failing` to `test`, plus a new case for URL-form load-balancing and path-routing
+  upstreams with https.
+- Verification: backend 155 passed; contract suite 19/19 against the project image.

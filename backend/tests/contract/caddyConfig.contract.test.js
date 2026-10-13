@@ -94,10 +94,22 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     expectValid(buildConfig([baseProxy()]));
   });
 
-  // Known broken (see MODERNIZATION.md 0.6): the proxies API requires upstream_url to be an
-  // http(s):// URL but createRouteFromProxy copies it verbatim into dial, which needs host:port
-  test.failing('upstream given as an http:// URL, as the API requires', () => {
+  // Regression for MODERNIZATION.md 0.6: URL-form upstreams used to be copied verbatim into dial
+  test('upstream given as an http:// URL, as the API requires', () => {
     expectValid(buildConfig([baseProxy({ upstream_url: 'http://app:8080' })]));
+  });
+
+  test('URL-form upstreams in load balancing and path routing, including https', () => {
+    expectValid(buildConfig([
+      baseProxy({
+        domains: ['lb.example.com'],
+        load_balancing: { enabled: true, policy: 'round_robin', upstreams: [{ url: 'https://app1' }, { url: 'https://app2:8443' }] },
+      }),
+      baseProxy({
+        domains: ['paths.example.com'],
+        path_routing: { enabled: true, routes: [{ path: '/api/*', upstream_url: 'https://api' }, { path: '/*', upstream_url: 'http://web:3000' }] },
+      }),
+    ]));
   });
 
   test('multiple domains, compression and request/response headers', () => {

@@ -350,7 +350,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               value={upstreamUrl}
               onChange={(e) => setUpstreamUrl(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="localhost:8080 or server:80 or server:443"
+              placeholder="http://app:8080, https://api or app:3000"
               required
             />
           </div>

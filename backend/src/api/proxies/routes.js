@@ -8,6 +8,7 @@ const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../
 const { logAction } = require('../../services/auditService');
 const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
+const { parseUpstream, upstreamHostname } = require('../../utils/upstream');
 const router = express.Router();
 
 const PROXY_ALLOWED_FIELDS = [
@@ -37,24 +38,15 @@ const isValidDomain = (domain) => {
  * @returns {{ valid: boolean, message?: string }}
  */
 const validateUpstreamUrl = (url) => {
-  if (!url || typeof url !== 'string') {
-    return { valid: false, message: 'Upstream URL is required' };
-  }
-
-  let parsed;
+  // Accepts "http(s)://host[:port]" or a bare "host:port"; see utils/upstream
+  let hostname;
   try {
-    parsed = new URL(url);
-  } catch {
-    return { valid: false, message: 'Invalid upstream URL format' };
-  }
-
-  // Only allow http and https schemes
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { valid: false, message: 'Upstream URL must use http or https protocol' };
+    hostname = upstreamHostname(url);
+  } catch (error) {
+    return { valid: false, message: error.message };
   }
 
   // Block loopback, link-local, private ranges, and cloud metadata endpoints (SSRF prevention)
-  const hostname = parsed.hostname;
 
   const blockedHosts = [
     'localhost',
@@ -106,6 +98,13 @@ const validateUpstreamUrl = (url) => {
 
   if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) {
     return { valid: false, message: 'Upstream URL points to a restricted address' };
+  }
+
+  // Remaining structural rules (no path, query or credentials)
+  try {
+    parseUpstream(url);
+  } catch (error) {
+    return { valid: false, message: error.message };
   }
 
   return { valid: true };
@@ -218,6 +217,28 @@ const validateHeadersConfig = (headers) => {
   return { valid: true };
 };
 
+const validatePathRoutingConfig = (pathRouting) => {
+  if (!pathRouting || !pathRouting.enabled) {
+    return { valid: true };
+  }
+
+  if (!Array.isArray(pathRouting.routes) || pathRouting.routes.length < 1) {
+    return { valid: false, message: 'Path routing requires at least one route' };
+  }
+
+  for (const route of pathRouting.routes) {
+    if (!route || typeof route.path !== 'string' || !route.path.startsWith('/')) {
+      return { valid: false, message: 'Each path route needs a path starting with "/"' };
+    }
+    const upstreamCheck = validateUpstreamUrl(route.upstream_url);
+    if (!upstreamCheck.valid) {
+      return { valid: false, message: `Invalid path route upstream for ${route.path}: ${upstreamCheck.message}` };
+    }
+  }
+
+  return { valid: true };
+};
+
 const validateMiddlewaresConfig = (middlewares) => {
   if (!middlewares || !Array.isArray(middlewares)) {
     return { valid: true };
@@ -258,6 +279,7 @@ const validateProxyInput = (body) => {
     () => validateLoadBalancingConfig(body.load_balancing),
     () => validateHealthChecksConfig(body.health_checks),
     () => validateHeadersConfig(body.headers),
+    () => validatePathRoutingConfig(body.path_routing),
     () => validateMiddlewaresConfig(body.middlewares),
   ];
 

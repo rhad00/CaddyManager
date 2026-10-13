@@ -4,6 +4,7 @@ const path = require('path');
 const tls = require('tls');
 const { sequelize, Proxy, Header, Middleware } = require('../models');
 const { Op } = require('sequelize');
+const { parseUpstream } = require('../utils/upstream');
 require('dotenv').config();
 
 /**
@@ -463,17 +464,22 @@ class CaddyService {
       // For path-based routing, we'll create a subroute handler
       handlers.push({
         handler: "subroute",
-        routes: proxy.path_routing.routes.map(route => ({
-          match: [{
-            path: [route.path]
-          }],
-          handle: [{
+        routes: proxy.path_routing.routes.map(route => {
+          const upstream = parseUpstream(route.upstream_url);
+          const pathHandler = {
             handler: "reverse_proxy",
-            upstreams: [{
-              dial: route.upstream_url
-            }]
-          }]
-        }))
+            upstreams: [{ dial: upstream.dial }]
+          };
+          if (upstream.useTls) {
+            pathHandler.transport = this.buildTlsTransport(proxy);
+          }
+          return {
+            match: [{
+              path: [route.path]
+            }],
+            handle: [pathHandler]
+          };
+        })
       });
     } else {
       // Create the default reverse proxy handler
@@ -483,14 +489,14 @@ class CaddyService {
 
       if (proxy.load_balancing && proxy.load_balancing.enabled && proxy.load_balancing.upstreams && proxy.load_balancing.upstreams.length > 0) {
         upstreams = proxy.load_balancing.upstreams.map(u => {
-          const entry = { dial: u.url };
+          const entry = { dial: parseUpstream(u.url).dial };
           if (u.weight !== undefined && u.weight !== null) entry.max_requests = u.weight; // weight maps to max_requests for weighted round-robin
           return entry;
         });
         const policy = proxy.load_balancing.policy || 'round_robin';
         lbPolicy = { selection_policy: { policy } };
       } else {
-        upstreams = [{ dial: proxy.upstream_url }];
+        upstreams = [{ dial: parseUpstream(proxy.upstream_url).dial }];
       }
 
       reverseProxyHandler = {
@@ -551,15 +557,13 @@ class CaddyService {
         }
       }
 
-      // Add transport config if using HTTPS
-      if (this.shouldUseHTTPSTransport(proxy.upstream_url)) {
-        const skipVerify = proxy.skip_tls_verify !== undefined ? proxy.skip_tls_verify : false;
-        reverseProxyHandler.transport = {
-          protocol: "http",
-          tls: {
-            insecure_skip_verify: skipVerify
-          }
-        };
+      // Add transport config if using HTTPS. One transport serves every upstream of the
+      // handler, so a load-balanced pool uses TLS when any of its members does.
+      const upstreamUrls = lbPolicy
+        ? proxy.load_balancing.upstreams.map(u => u.url)
+        : [proxy.upstream_url];
+      if (upstreamUrls.some(u => this.shouldUseHTTPSTransport(u))) {
+        reverseProxyHandler.transport = this.buildTlsTransport(proxy);
       }
 
       handlers.push(reverseProxyHandler);
@@ -588,7 +592,21 @@ class CaddyService {
    * @returns {boolean} True if HTTPS transport should be used
    */
   shouldUseHTTPSTransport(upstreamUrl) {
-    return upstreamUrl.includes(':443') || upstreamUrl.startsWith('https://');
+    return parseUpstream(upstreamUrl).useTls;
+  }
+
+  /**
+   * HTTP transport that speaks TLS to the upstream
+   * @param {Object} proxy - The proxy (for skip_tls_verify)
+   * @returns {Object} Caddy reverse_proxy transport config
+   */
+  buildTlsTransport(proxy) {
+    return {
+      protocol: "http",
+      tls: {
+        insecure_skip_verify: proxy.skip_tls_verify === true
+      }
+    };
   }
 
   /**
@@ -609,6 +627,7 @@ class CaddyService {
       const existingRoutes = serverConfig.routes;
       const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
       const domainKey = proxyDomains.sort().join(',');
+      const proxyDial = parseUpstream(proxy.upstream_url).dial;
 
       const existingRoute = existingRoutes.find(route => {
         if (route.match && route.match[0] && route.match[0].host &&
@@ -617,7 +636,9 @@ class CaddyService {
           const routeDomains = route.match[0].host;
           const routeDomainKey = Array.isArray(routeDomains) ? routeDomains.sort().join(',') : routeDomains;
           const routeUpstream = route.handle[0].upstreams[0].dial;
-          return routeDomainKey === domainKey && routeUpstream === proxy.upstream_url;
+          // Routes written before upstream normalisation stored the raw URL in dial
+          return routeDomainKey === domainKey &&
+            (routeUpstream === proxyDial || routeUpstream === proxy.upstream_url);
         }
         return false;
       });
