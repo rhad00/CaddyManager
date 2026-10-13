@@ -44,6 +44,36 @@ describe('gitService.syncFromGit', () => {
     expect(repo.last_commit_sha).toBe('abc1234');
   });
 
+  // MODERNIZATION.md 0.16: repository content gets the same validation as the API
+  test('an invalid proxy in the repository refuses the whole sync before deleting anything', async () => {
+    const fs = require('fs').promises;
+    fs.readFile.mockResolvedValueOnce(JSON.stringify([
+      { name: 'ok', domains: ['ok.example.com'], upstream_url: 'http://app:80' },
+      { name: 'metadata', domains: ['meta.example.com'], upstream_url: 'http://169.254.169.254' },
+    ]));
+    const { Proxy } = require('../../src/models');
+
+    await expect(gitService.syncFromGit('r1')).rejects.toThrow(/#2 "metadata".*restricted/);
+    expect(Proxy.destroy).not.toHaveBeenCalled();
+    expect(caddyService.rebuildConfigFromDatabase).not.toHaveBeenCalled();
+    expect(repo.last_commit_sha).toBe('old');
+  });
+
+  test('creates proxies from the whitelisted fields only', async () => {
+    const fs = require('fs').promises;
+    fs.readFile.mockResolvedValueOnce(JSON.stringify([
+      { id: 'forced-id', created_by: 'attacker', caddy_route_index: 0, name: 'app', domains: ['app.example.com'], upstream_url: 'http://app:80' },
+    ]));
+    const { Proxy } = require('../../src/models');
+
+    await gitService.syncFromGit('r1');
+
+    expect(Proxy.create).toHaveBeenCalledWith(
+      { name: 'app', domains: ['app.example.com'], upstream_url: 'http://app:80' },
+      expect.anything()
+    );
+  });
+
   test('a Caddy failure surfaces its own error and leaves the commit to be retried', async () => {
     caddyService.rebuildConfigFromDatabase.mockRejectedValue(new Error('Failed to rebuild configuration: invalid handler'));
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const backupService = require('../../services/backupService');
+const { ProxyImportError } = require('../../utils/proxyImport');
 const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
 const fs = require('fs');
 const path = require('path');
@@ -156,13 +157,16 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
 router.post('/:id/restore', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
   try {
     const result = await backupService.restoreBackup(req.params.id, req.user);
-    
+
     res.status(200).json({
       success: true,
-      message: 'Backup restored successfully',
+      message: result.message,
       result
     });
   } catch (error) {
+    if (error instanceof ProxyImportError) {
+      return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+    }
     console.error('Restore backup error:', error);
     res.status(500).json({ 
       success: false, 

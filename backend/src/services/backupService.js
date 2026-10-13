@@ -14,6 +14,8 @@ const {
   Template,
   Backup
 } = require('../models');
+const { prepareImportedProxies, ProxyImportError } = require('../utils/proxyImport');
+const caddyService = require('./caddyService');
 require('dotenv').config();
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
@@ -230,7 +232,10 @@ class BackupService {
       if (!backupData.version || !backupData.proxies || !backupData.templates) {
         throw new Error('Invalid backup file format');
       }
-      
+
+      // Same validation and field whitelist as the API, before anything is deleted
+      const proxies = await prepareImportedProxies(backupData.proxies);
+
       // Clear existing data
       await Promise.all([
         Header.destroy({ where: {}, transaction }),
@@ -250,58 +255,45 @@ class BackupService {
       }
       
       // Restore proxies and their related data
-      for (const proxyData of backupData.proxies) {
-        // Create proxy
-        const proxy = await Proxy.create({
-          name: proxyData.name,
-          domains: proxyData.domains,
-          upstream_url: proxyData.upstream_url,
-          ssl_type: proxyData.ssl_type,
-          http_to_https_redirect: proxyData.http_to_https_redirect,
-          compression_enabled: proxyData.compression_enabled,
-          status: proxyData.status,
-          created_by: user.id
-        }, { transaction });
-        
-        // Create headers if available
-        if (proxyData.headers && Array.isArray(proxyData.headers)) {
-          for (const headerData of proxyData.headers) {
-            await Header.create({
-              proxy_id: proxy.id,
-              header_type: headerData.header_type,
-              header_name: headerData.header_name,
-              header_value: headerData.header_value,
-              enabled: headerData.enabled
-            }, { transaction });
-          }
+      for (const { fields, headers, middlewares } of proxies) {
+        const proxy = await Proxy.create({ ...fields, created_by: user.id }, { transaction });
+
+        for (const header of headers) {
+          await Header.create({ ...header, proxy_id: proxy.id }, { transaction });
         }
-        
-        // Create middleware if available
-        if (proxyData.middlewares && Array.isArray(proxyData.middlewares)) {
-          for (const middlewareData of proxyData.middlewares) {
-            await Middleware.create({
-              proxy_id: proxy.id,
-              middleware_type: middlewareData.middleware_type,
-              configuration: middlewareData.configuration,
-              enabled: middlewareData.enabled,
-              order: middlewareData.order
-            }, { transaction });
-          }
+
+        for (const middleware of middlewares) {
+          await Middleware.create({ ...middleware, proxy_id: proxy.id }, { transaction });
         }
       }
-      
+
       // Commit transaction
       await transaction.commit();
-      
+
+      // Push the restored proxies to Caddy. The restore itself stands either way; a
+      // failure here is reported so the admin can retry once Caddy is reachable.
+      let caddy = { applied: true };
+      try {
+        await caddyService.rebuildConfigFromDatabase();
+      } catch (caddyError) {
+        console.error('Restored backup could not be applied to Caddy:', caddyError);
+        caddy = { applied: false, error: caddyError.message };
+      }
+
       return {
         success: true,
-        message: 'Backup restored successfully',
+        message: caddy.applied
+          ? 'Backup restored successfully'
+          : 'Backup restored, but applying it to Caddy failed',
+        caddy,
         timestamp: new Date().toISOString()
       };
     } catch (error) {
-      // Rollback transaction on error
-      await transaction.rollback();
+      // Roll back unless the error happened after the commit
+      if (!transaction.finished) await transaction.rollback();
       console.error('Restore failed:', error);
+      // Keep the type so the API can answer 400 with the invalid entries
+      if (error instanceof ProxyImportError) throw error;
       throw new Error(`Restore failed: ${error.message}`);
     }
   }

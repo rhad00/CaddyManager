@@ -1,5 +1,6 @@
 const express = require('express');
 const gitService = require('../../services/gitService');
+const { ProxyImportError } = require('../../utils/proxyImport');
 const { GitRepository, ConfigChange } = require('../../models');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const { body, validationResult } = require('express-validator');
@@ -400,6 +401,9 @@ router.post('/repositories/:id/sync', [
       ...result
     });
   } catch (error) {
+    if (error instanceof ProxyImportError) {
+      return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+    }
     console.error('Sync repository error:', error);
     res.status(500).json({
       success: false,

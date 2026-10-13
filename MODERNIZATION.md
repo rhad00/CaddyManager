@@ -41,7 +41,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.13 | Access log never written, and not shared between Caddy and backend | done |
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | done |
 | 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | done |
-| 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
+| 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | done |
 | 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
 | 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
 
@@ -558,6 +558,52 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     failure surfaces its own error without a rollback and does not advance the commit.
   - Added a rebuild test that clears the index of a disabled proxy.
 - Verification: backend 293 passed, 21 skipped.
+
+### 0.16 Validate proxies from GitOps sync, backup restore and discovery
+
+- Problem: only `POST/PUT /api/proxies` validated proxies. Since 0.18 the import paths
+  reach Caddy, and the background security review flagged both of these:
+  - **GitOps sync** passed every field of `config/proxies.json` to `Proxy.create`:
+    restricted upstreams such as `169.254.169.254`, forged `id`/`created_by`,
+    unchecked basic-auth hashes. Anyone who can push to the repository controls these.
+  - **Docker discovery** took domain, port and SSL type from container labels without
+    checks. New labels on an existing proxy rewrote its domain and upstream and pushed
+    them live, even for a proxy an admin had approved. Anyone who can label a container
+    could retarget it.
+  - **Backup restore** copied 7 fields and dropped the rest (basic auth, load balancing,
+    health checks, path routing, ...). It applied nothing to Caddy, and a bad file
+    answered 500.
+- Fix:
+  - The API's validators moved unchanged from `api/proxies/routes.js` to
+    `utils/proxyValidation.js`.
+  - New `utils/proxyImport.js` (`prepareImportedProxies`) runs `validateProxyInput` on
+    every entry and keeps only the API's whitelisted fields (proxy, header and
+    middleware fields). Basic auth takes an exported bcrypt hash only if it is
+    well-formed; a plaintext password written by hand is hashed. All invalid entries
+    are reported together (`ProxyImportError`).
+  - Git sync and backup restore call it before deleting anything, so a bad repository
+    or file changes nothing. Both routes answer 400 with the list of invalid entries.
+  - Backup restore now keeps every API field and runs `rebuildConfigFromDatabase` after
+    the commit. A Caddy failure is reported in `result.caddy` and the response message;
+    the restore itself stands.
+  - Discovery checks label values (domain, port 1–65535, SSL type). The private-address
+    rule does not apply, because the host comes from Docker (container name or network
+    IP). A label change to an active proxy's domain or upstream sets it to `disabled`
+    for admin review, as newly discovered proxies already are.
+- Tests:
+  - `proxyImport` (11).
+  - `gitService.sync` (+2: invalid entry refuses the sync before deleting; whitelist).
+  - New `backupRestore.validation` integration test (3): full round-trip incl. basic
+    auth, load balancing, health checks and headers; tampered file refused; Caddy
+    failure reported.
+  - `dockerDiscovery.validation` (8).
+  - `importRoutes.errors` (3).
+- Verification: backend 321 passed, 21 skipped.
+- Found while here (added to the discovery and Git fix tier):
+  - Discovery reads `container.State.Running`, but the list API returns `State` as a
+    string, so every discovered service is recorded as `stopped`.
+  - `websocket_enabled` is not a Proxy column, so the label is silently dropped.
+  - The Git export commits each proxy's basic-auth bcrypt hash to the repository.
 
 ## Where this session stopped (usage limit)
 

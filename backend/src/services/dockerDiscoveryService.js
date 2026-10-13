@@ -2,6 +2,7 @@ const Docker = require('dockerode');
 const { DiscoveredService, Proxy, Template } = require('../models');
 const { Op } = require('sequelize');
 const winston = require('winston');
+const { SSL_TYPES, isValidDomain } = require('../utils/proxyValidation');
 
 // Create logger for this service
 const logger = winston.createLogger({
@@ -81,6 +82,26 @@ class DockerDiscoveryService {
     };
 
     return config;
+  }
+
+  /**
+   * Check label values against the rules the proxies API applies. The upstream host comes
+   * from Docker (container name or network IP), so the private-address rule does not apply.
+   * @param {Object} config - result of parseContainerLabels
+   * @returns {string|null} the problem, or null when the labels are usable
+   */
+  validateLabelConfig(config) {
+    if (!isValidDomain(config.domain)) {
+      return `invalid domain label "${config.domain}"`;
+    }
+    const port = Number(config.port);
+    if (!/^\d+$/.test(String(config.port)) || port < 1 || port > 65535) {
+      return `invalid port label "${config.port}"`;
+    }
+    if (!SSL_TYPES.includes(config.ssl_type)) {
+      return `invalid ssl label "${config.ssl_type}" (expected one of: ${SSL_TYPES.join(', ')})`;
+    }
+    return null;
   }
 
   /**
@@ -234,6 +255,12 @@ class DockerDiscoveryService {
       return;
     }
 
+    const labelProblem = this.validateLabelConfig(config);
+    if (labelProblem) {
+      logger.warn(`[DockerDiscovery] Skipping ${containerName}: ${labelProblem}`);
+      return;
+    }
+
     const upstream = this.getContainerUpstream(container, config.port);
     if (!upstream) {
       logger.warn(`[DockerDiscovery] Skipping ${containerName}: no network found`);
@@ -264,6 +291,16 @@ class DockerDiscoveryService {
         if (discovered.proxy_id) {
           const proxy = await Proxy.findByPk(discovered.proxy_id);
           if (proxy) {
+            // Whoever can label containers must not be able to retarget an approved
+            // proxy: a new domain or upstream goes back to admin review
+            const currentDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+            const retargeted = currentDomains.length !== 1 || currentDomains[0] !== config.domain ||
+              proxy.upstream_url !== upstream;
+            if (retargeted && proxy.status === 'active') {
+              proxy.status = 'disabled';
+              logger.warn(`[DockerDiscovery] Labels of ${containerName} changed its domain or upstream; proxy disabled pending admin review`);
+            }
+
             proxy.domains = [config.domain];
             proxy.upstream_url = upstream;
             proxy.compression_enabled = config.compression;

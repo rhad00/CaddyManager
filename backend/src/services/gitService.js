@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const yaml = require('js-yaml');
 const winston = require('winston');
 const { GitRepository, ConfigChange, Proxy, Header, Middleware } = require('../models');
+const { prepareImportedProxies } = require('../utils/proxyImport');
 
 // Create logger for this service
 const logger = winston.createLogger({
@@ -370,7 +371,8 @@ class GitService {
       const proxiesPath = path.join(configDir, 'proxies.json');
 
       const proxiesData = await fs.readFile(proxiesPath, 'utf8');
-      const proxies = JSON.parse(proxiesData);
+      // Same validation and field whitelist as the API; refuse the whole sync up front
+      const proxies = await prepareImportedProxies(JSON.parse(proxiesData));
 
       // Apply configuration (with transaction)
       const { sequelize } = require('../models');
@@ -386,29 +388,15 @@ class GitService {
         await Proxy.destroy({ where: {}, transaction: t });
 
         // Create proxies from Git
-        for (const proxyData of proxies) {
-          const { headers, middlewares, ...proxyFields } = proxyData;
+        for (const { fields, headers, middlewares } of proxies) {
+          const proxy = await Proxy.create(fields, { transaction: t });
 
-          const proxy = await Proxy.create(proxyFields, { transaction: t });
-
-          // Create associated headers
-          if (headers && headers.length > 0) {
-            for (const header of headers) {
-              await Header.create({
-                ...header,
-                proxy_id: proxy.id
-              }, { transaction: t });
-            }
+          for (const header of headers) {
+            await Header.create({ ...header, proxy_id: proxy.id }, { transaction: t });
           }
 
-          // Create associated middlewares
-          if (middlewares && middlewares.length > 0) {
-            for (const middleware of middlewares) {
-              await Middleware.create({
-                ...middleware,
-                proxy_id: proxy.id
-              }, { transaction: t });
-            }
+          for (const middleware of middlewares) {
+            await Middleware.create({ ...middleware, proxy_id: proxy.id }, { transaction: t });
           }
         }
 
