@@ -54,6 +54,23 @@ describe('CaddyService', () => {
     expect(proxy.update).toHaveBeenCalled();
   });
 
+  // A skipped proxy must not keep pointing at a route that now belongs to another (0.18)
+  test('rebuildConfigFromDatabase clears the route index of proxies it leaves out', async () => {
+    axios.get.mockResolvedValue({ data: { apps: { http: { servers: { srv0: { routes: [] } } } } } });
+    axios.post.mockResolvedValue({});
+    const active = { domains: ['on.example.com'], upstream_url: 'http://a', status: 'active', caddy_route_index: 1, update: jest.fn() };
+    const disabled = { domains: ['off.example.com'], upstream_url: 'http://b', status: 'disabled', caddy_route_index: 0, update: jest.fn() };
+    Proxy.findAll.mockResolvedValue([disabled, active]);
+    try {
+      await caddyService.rebuildConfigFromDatabase();
+      expect(active.update).toHaveBeenCalledWith({ caddy_route_index: 0 });
+      expect(disabled.update).toHaveBeenCalledWith({ caddy_route_index: null });
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
   // The route then rolls back the DB row, so the posted route must go too (0.15)
   test('addProxy removes the route it posted when a later step fails', async () => {
     const config = { apps: { http: { servers: { srv0: { routes: [{}, {}] } } } } };

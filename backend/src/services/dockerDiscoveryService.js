@@ -269,7 +269,7 @@ class DockerDiscoveryService {
             proxy.compression_enabled = config.compression;
             proxy.websocket_enabled = config.websocket;
             await proxy.save();
-            await caddyService.updateCaddyConfig();
+            await caddyService.rebuildConfigFromDatabase();
             logger.info(`[DockerDiscovery] Updated proxy for ${containerName}`);
           }
         }
@@ -351,7 +351,7 @@ class DockerDiscoveryService {
           const proxy = await Proxy.findByPk(discovered.proxy_id);
           if (proxy) {
             await proxy.destroy();
-            await caddyService.updateCaddyConfig();
+            await caddyService.rebuildConfigFromDatabase();
             logger.info(`[DockerDiscovery] Removed proxy for stopped container`);
           }
 
@@ -395,7 +395,7 @@ class DockerDiscoveryService {
 
       if (staleServices.length > 0) {
         const caddyService = require('./caddyService');
-        await caddyService.updateCaddyConfig();
+        await caddyService.rebuildConfigFromDatabase();
         logger.info(`[DockerDiscovery] Reconciled ${staleServices.length} stale services`);
       }
     } catch (error) {

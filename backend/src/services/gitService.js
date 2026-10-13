@@ -414,9 +414,10 @@ class GitService {
 
         await t.commit();
 
-        // Update Caddy configuration
+        // Push the synced proxies to Caddy. On failure last_commit_sha stays put, so the
+        // next sync retries this commit.
         const caddyService = require('./caddyService');
-        await caddyService.updateCaddyConfig();
+        await caddyService.rebuildConfigFromDatabase();
 
         gitRepo.last_commit_sha = latestSha;
         gitRepo.last_sync = new Date();
@@ -425,7 +426,8 @@ class GitService {
         logger.info(`[GitService] Synced ${proxies.length} proxies from Git (${latestSha.substr(0, 7)})`);
         return { synced: true, commit: latestSha, proxies: proxies.length };
       } catch (error) {
-        await t.rollback();
+        // Roll back unless the error happened after the commit
+        if (!t.finished) await t.rollback();
         throw error;
       }
     } catch (error) {

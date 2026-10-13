@@ -223,9 +223,11 @@ class CaddyService {
   }
 
   /**
-   * Rebuild Caddy configuration from database
+   * Rebuild Caddy configuration from database. This is the full DB-to-Caddy sync used
+   * at startup and after bulk changes (GitOps sync, Docker discovery).
    */
   async rebuildConfigFromDatabase() {
+    const release = await this._configMutex.acquire();
     try {
       // Get current config as a starting point
       const currentConfig = await this.getConfig();
@@ -277,6 +279,14 @@ class CaddyService {
         });
       }
 
+      // Proxies left out (disabled or duplicate domains) have no route any more
+      const included = new Set(uniqueProxies);
+      for (const proxy of proxies) {
+        if (!included.has(proxy) && proxy.caddy_route_index != null) {
+          await proxy.update({ caddy_route_index: null });
+        }
+      }
+
       // DNS-01 only for the domains of active Cloudflare proxies; plain ACME proxies keep
       // Caddy's default HTTP/TLS-ALPN challenges
       const cloudflareDomains = uniqueProxies
@@ -293,6 +303,8 @@ class CaddyService {
     } catch (error) {
       console.error('Failed to rebuild configuration from database:', error);
       throw new Error(`Failed to rebuild configuration: ${error.message}`);
+    } finally {
+      release();
     }
   }
 

@@ -387,7 +387,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
 
         // Update Caddy config
         const caddyService = require('../../services/caddyService');
-        await caddyService.updateCaddyConfig();
+        await caddyService.rebuildConfigFromDatabase();
       }
     }
 

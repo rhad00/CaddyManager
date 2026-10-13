@@ -43,7 +43,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | done |
 | 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
 | 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
-| 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | pending |
+| 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
 
 ## Changes
 
@@ -529,6 +529,35 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
 - Fix: mount `./caddy/Caddyfile`.
 - Verification: `docker compose -f docker-compose.prod.yml config` resolves the source to
   the existing file, and `caddy adapt` on it succeeds in the project Caddy image.
+
+### 0.18 GitOps sync and Docker discovery never reached Caddy
+
+- Problem: five call sites used `caddyService.updateCaddyConfig()`, which does not
+  exist: `gitService.syncFromGit`, Docker discovery (container update, container stop,
+  reconcile) and `DELETE /api/discovery/:id?deleteProxy=true`.
+  - Each threw a TypeError after the database change. Discovery logged and swallowed
+    it.
+  - Git sync then called `rollback()` on its committed transaction, which threw again
+    and replaced the error.
+  - The discovery route answered 500 after deleting the proxy.
+  - Result: proxies synced from Git, or changed or removed by discovery, stayed out of
+    Caddy (or stayed live in it) until the next restart.
+- Fix:
+  - The callers use `rebuildConfigFromDatabase()`, the full DB-to-Caddy sync. It now
+    holds the config mutex, so it cannot interleave with add, update or delete.
+  - The rebuild clears `caddy_route_index` on proxies it leaves out (disabled, or a
+    duplicate of another proxy's domains). Before, they kept a stale index, and their
+    next update overwrote whichever route now sat there.
+  - Git sync only rolls back unfinished transactions. If the Caddy step fails,
+    `last_commit_sha` is not advanced, so the next sync retries that commit.
+- Tests:
+  - New `tests/unit/caddyService.callers.test.js` scans `src/` for every
+    `caddyService.<method>(` call and asserts the method exists (17 call sites). It
+    caught all five broken calls.
+  - New `tests/unit/gitService.sync.test.js` (2): a sync pushes to Caddy; a Caddy
+    failure surfaces its own error without a rollback and does not advance the commit.
+  - Added a rebuild test that clears the index of a disabled proxy.
+- Verification: backend 293 passed, 21 skipped.
 
 ## Where this session stopped (usage limit)
 
