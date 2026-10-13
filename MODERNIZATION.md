@@ -24,6 +24,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 |----|------|--------|
 | 0.1 | Remove unused backend dependencies | done |
 | 0.2 | In-range dependency updates + `npm audit fix` | done |
+| 0.3 | Fix frontend lint error that fails CI | done |
 
 ## Changes
 
@@ -51,3 +52,10 @@ so `git log --grep "(0.5)"` finds the change for any entry.
   (`vite ^6.4.4`, `react ^19.3.0`, `react-router-dom ^7.18.4`, `tailwindcss ^4.3.3`).
 - Frontend audit: **23 → 0**.
 - Verification: backend 136/136 tests; frontend 15/15 tests; `vite build` succeeds.
+
+### 0.3 Fix frontend lint error that fails CI
+
+- `e2e/playwright.config.js` uses `process.env`, but the flat ESLint config applied only
+  browser globals to every file, so `npm run lint` (a CI step) failed with `no-undef`.
+- Added a block giving Node globals to `e2e/**` and root `*.config.{js,mjs}` files.
+- Verification: `npm run lint` → 0 errors (4 pre-existing `exhaustive-deps` warnings).
