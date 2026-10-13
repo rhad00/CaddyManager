@@ -151,7 +151,7 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     }
   );
 
-  // Known broken (see MODERNIZATION.md 0.9): "weighted" is not a Caddy selection policy
+  // Known broken (see MODERNIZATION.md 0.10): "weighted" is not a Caddy selection policy
   test.failing('load balancing with weighted policy', () => {
     expectValid(buildConfig([baseProxy({
       load_balancing: {
@@ -162,15 +162,15 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     })]));
   });
 
-  // Known broken (see MODERNIZATION.md 0.8): "max_fails" is not an active health check field
+  // Known broken (see MODERNIZATION.md 0.9): "max_fails" is not an active health check field
   test.failing('active health checks', () => {
     expectValid(buildConfig([baseProxy({
       health_checks: { enabled: true, path: '/healthz', interval: '10s', timeout: '2s', max_fails: 3 },
     })]));
   });
 
-  // Known broken (see MODERNIZATION.md 0.7): "basic_auth" is a Caddyfile directive, not a JSON handler
-  test.failing('basic authentication', () => {
+  // Regression for MODERNIZATION.md 0.7: "basic_auth" is a Caddyfile directive, not a JSON handler
+  test('basic authentication', () => {
     expectValid(buildConfig([baseProxy({
       basic_auth: { enabled: true, username: 'admin', hashed_password: BCRYPT_SECRET },
     })]));

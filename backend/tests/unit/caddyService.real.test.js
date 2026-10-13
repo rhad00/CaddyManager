@@ -153,7 +153,7 @@ describe('CaddyService', () => {
     expect(sub.routes[0].match[0].path).toEqual(['/api']);
   });
 
-  test('createRouteFromProxy includes basic_auth handler when enabled', () => {
+  test('createRouteFromProxy includes an http_basic authentication handler when enabled', () => {
     const proxy = {
       domains: ['auth.example.com'],
       upstream_url: 'http://u',
@@ -161,9 +161,8 @@ describe('CaddyService', () => {
     };
 
     const route = caddyService.createRouteFromProxy(proxy);
-    expect(route.handle.some(h => h.handler === 'basic_auth')).toBe(true);
-    const auth = route.handle.find(h => h.handler === 'basic_auth');
-    expect(auth.users).toHaveProperty('alice', 'hashed');
+    const auth = route.handle.find(h => h.handler === 'authentication');
+    expect(auth.providers.http_basic.accounts).toEqual([{ username: 'alice', password: 'hashed' }]);
   });
 
   test('createRouteFromProxy includes rate_limit handler when enabled', () => {
@@ -238,11 +237,11 @@ describe('CaddyService', () => {
     // Inspect the route that would have been created
     const route = caddyService.createRouteFromProxy(combinedProxy);
 
-    // Handler order: rate_limit, subroute (ip_filtering), basic_auth, encode (compression), subroute (path_routing)
+    // Handler order: rate_limit, subroute (ip_filtering), authentication, encode (compression), subroute (path_routing)
     const handlers = route.handle;
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
-    expect(handlers[2].handler).toBe('basic_auth');
+    expect(handlers[2].handler).toBe('authentication');
     // compression encode may appear before reverse_proxy/subroute
     expect(handlers.some(h => h.handler === 'encode')).toBe(true);
     // subroute must exist for path routing (there will be 2 subroutes: one for IP filtering, one for path routing)
@@ -287,10 +286,10 @@ describe('CaddyService', () => {
     const route = routes[routes.length - 1];
     const handlers = route.handle;
 
-    // Exact order expected: rate_limit, subroute (ip_filtering), basic_auth, encode, reverse_proxy
+    // Exact order expected: rate_limit, subroute (ip_filtering), authentication, encode, reverse_proxy
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
-    expect(handlers[2].handler).toBe('basic_auth');
+    expect(handlers[2].handler).toBe('authentication');
     expect(handlers[3].handler).toBe('encode');
     const rp = handlers[4];
     expect(rp.handler).toBe('reverse_proxy');

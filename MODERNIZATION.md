@@ -28,12 +28,13 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.4 | Node 20 (EOL) → Node 24 LTS | done |
 | 0.5 | Caddy config contract test (`caddy validate`) | done |
 | 0.6 | Upstream URL copied verbatim into Caddy `dial` | done |
-| 0.7 | Basic auth: invalid handler + plaintext password | pending |
-| 0.8 | Active health checks rejected by Caddy | pending |
-| 0.9 | "weighted" load balancing policy | pending |
-| 0.10 | Certificate service calls non-existent Caddy admin endpoints | pending |
-| 0.11 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
-| 0.12 | Access log file not shared between Caddy and backend | pending |
+| 0.7 | Basic auth: invalid handler + plaintext password | done |
+| 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | pending |
+| 0.9 | Active health checks rejected by Caddy | pending |
+| 0.10 | "weighted" load balancing policy | pending |
+| 0.11 | Certificate service calls non-existent Caddy admin endpoints | pending |
+| 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
+| 0.13 | Access log file not shared between Caddy and backend | pending |
 
 ## Changes
 
@@ -137,3 +138,40 @@ so `git log --grep "(0.5)"` finds the change for any entry.
   `test.failing` to `test`, plus a new case for URL-form load-balancing and path-routing
   upstreams with https.
 - Verification: backend 155 passed; contract suite 19/19 against the project image.
+
+### 0.7 Basic auth: invalid handler + plaintext password
+
+- Problems:
+  - `createRouteFromProxy` emitted `handler: "basic_auth"`, which only exists as a Caddyfile
+    directive. Caddy rejected the whole config (`unknown module`), so enabling basic auth
+    on one proxy broke config loads for every proxy.
+  - The UI sends `basic_auth.password`; the API stored it as-is (plaintext in the
+    database, returned by every GET) and never produced the `hashed_password` the route
+    builder read.
+- New `backend/src/utils/basicAuth.js`:
+  - `prepareBasicAuth(input, existing)` validates the username (RFC 7617: no colon; 1-64
+    printable characters, no spaces) and the password (8-72 bytes, the bcrypt limit).
+    It bcrypt-hashes a new password (12 rounds), keeps the stored hash when no password is
+    sent (edit form), hashes a legacy plaintext value if one is found, and rejects
+    enabling without a password. bcrypt is loaded lazily, because `caddyService` unit
+    tests mock `fs` and that breaks native module resolution.
+  - `toCaddyAuthHandler()` emits `{ handler: "authentication", providers: { http_basic:
+    { accounts: [...] } } }`. If enabled without a hash it fails closed for that route
+    (static 401) instead of aborting the whole rebuild or exposing the upstream.
+  - `redactBasicAuth()` replaces the hash with `has_password: true`.
+- Proxies API: create/update run `prepareBasicAuth` (400 on invalid input); list, get,
+  create and update responses go through `serializeProxy`, so no hash or password is
+  ever returned. Git exports and backups still contain the bcrypt hash, so restores and
+  GitOps keep working.
+- Migration `20261013-hash-basic-auth-passwords.js` hashes existing plaintext passwords
+  on startup and removes them.
+- Runtime check (live `caddy:2.10.2` with the generated handler and a raw bcrypt hash):
+  no credentials → 401, wrong password → 401, correct password → 200.
+- Tests: `tests/unit/basicAuth.test.js` (17), `tests/integration/basicAuth.proxies.test.js`
+  (5: hashing on create, hash kept on update, 400 without password, no hash in GET,
+  migration). Contract case flipped to `test`. `caddyService.real.test.js` assertions that
+  encoded the invalid handler now expect `authentication`.
+- Verification: backend 177 passed (unit 111, integration 63); contract 19/19.
+- Renumbering: a background security review after 0.6 led to finding SSRF guard bypasses
+  that already existed before this work. They are now item 0.8, and the following items
+  shifted by one.

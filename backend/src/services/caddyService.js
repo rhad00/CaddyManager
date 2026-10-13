@@ -5,6 +5,7 @@ const tls = require('tls');
 const { sequelize, Proxy, Header, Middleware } = require('../models');
 const { Op } = require('sequelize');
 const { parseUpstream } = require('../utils/upstream');
+const { toCaddyAuthHandler } = require('../utils/basicAuth');
 require('dotenv').config();
 
 /**
@@ -436,13 +437,9 @@ class CaddyService {
     }
 
     // Add basic authentication if enabled
-    if (proxy.basic_auth && proxy.basic_auth.enabled) {
-      handlers.push({
-        handler: "basic_auth",
-        users: {
-          [proxy.basic_auth.username]: proxy.basic_auth.hashed_password
-        }
-      });
+    const authHandler = toCaddyAuthHandler(proxy.basic_auth);
+    if (authHandler) {
+      handlers.push(authHandler);
     }
 
 

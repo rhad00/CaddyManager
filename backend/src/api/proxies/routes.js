@@ -9,6 +9,18 @@ const { logAction } = require('../../services/auditService');
 const gitService = require('../../services/gitService');
 const { GitRepository } = require('../../models');
 const { parseUpstream, upstreamHostname } = require('../../utils/upstream');
+const { prepareBasicAuth, redactBasicAuth } = require('../../utils/basicAuth');
+
+/**
+ * Proxy as returned by the API: basic auth hash is never exposed.
+ * @param {Object} proxy - Sequelize instance or plain object
+ * @returns {Object}
+ */
+const serializeProxy = (proxy) => {
+  if (!proxy) return proxy;
+  const data = typeof proxy.toJSON === 'function' ? proxy.toJSON() : { ...proxy };
+  return { ...data, basic_auth: redactBasicAuth(data.basic_auth) };
+};
 const router = express.Router();
 
 const PROXY_ALLOWED_FIELDS = [
@@ -385,7 +397,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        proxies,
+        proxies: proxies.map(serializeProxy),
         pagination: {
           total: count,
           page: pageNum,
@@ -406,7 +418,7 @@ router.get('/', authMiddleware, async (req, res) => {
     
     res.status(200).json({
       success: true,
-      proxies
+      proxies: proxies.map(serializeProxy)
     });
   } catch (error) {
     console.error('Get proxies error:', error);
@@ -440,7 +452,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     
     res.status(200).json({
       success: true,
-      proxy
+      proxy: serializeProxy(proxy)
     });
   } catch (error) {
     console.error('Get proxy error:', error);
@@ -535,6 +547,15 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       }
     }
 
+    // Hash basic auth password; plaintext never reaches the database
+    try {
+      const basicAuth = await prepareBasicAuth(req.body.basic_auth, null);
+      if (basicAuth !== undefined) createData.basic_auth = basicAuth;
+    } catch (validationError) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validationError.message });
+    }
+
     // Create the proxy in the database
     const proxy = await Proxy.create(createData, { transaction });
     
@@ -616,7 +637,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
     res.status(201).json({
       success: true,
       message: 'Proxy created successfully',
-      proxy: reloadedProxy,
+      proxy: serializeProxy(reloadedProxy),
       caddy: caddyResult,
       tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
@@ -673,6 +694,15 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
         updateData[field] = req.body[field];
       }
+    }
+
+    // Hash a new basic auth password, or keep the stored hash when none is sent
+    try {
+      const basicAuth = await prepareBasicAuth(req.body.basic_auth, proxy.basic_auth);
+      if (basicAuth !== undefined) updateData.basic_auth = basicAuth;
+    } catch (validationError) {
+      await transaction.rollback();
+      return res.status(400).json({ success: false, message: validationError.message });
     }
     // Update the proxy
     await proxy.update(updateData, { transaction });
@@ -771,7 +801,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
     res.status(200).json({
       success: true,
       message: 'Proxy updated successfully',
-      proxy: reloadedProxy,
+      proxy: serializeProxy(reloadedProxy),
       caddy: caddyResult,
       tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
     });
