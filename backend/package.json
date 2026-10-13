@@ -11,7 +11,7 @@
     "test:unit": "jest --config jest.unit.config.js",
     "test:integration": "jest --config jest.integration.config.js",
     "test:smoke": "jest tests/integration/allFeatures.smoke.test.js tests/integration/routeModules.smoke.test.js",
-    "test:regression": "jest tests/integration/keys.routes.regression.test.js tests/integration/proxies.routes.real.test.js tests/unit/caddyService.policyDedup.test.js",
+    "test:regression": "jest tests/integration/keys.routes.regression.test.js tests/integration/proxies.routes.real.test.js tests/unit/cloudflarePolicy.test.js",
     "test:coverage": "jest --coverage --coverageReporters=text-summary --coverageReporters=json-summary",
     "test:watch": "jest --watch",
     "audit:check": "npm audit --audit-level=high",

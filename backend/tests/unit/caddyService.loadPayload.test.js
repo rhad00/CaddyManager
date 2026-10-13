@@ -32,9 +32,10 @@ describe('CaddyService /load payload includes Cloudflare policy', () => {
     // axios.post for load should capture the payload
     axios.post.mockResolvedValue({});
 
-    // Create proxies in DB
-    const p1 = { id: 'p1', domains: ['site.example.com'], upstream_url: 'http://u1', headers: [], update: jest.fn() };
-    Proxy.findAll.mockResolvedValue([p1]);
+    // Create proxies in DB: one Cloudflare DNS-01 proxy, one plain ACME proxy
+    const p1 = { id: 'p1', domains: ['site.example.com'], upstream_url: 'http://u1', ssl_type: 'cloudflare', headers: [], update: jest.fn() };
+    const p2 = { id: 'p2', domains: ['plain.example.com'], upstream_url: 'http://u2', ssl_type: 'acme', headers: [], update: jest.fn() };
+    Proxy.findAll.mockResolvedValue([p1, p2]);
 
     await caddyService.rebuildConfigFromDatabase();
 
@@ -54,5 +55,8 @@ describe('CaddyService /load payload includes Cloudflare policy', () => {
     const issuer = policy.issuers[0];
     expect(issuer.challenges.dns.provider.name).toBe('cloudflare');
     expect(issuer.challenges.dns.provider.api_token).toBe('{env.CF_API_TOKEN}');
+
+    // Regression for MODERNIZATION.md 0.14: plain ACME domains must not move to DNS-01
+    expect(policy.subjects).toEqual(['site.example.com']);
   });
 });

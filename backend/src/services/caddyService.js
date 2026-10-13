@@ -59,79 +59,60 @@ class CaddyService {
   }
 
   /**
-   * Ensure Cloudflare DNS ACME automation policy exists in the Caddy config
-   * This will add a TLS automation policy using the Cloudflare DNS provider
-   * and reference the token via the environment variable placeholder so the
-   * Caddy process can read it at runtime.
-   * @param {Object} config - The Caddy JSON config to modify
-   * @param {string[]} domains - The domains this policy should cover
-   * @param {boolean} force - Whether to add the policy even if CF_API_TOKEN is not detected in backend env
+   * Make the Cloudflare DNS-01 automation policy cover exactly `domains`.
+   * One policy is kept for all Cloudflare proxies; it is removed when none remain.
+   * Other automation policies are left untouched. The token is resolved by Caddy from
+   * its own environment ({env.CF_API_TOKEN}), so the backend does not need it.
+   * @param {Object} config - Caddy JSON config (modified in place and returned)
+   * @param {string[]} domains - domains of all active Cloudflare proxies
+   * @returns {Object} config
    */
-  ensureCloudflarePolicy(config, domains = [], force = false) {
-    try {
-      const tokenPresent = !!process.env.CF_API_TOKEN;
-      console.log(`[CaddyService] ensureCloudflarePolicy: Token present? ${tokenPresent}, Force? ${force}`);
+  setCloudflarePolicy(config, domains) {
+    const subjects = [...new Set(domains)].sort();
+    const isCloudflarePolicy = (policy) =>
+      Array.isArray(policy.issuers) &&
+      policy.issuers.some(iss => iss.challenges?.dns?.provider?.name === 'cloudflare');
 
-      if (!tokenPresent && !force) {
-        console.log('[CaddyService] ensureCloudflarePolicy: Skipping policy addition because CF_API_TOKEN is missing and force is false');
-        return config;
+    const existing = config.apps?.tls?.automation?.policies || [];
+    const others = existing.filter(policy => !isCloudflarePolicy(policy));
+
+    if (subjects.length === 0) {
+      if (config.apps?.tls?.automation?.policies) {
+        config.apps.tls.automation.policies = others;
       }
-
-      config.apps = config.apps || {};
-      config.apps.tls = config.apps.tls || {};
-      config.apps.tls.automation = config.apps.tls.automation || {};
-      config.apps.tls.automation.policies = config.apps.tls.automation.policies || [];
-
-      const newSubjects = Array.isArray(domains) ? [...domains] : [domains];
-
-      // Find the canonical Cloudflare ACME policy — identified by the
-      // presence of a Cloudflare DNS challenge issuer.  We maintain ONE such
-      // policy and merge domains into it rather than accumulating N policies.
-      const policies = config.apps.tls.automation.policies;
-      const existingPolicyIdx = policies.findIndex(p =>
-        Array.isArray(p.issuers) &&
-        p.issuers.some(
-          iss => iss.challenges &&
-                 iss.challenges.dns &&
-                 iss.challenges.dns.provider &&
-                 iss.challenges.dns.provider.name === 'cloudflare'
-        )
-      );
-
-      if (existingPolicyIdx !== -1) {
-        // Merge new domains into the existing policy's subjects array.
-        const existingPolicy = policies[existingPolicyIdx];
-        const existingSubjects = Array.isArray(existingPolicy.subjects)
-          ? existingPolicy.subjects
-          : [];
-        const merged = Array.from(new Set([...existingSubjects, ...newSubjects]));
-        existingPolicy.subjects = merged;
-        console.log('[CaddyService] Merged Cloudflare DNS policy subjects:', merged.join(','));
-      } else {
-        // Create the first (and only) Cloudflare ACME policy.
-        const policy = {
-          subjects: newSubjects,
-          issuers: [{
-            module: 'acme',
-            challenges: {
-              dns: {
-                provider: {
-                  name: 'cloudflare',
-                  api_token: '{env.CF_API_TOKEN}'
-                }
-              }
-            }
-          }]
-        };
-        policies.push(policy);
-        console.log('[CaddyService] Added Cloudflare DNS automation policy for domains:', newSubjects.join(','));
-      }
-
-      return config;
-    } catch (err) {
-      console.error('Failed to ensure Cloudflare policy on config:', err.message);
       return config;
     }
+
+    config.apps = config.apps || {};
+    config.apps.tls = config.apps.tls || {};
+    config.apps.tls.automation = config.apps.tls.automation || {};
+    config.apps.tls.automation.policies = [
+      ...others,
+      {
+        subjects,
+        issuers: [{
+          module: 'acme',
+          challenges: {
+            dns: {
+              provider: {
+                name: 'cloudflare',
+                api_token: '{env.CF_API_TOKEN}'
+              }
+            }
+          }
+        }]
+      }
+    ];
+    return config;
+  }
+
+  /**
+   * Domains of all active proxies that use the Cloudflare DNS-01 challenge
+   * @returns {Promise<string[]>}
+   */
+  async cloudflareDomains() {
+    const proxies = await Proxy.findAll({ where: { ssl_type: 'cloudflare', status: 'active' } });
+    return proxies.flatMap(p => (Array.isArray(p.domains) ? p.domains : [p.domains]));
   }
 
   /**
@@ -296,11 +277,12 @@ class CaddyService {
         });
       }
 
-      // Load the updated configuration
-      // Ensure Cloudflare automation policy exists for any ACME/cloudflare proxies
-      const allDomains = proxies.flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains]);
-      const hasCloudflareProxy = proxies.some(p => p.ssl_type === 'cloudflare');
-      this.ensureCloudflarePolicy(currentConfig, allDomains, hasCloudflareProxy);
+      // DNS-01 only for the domains of active Cloudflare proxies; plain ACME proxies keep
+      // Caddy's default HTTP/TLS-ALPN challenges
+      const cloudflareDomains = uniqueProxies
+        .filter(p => p.ssl_type === 'cloudflare')
+        .flatMap(p => Array.isArray(p.domains) ? p.domains : [p.domains]);
+      this.setCloudflarePolicy(currentConfig, cloudflareDomains);
       this.ensureAccessLogging(currentConfig);
       await this.loadConfig(currentConfig);
 
@@ -747,11 +729,12 @@ class CaddyService {
         if (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') {
           const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
           try {
-            // Ensure the Cloudflare policy is present on current config before verifying
-            const config = await this.getConfig();
-            const force = proxy.ssl_type === 'cloudflare';
-            this.ensureCloudflarePolicy(config, domains, force);
-            await this.loadConfig(config);
+            // Cover this proxy with the DNS-01 policy before verifying
+            if (proxy.ssl_type === 'cloudflare') {
+              const config = await this.getConfig();
+              this.setCloudflarePolicy(config, await this.cloudflareDomains());
+              await this.loadConfig(config);
+            }
           } catch (err) {
             console.error('Failed to ensure Cloudflare policy before TLS verification:', err.message);
           }
@@ -811,11 +794,8 @@ class CaddyService {
       // Create and apply the updated route
       const route = this.createRouteFromProxy(proxy);
       serverConfig.routes[proxy.caddy_route_index] = route;
-      // Ensure Cloudflare policy for this proxy's domains if needed
-      if (proxy.ssl_type === 'cloudflare' || proxy.ssl_type === 'acme') {
-        const force = proxy.ssl_type === 'cloudflare';
-        this.ensureCloudflarePolicy(config, Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains], force);
-      }
+      // Recompute the DNS-01 policy: this proxy may have joined, left or changed domains
+      this.setCloudflarePolicy(config, await this.cloudflareDomains());
       await this.loadConfig(config);
 
       // Backup the configuration
@@ -897,6 +877,17 @@ class CaddyService {
 
       // Always delete the proxy from the database
       await proxy.destroy();
+
+      // Drop its domains from the DNS-01 policy
+      if (proxy.ssl_type === 'cloudflare') {
+        try {
+          const config = await this.getConfig();
+          this.setCloudflarePolicy(config, await this.cloudflareDomains());
+          await this.loadConfig(config);
+        } catch (error) {
+          console.error('Failed to update Cloudflare policy after delete:', error.message);
+        }
+      }
 
       return {
         success: true,

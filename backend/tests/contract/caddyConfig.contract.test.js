@@ -54,7 +54,7 @@ function buildConfig(proxies, { cloudflare = false } = {}) {
   caddyService.ensureAccessLogging(config);
   if (cloudflare) {
     const domains = proxies.flatMap((p) => p.domains);
-    caddyService.ensureCloudflarePolicy(config, domains, true);
+    caddyService.setCloudflarePolicy(config, domains);
   }
   return config;
 }

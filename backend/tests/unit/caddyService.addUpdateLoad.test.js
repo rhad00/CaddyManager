@@ -34,6 +34,7 @@ describe('CaddyService add/update load payload assertions', () => {
     caddyService.verifyTlsForDomains = jest.fn().mockResolvedValue({ ok: true, results: [] });
 
     const proxy = { domains: ['add.example.com'], upstream_url: 'http://u', ssl_type: 'cloudflare', update: jest.fn().mockResolvedValue(true) };
+    Proxy.findAll.mockResolvedValue([proxy]); // DB state: the proxy is a Cloudflare proxy
     const res = await caddyService.addProxy(proxy);
     expect(res.success).toBe(true);
 
@@ -55,6 +56,7 @@ describe('CaddyService add/update load payload assertions', () => {
     caddyService.verifyTlsForDomains = jest.fn().mockResolvedValue({ ok: true, results: [] });
 
     const proxy = { id: 'p', caddy_route_index: 1, domains: ['update-load.example.com'], upstream_url: 'http://u', ssl_type: 'cloudflare', update: jest.fn().mockResolvedValue(true) };
+    Proxy.findAll.mockResolvedValue([proxy]);
     const res = await caddyService.updateProxy(proxy);
     expect(res).toHaveProperty('success');
 
