@@ -1,4 +1,3 @@
-const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -24,7 +23,6 @@ require('dotenv').config();
  */
 class CertificateService {
   constructor() {
-    this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.tempDir = process.env.TEMP_DIR || path.join(__dirname, '../../temp');
 
     // Fire-and-forget async initialization to avoid blocking the event loop.
@@ -374,315 +372,72 @@ class CertificateService {
   }
   
   /**
-   * Add a certificate authority
+   * Add a certificate authority.
+   * Caddy's admin API has no ACME-account or trust-store endpoints, so CAs are stored
+   * as records only; they are not yet applied to Caddy issuance or upstream TLS trust
+   * (see MODERNIZATION.md 0.11e).
    * @param {string} name - CA name
-   * @param {string} type - CA type (acme or custom)
-   * @param {string} certificatePath - Path to CA certificate file (for custom CAs)
-   * @param {string} url - ACME directory URL (for ACME CAs)
-   * @param {string} email - Email for ACME account
-   * @param {boolean} trusted - Whether the CA is trusted
+   * @param {string} type - 'acme' or 'custom'
+   * @param {string|null} certificatePath - CA certificate file (custom CAs)
+   * @param {string|null} url - ACME directory URL (ACME CAs)
+   * @param {string|null} email - Contact email for ACME CAs
+   * @param {boolean} trusted - Whether the CA is marked trusted
    * @returns {Promise<Object>} The created CA
    */
   async addCertificateAuthority(name, type, certificatePath, url, email, trusted) {
-    const transaction = await sequelize.transaction();
-    try {
-      let certificatePem = null;
-      let acmeAccountId = null;
-      
-      if (type === 'custom') {
-        // Read CA certificate file
-        certificatePem = await fs.readFile(certificatePath, 'utf8');
-      } else if (type === 'acme') {
-        // Register ACME account with Caddy before writing to DB so that a
-        // Caddy failure rolls back cleanly without leaving an orphan DB row.
-        if (url && email) {
-          acmeAccountId = await this.registerACMEAccount(url, email);
-        }
-      }
-      
-      // Create CA in database within the transaction (not yet committed).
-      const ca = await CertificateAuthority.create({
-        name,
-        type,
-        url,
-        email,
-        certificate_pem: certificatePem,
-        trusted,
-        acme_account_id: acmeAccountId
-      }, { transaction });
+    if (!['acme', 'custom'].includes(type)) {
+      throw new CertificateError('type must be "acme" or "custom"');
+    }
 
-      // Push to Caddy's trust store.  If this fails, roll back the DB row.
-      if (type === 'custom' && trusted) {
-        await this.trustCACertificate(certificatePem);
+    let certificatePem = null;
+    if (type === 'custom') {
+      if (!certificatePath) throw new CertificateError('A CA certificate file is required for custom CAs');
+      certificatePem = await fs.readFile(certificatePath, 'utf8');
+      parsePemCertificate(certificatePem);
+    } else {
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new CertificateError('A valid ACME directory URL is required for ACME CAs');
       }
-
-      await transaction.commit();
-      return ca;
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Failed to add certificate authority:', error);
-      throw new Error(`Failed to add certificate authority: ${error.message}`);
-    } finally {
-      // Clean up temporary files
-      if (certificatePath) {
-        try {
-          await fs.unlink(certificatePath);
-        } catch (cleanupErr) {
-          console.error('Failed to clean up temporary files:', cleanupErr);
-        }
+      if (parsed.protocol !== 'https:') {
+        throw new CertificateError('ACME directory URL must use https');
       }
     }
+
+    return CertificateAuthority.create({
+      name,
+      type,
+      url: type === 'acme' ? url : null,
+      email: email || null,
+      certificate_pem: certificatePem,
+      trusted: Boolean(trusted),
+      acme_account_id: null
+    });
   }
-  
+
   /**
-   * Delete a certificate authority
+   * Delete a certificate authority record
    * @param {Object} ca - Certificate authority object
    * @returns {Promise<Object>} Result of the operation
    */
   async deleteCertificateAuthority(ca) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Perform Caddy-side cleanup before committing the DB deletion.
-      // If either Caddy operation fails, the DB row is rolled back so the
-      // admin can retry; Caddy state may be partially changed but the row
-      // will still reflect reality.
-
-      // If CA is ACME and has an account ID, delete the account
-      if (ca.type === 'acme' && ca.acme_account_id) {
-        try {
-          await this.deleteACMEAccount(ca.acme_account_id);
-        } catch (error) {
-          console.error('Failed to delete ACME account:', error);
-          // Continue — ACME accounts may already be gone on Caddy side
-        }
-      }
-      
-      // If CA is custom and trusted, remove from trust store
-      if (ca.type === 'custom' && ca.trusted && ca.certificate_pem) {
-        await this.untrustCACertificate(ca.certificate_pem);
-      }
-      
-      // Delete CA from database within transaction
-      await ca.destroy({ transaction });
-      await transaction.commit();
-      
-      return {
-        success: true,
-        message: 'Certificate authority deleted successfully'
-      };
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Failed to delete certificate authority:', error);
-      throw new Error(`Failed to delete certificate authority: ${error.message}`);
-    }
+    await ca.destroy();
+    return { success: true, message: 'Certificate authority deleted successfully' };
   }
-  
+
   /**
-   * Update CA trust status
+   * Update the trusted flag of a CA record
    * @param {Object} ca - Certificate authority object
    * @param {boolean} trusted - New trust status
    * @returns {Promise<Object>} The updated CA
    */
   async updateCATrustStatus(ca, trusted) {
-    const transaction = await sequelize.transaction();
-    try {
-      if (ca.type === 'custom' && ca.certificate_pem) {
-        if (trusted && !ca.trusted) {
-          // Add to trust store — if this fails, DB is rolled back
-          await this.trustCACertificate(ca.certificate_pem);
-        } else if (!trusted && ca.trusted) {
-          // Remove from trust store — if this fails, DB is rolled back
-          await this.untrustCACertificate(ca.certificate_pem);
-        }
-      }
-      
-      // Update CA in database within transaction
-      await ca.update({ trusted }, { transaction });
-      await transaction.commit();
-      
-      return ca;
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Failed to update CA trust status:', error);
-      throw new Error(`Failed to update CA trust status: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Get ACME accounts
-   * @returns {Promise<Array>} List of ACME accounts
-   */
-  async getACMEAccounts() {
-    try {
-      const response = await axios.get(`${this.apiUrl}/acme/accounts`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get ACME accounts:', error);
-      throw new Error(`Failed to get ACME accounts: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Add an ACME account
-   * @param {string} email - Email for ACME account
-   * @param {Object} ca - Certificate authority object
-   * @returns {Promise<Object>} Result of the operation
-   */
-  async addACMEAccount(email, ca) {
-    try {
-      if (!ca.url) {
-        throw new Error('CA URL is required for ACME accounts');
-      }
-      
-      // Register ACME account with Caddy
-      const acmeAccountId = await this.registerACMEAccount(ca.url, email);
-      
-      // Update CA with ACME account ID
-      await ca.update({
-        email,
-        acme_account_id: acmeAccountId
-      });
-      
-      return {
-        success: true,
-        message: 'ACME account added successfully',
-        acmeAccountId
-      };
-    } catch (error) {
-      console.error('Failed to add ACME account:', error);
-      throw new Error(`Failed to add ACME account: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Delete an ACME account
-   * @param {string} accountId - ACME account ID
-   * @returns {Promise<Object>} Result of the operation
-   */
-  async deleteACMEAccount(accountId) {
-    try {
-      await axios.delete(`${this.apiUrl}/acme/accounts/${accountId}`);
-      
-      // Update any CAs that use this account
-      await CertificateAuthority.update(
-        { acme_account_id: null },
-        { where: { acme_account_id: accountId } }
-      );
-      
-      return {
-        success: true,
-        message: 'ACME account deleted successfully'
-      };
-    } catch (error) {
-      console.error('Failed to delete ACME account:', error);
-      throw new Error(`Failed to delete ACME account: ${error.message}`);
-    }
+    await ca.update({ trusted: Boolean(trusted) });
+    return ca;
   }
 
-  /**
-   * Trust a CA certificate
-   * @param {string} certificatePem - PEM-encoded CA certificate
-   * @returns {Promise<Object>} Result of the operation
-   */
-  async trustCACertificate(certificatePem) {
-    try {
-      // Get current TLS config
-      const response = await axios.get(`${this.apiUrl}/config/apps/tls`);
-      const tlsConfig = response.data;
-      
-      // Ensure root_ca_pool exists
-      if (!tlsConfig.root_ca_pool) {
-        tlsConfig.root_ca_pool = [];
-      }
-      
-      // Add CA certificate to root_ca_pool if not already present
-      if (!tlsConfig.root_ca_pool.includes(certificatePem)) {
-        tlsConfig.root_ca_pool.push(certificatePem);
-      }
-      
-      // Update TLS config
-      await axios.patch(`${this.apiUrl}/config/apps/tls`, {
-        root_ca_pool: tlsConfig.root_ca_pool
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      return {
-        success: true,
-        message: 'CA certificate trusted successfully'
-      };
-    } catch (error) {
-      console.error('Failed to trust CA certificate:', error);
-      throw new Error(`Failed to trust CA certificate: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Untrust a CA certificate
-   * @param {string} certificatePem - PEM-encoded CA certificate
-   * @returns {Promise<Object>} Result of the operation
-   */
-  async untrustCACertificate(certificatePem) {
-    try {
-      // Get current TLS config
-      const response = await axios.get(`${this.apiUrl}/config/apps/tls`);
-      const tlsConfig = response.data;
-      
-      // Remove CA certificate from root_ca_pool if present
-      if (tlsConfig.root_ca_pool && tlsConfig.root_ca_pool.includes(certificatePem)) {
-        tlsConfig.root_ca_pool = tlsConfig.root_ca_pool.filter(cert => cert !== certificatePem);
-      }
-      
-      // Update TLS config
-      await axios.patch(`${this.apiUrl}/config/apps/tls`, {
-        root_ca_pool: tlsConfig.root_ca_pool
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      return {
-        success: true,
-        message: 'CA certificate untrusted successfully'
-      };
-    } catch (error) {
-      console.error('Failed to untrust CA certificate:', error);
-      throw new Error(`Failed to untrust CA certificate: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Register an ACME account
-   * @param {string} url - ACME directory URL
-   * @param {string} email - Email for ACME account
-   * @returns {Promise<string>} ACME account ID
-   */
-  async registerACMEAccount(url, email) {
-    try {
-      const payload = {
-        ca: url,
-        email: email
-      };
-      
-      const response = await axios.post(`${this.apiUrl}/acme/accounts`, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      // Extract account ID from response
-      const accountId = response.data.id;
-      
-      return accountId;
-    } catch (error) {
-      console.error('Failed to register ACME account:', error);
-      throw new Error(`Failed to register ACME account: ${error.message}`);
-    }
-  }
-  
   /**
    * Generate OpenSSL config for self-signed certificate
    * @param {Array} domains - List of domains

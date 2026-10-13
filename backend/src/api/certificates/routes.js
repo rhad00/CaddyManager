@@ -493,15 +493,8 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
   const uploadedFilePath = req.file?.path;
 
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'CA certificate file is required'
-      });
-    }
-    
     const { name, type, url, email, trusted } = req.body;
-    
+
     if (!name || !type) {
       return res.status(400).json({
         success: false,
@@ -509,16 +502,18 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
       });
     }
 
-    // Validate PEM format of CA certificate
-    const caValidation = validatePemFile(req.file.path, 'CERTIFICATE');
-    if (!caValidation.valid) {
-      return res.status(400).json({ success: false, message: caValidation.message });
+    // Only custom CAs carry a certificate file; ACME CAs are a directory URL + email
+    if (req.file) {
+      const caValidation = validatePemFile(req.file.path, 'CERTIFICATE');
+      if (!caValidation.valid) {
+        return res.status(400).json({ success: false, message: caValidation.message });
+      }
     }
 
     const result = await certificateService.addCertificateAuthority(
       name,
       type,
-      req.file.path,
+      req.file ? req.file.path : null,
       url,
       email,
       trusted === 'true'
@@ -531,7 +526,10 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
     });
   } catch (error) {
     console.error('Add CA error:', error);
-    res.status(500).json({ 
+    if (error instanceof CertificateError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({
       success: false, 
       message: 'Server error while adding certificate authority' 
     });
@@ -617,86 +615,16 @@ router.put('/cas/:id/trust', [authMiddleware, roleMiddleware('admin')], async (r
  * @desc List ACME accounts
  * @access Private (Admin only)
  */
-router.get('/acme/accounts', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
-  try {
-    const accounts = await certificateService.getACMEAccounts();
-    
-    res.status(200).json({
-      success: true,
-      accounts
-    });
-  } catch (error) {
-    console.error('Get ACME accounts error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error while retrieving ACME accounts' 
-    });
-  }
+// Caddy's admin API has no ACME account endpoints; ACME accounts are created by Caddy
+// itself from the issuer config. These routes previously proxied to non-existent
+// endpoints and always failed (see MODERNIZATION.md 0.11e).
+const acmeAccountsNotImplemented = (req, res) => res.status(501).json({
+  success: false,
+  message: 'ACME accounts are managed by Caddy automatically; this endpoint is not implemented'
 });
-
-/**
- * @route POST /api/certificates/acme/accounts
- * @desc Add an ACME account
- * @access Private (Admin only)
- */
-router.post('/acme/accounts', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
-  try {
-    const { email, caId } = req.body;
-    
-    if (!email || !caId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and CA ID are required'
-      });
-    }
-    
-    const ca = await CertificateAuthority.findByPk(caId);
-    
-    if (!ca) {
-      return res.status(404).json({
-        success: false,
-        message: 'Certificate authority not found'
-      });
-    }
-    
-    const result = await certificateService.addACMEAccount(email, ca);
-    
-    res.status(201).json({
-      success: true,
-      message: 'ACME account added successfully',
-      account: result
-    });
-  } catch (error) {
-    console.error('Add ACME account error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error while adding ACME account' 
-    });
-  }
-});
-
-/**
- * @route DELETE /api/certificates/acme/accounts/:id
- * @desc Remove an ACME account
- * @access Private (Admin only)
- */
-router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
-  try {
-    const result = await certificateService.deleteACMEAccount(req.params.id);
-    
-    res.status(200).json({
-      success: true,
-      message: 'ACME account removed successfully',
-      result
-    });
-  } catch (error) {
-    console.error('Delete ACME account error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error while removing ACME account' 
-    });
-  }
-});
+router.get('/acme/accounts', [authMiddleware, roleMiddleware('admin')], acmeAccountsNotImplemented);
+router.post('/acme/accounts', [authMiddleware, roleMiddleware('admin')], acmeAccountsNotImplemented);
+router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], acmeAccountsNotImplemented);
 
 /**
  * @swagger

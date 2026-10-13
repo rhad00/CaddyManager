@@ -36,7 +36,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | done |
 | 0.11c | Certificates: self-signed generation needs `openssl` in the image | done |
 | 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | done |
-| 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | pending |
+| 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | done |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | pending |
 | 0.13 | Access log file not shared between Caddy and backend | pending |
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | pending |
@@ -366,3 +366,46 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   with sync (upsert, revoke, failures reported, wildcards skipped, no axios), exact domain
   lookup, and renew for all three types.
 - Verification: backend 258 passed.
+
+### 0.11e Certificates: ACME CAs and CA trust without fake endpoints
+
+- Problems:
+  - Adding an ACME CA called `POST /acme/accounts`, which does not exist, so it always
+    failed.
+  - `POST /cas` also required a certificate file, which the UI never sends for ACME CAs.
+  - Trusting a custom CA patched `root_ca_pool` into Caddy's TLS app. That field does
+    not exist, so Caddy rejected it (and a missing TLS app caused a TypeError).
+  - The `/certificates/acme/accounts` routes proxied to non-existent endpoints.
+- Changes:
+  - CAs are stored as database records only. Type must be `acme` or `custom`. ACME CAs
+    need an `https` directory URL. Custom CAs need a parseable PEM file, and the file is
+    only required for custom CAs. Trust toggling and delete are database-only.
+    `CertificateError` → 400.
+  - The ACME account routes return 501 with an explanation, because Caddy creates ACME
+    accounts itself from issuer config.
+  - All fake admin-API helpers were removed (`registerACMEAccount`, `getACMEAccounts`,
+    `addACMEAccount`, `deleteACMEAccount`, `trustCACertificate`, `untrustCACertificate`),
+    along with the unused axios import.
+- Known limitation and follow-up: CA records are not applied to Caddy yet.
+  - An ACME CA could become an `acme` issuer (`ca` and `email`) in the automation policy
+    for ACME proxies.
+  - Trusted custom CAs should be applied per proxy on the upstream TLS transport.
+    Applying them globally is not safe, because a custom root pool would replace the
+    system roots for public upstreams.
+- Verification: backend 258 passed.
+
+## Where this session stopped (usage limit)
+
+Done: 0.1–0.10 and 0.11a–e. Next up, in order:
+
+1. 0.12 `ssl_type` enum lacks `cloudflare` (Postgres migration).
+2. 0.13 Shared access-log volume in docker-compose.
+3. 0.14 Cloudflare policy scope.
+4. 0.15 Proxy create/update DB-before-Caddy ordering.
+5. 0.16 Validate upstreams for GitOps, restore and discovery imports.
+6. Remaining-fix tier from the review: alerts (stubs, stale `tls_status`, schedule
+   `syncCertificates`), API-key scopes and owner status, Git rollback and token in
+   `.git/config`, discovery labels, cluster-mode schedulers, CI test gaps, README
+   cleanup, and major upgrades (`simple-git` 4, `sqlite3` 6, `nodemailer` 10,
+   `dockerode` 5).
+7. TypeScript phases 1–5.
