@@ -538,7 +538,7 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
-| `CADDY_ACCESS_LOG` | `/app/logs/access.log` | Path to Caddy structured JSON access log file | No |
+| `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
 
 #### Docker Auto-Discovery Configuration
@@ -1319,7 +1319,7 @@ View and search Caddy's structured access logs directly from the Dashboard.
 
 #### Setup
 
-Caddy access logging is configured automatically when CaddyManager initializes. Logs are written to `CADDY_ACCESS_LOG` (default: `/app/logs/access.log`) in JSON format.
+Caddy access logging is configured automatically when CaddyManager initializes. Logs are written to `CADDY_ACCESS_LOG` in JSON format. The compose files set it to `/var/log/caddy/access.log` on the `caddy_access_logs` volume, mounted read-write in Caddy and read-only in the backend.
 
 #### Features
 

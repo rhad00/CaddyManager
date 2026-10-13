@@ -12,6 +12,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_access_logs:/var/log/caddy
     environment:
       - CF_API_TOKEN=${CF_API_TOKEN}
     logging:
@@ -68,6 +69,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_URL=postgresql://${DB_USER:-caddyuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-caddymanager}
       - CADDY_API_URL=http://caddy:2019
+      - CADDY_ACCESS_LOG=/var/log/caddy/access.log
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
@@ -78,6 +80,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - backend_logs:/app/logs
+      - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
     logging:
@@ -127,6 +130,7 @@ networks:
     driver: bridge
 
 volumes:
+  caddy_access_logs:
   caddy_data:
     name: caddymanager_prod_caddy_data
   caddy_config:

@@ -38,10 +38,11 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | done |
 | 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | done |
 | 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | done |
-| 0.13 | Access log file not shared between Caddy and backend | pending |
+| 0.13 | Access log never written, and not shared between Caddy and backend | done |
 | 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | pending |
 | 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | pending |
 | 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | pending |
+| 0.17 | Dev/prod compose files mount a non-existent `./Caddyfile` | pending |
 
 ## Changes
 
@@ -413,6 +414,32 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   is harmless.
 - Tests: two cases added to `tests/integration/basicAuth.proxies.test.js` (create a
   Cloudflare proxy; reject an unknown type). Backend 260 passed.
+
+### 0.13 Access log never written, and not shared between Caddy and backend
+
+- Problems, found by running the real setup:
+  1. The logging config included `http.log.access.srv0`, but the server logs as
+     `http.log.access.access` (from `default_logger_name: "access"`). No access-log entry
+     was ever written, even on a single host.
+  2. Caddy wrote the file inside the caddy container, where no volume is shared with the
+     backend, so the Access Log Viewer read a file that was never there.
+  3. Caddy creates log files with mode 0600 and the backend runs as `node`, so even a
+     shared file would have been unreadable.
+- Changes:
+  - `ensureAccessLogging` derives the include filter from the logger name and sets the
+    file writer `mode: "0644"`.
+  - All three compose files add a `caddy_access_logs` volume (read-write in Caddy,
+    read-only in the backend) at `/var/log/caddy`, and set
+    `CADDY_ACCESS_LOG=/var/log/caddy/access.log` for the backend. The backend writes that
+    path into the Caddy config and reads it back.
+  - README documents the shared-volume requirement.
+- Runtime check (two containers, one named volume): Caddy with the generated logging config
+  served a request, and the backend image, running as `node`, read the matching line
+  from the shared file (mode `-rw-r--r--`). Before the include fix the file stayed empty.
+- Tests: `tests/unit/accessLogging.test.js` (2); the contract suite validates the `mode`
+  field (21/21). `docker compose config` renders all three files. Backend 262 passed.
+- Found while here, logged as 0.17: the dev and prod compose files mount `./Caddyfile`,
+  which does not exist (the file is `caddy/Caddyfile`).
 
 ## Where this session stopped (usage limit)
 

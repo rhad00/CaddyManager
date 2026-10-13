@@ -142,9 +142,11 @@ class CaddyService {
     try {
       const logFile = process.env.CADDY_ACCESS_LOG || '/app/logs/access.log';
 
+      // The server emits access logs to `http.log.access.<default_logger_name>`
+      const loggerName = 'access';
       const serverConfig = this.ensureHttpServer(config);
       serverConfig.logs = {
-        default_logger_name: 'access'
+        default_logger_name: loggerName
       };
 
       // Add top-level logging configuration
@@ -154,9 +156,12 @@ class CaddyService {
         writer: {
           output: 'file',
           filename: logFile,
+          // Caddy creates log files 0600 by default; the backend reads this file as a
+          // different (non-root) user through a shared volume
+          mode: '0644',
         },
         encoder: { format: 'json' },
-        include: [`http.log.access.${this.serverName}`],
+        include: [`http.log.access.${loggerName}`],
       };
 
       return config;
