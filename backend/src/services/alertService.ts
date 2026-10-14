@@ -1,8 +1,11 @@
-const nodemailer = require('nodemailer');
-const { sendOutbound } = require('../utils/outboundRequest');
-const { channelProblem } = require('../utils/notificationChannels');
-const { hostTrafficSince, trafficForDomains } = require('./trafficStats');
-const { unreachableUpstreams } = require('../utils/upstreamProbe');
+import nodemailer from 'nodemailer';
+import { sendOutbound } from '../utils/outboundRequest';
+import { channelProblem } from '../utils/notificationChannels';
+import { hostTrafficSince, trafficForDomains, type TrafficSince } from './trafficStats';
+import { unreachableUpstreams } from '../utils/upstreamProbe';
+import type { AlertRule } from '../models/alertRule';
+import type { NotificationChannel } from '../models/notificationChannel';
+import type { Proxy, TlsStatus } from '../models/proxy';
 
 // error_rate looks at the last 15 minutes and needs enough requests to mean something
 const ERROR_RATE_WINDOW_MINUTES = 15;
@@ -11,36 +14,58 @@ const ERROR_RATE_MIN_REQUESTS = 20;
 const TLS_STATUS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const TLS_CHECK_TIMEOUT_MS = 10000;
 
-let AlertRule, NotificationChannel, Proxy;
+/** What a rule found, by condition type (see DETAIL_TEXT for how each is worded) */
+export type AlertDetails =
+  | { domain: string; expiresIn: string; validTo: string }
+  | { unreachable: string[] }
+  | { rate: string; errors: number; total: number; windowMinutes: number }
+  | { minutes: number };
+
+type Models = {
+  AlertRule: typeof AlertRule;
+  NotificationChannel: typeof NotificationChannel;
+  Proxy: typeof Proxy;
+};
+
+let models: Models | undefined;
 
 /**
  * Lazy-load models to avoid circular require issues at startup.
  */
-function getModels() {
-  if (!AlertRule) {
-    AlertRule = require('../models/alertRule').AlertRule;
-    NotificationChannel = require('../models/notificationChannel').NotificationChannel;
-    Proxy = require('../models/proxy').Proxy;
+function getModels(): Models {
+  if (!models) {
+    models = {
+      AlertRule: require('../models/alertRule').AlertRule,
+      NotificationChannel: require('../models/notificationChannel').NotificationChannel,
+      Proxy: require('../models/proxy').Proxy,
+    };
   }
-  return { AlertRule, NotificationChannel, Proxy };
+  return models;
 }
 
 // Track which proxies have active cert alerts in this process to avoid spam
 // Key: `${ruleId}::${proxyId}`, Value: ISO timestamp of last notification
-const notifiedAt = new Map();
+const notifiedAt = new Map<string, string>();
+
+export interface RunContext {
+  /** Traffic of the last `windowMinutes`; the access log is read at most once per window */
+  traffic(windowMinutes: number): Promise<TrafficSince>;
+}
 
 /**
  * Shared state for one evaluation run: the access log is read at most once per window.
  */
-function createRunContext() {
-  const trafficByWindow = new Map();
+export function createRunContext(): RunContext {
+  const trafficByWindow = new Map<number, Promise<TrafficSince>>();
   return {
     traffic(windowMinutes) {
-      if (!trafficByWindow.has(windowMinutes)) {
+      let traffic = trafficByWindow.get(windowMinutes);
+      if (!traffic) {
         const sinceTs = Date.now() / 1000 - windowMinutes * 60;
-        trafficByWindow.set(windowMinutes, hostTrafficSince(sinceTs));
+        traffic = hostTrafficSince(sinceTs);
+        trafficByWindow.set(windowMinutes, traffic);
       }
-      return trafficByWindow.get(windowMinutes);
+      return traffic;
     },
   };
 }
@@ -48,7 +73,7 @@ function createRunContext() {
 /**
  * Evaluate all enabled alert rules and dispatch notifications if conditions are met.
  */
-async function runAlertChecks() {
+export async function runAlertChecks(): Promise<void> {
   try {
     const { AlertRule: AR, NotificationChannel: NC, Proxy: P } = getModels();
 
@@ -85,23 +110,25 @@ async function runAlertChecks() {
       }
     }
   } catch (err) {
-    console.error('[AlertService] runAlertChecks error:', err.message);
+    console.error('[AlertService] runAlertChecks error:', err instanceof Error ? err.message : err);
   }
 }
 
-const proxyDomains = (proxy) => (Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]);
+const proxyDomains = (proxy: Pick<Proxy, 'domains'>): string[] => (
+  Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]
+);
 
 /**
  * TLS status is only written when a proxy is saved or rechecked by hand; refresh it when
  * it is older than TLS_STATUS_MAX_AGE_MS so expiry alerts do not judge months-old data.
  */
-async function freshTlsStatus(proxy) {
+async function freshTlsStatus(proxy: Proxy): Promise<TlsStatus> {
   const checkedAt = proxy.tls_checked_at ? new Date(proxy.tls_checked_at).getTime() : 0;
   if (proxy.tls_status && Date.now() - checkedAt < TLS_STATUS_MAX_AGE_MS) {
     return proxy.tls_status;
   }
   const caddyService = require('./caddyService');
-  const tlsStatus = await caddyService.verifyTlsForDomains(proxyDomains(proxy), TLS_CHECK_TIMEOUT_MS);
+  const tlsStatus: TlsStatus = await caddyService.verifyTlsForDomains(proxyDomains(proxy), TLS_CHECK_TIMEOUT_MS);
   await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
   return tlsStatus;
 }
@@ -110,11 +137,12 @@ async function freshTlsStatus(proxy) {
  * Check whether a specific rule condition is met for a proxy.
  * Returns a details object if triggered, null otherwise.
  * Thresholds: cert_expiry → days, error_rate → percent, no_traffic → minutes.
- * @param {Object} rule
- * @param {Object} proxy
- * @param {ReturnType<typeof createRunContext>} ctx
  */
-async function checkCondition(rule, proxy, ctx) {
+export async function checkCondition(
+  rule: Pick<AlertRule, 'condition_type' | 'threshold'>,
+  proxy: Proxy,
+  ctx: RunContext,
+): Promise<AlertDetails | null> {
   switch (rule.condition_type) {
     case 'cert_expiry': {
       if (proxy.ssl_type === 'none') return null;
@@ -163,9 +191,9 @@ async function checkCondition(rule, proxy, ctx) {
   }
 }
 
-function buildSubject(rule, proxy) {
+function buildSubject(rule: Pick<AlertRule, 'condition_type'>, proxy: Proxy): string {
   const domains = Array.isArray(proxy.domains) ? proxy.domains.join(', ') : proxy.domains;
-  const typeLabels = {
+  const typeLabels: Record<string, string> = {
     cert_expiry: 'Certificate Expiry Warning',
     upstream_down: 'Upstream Unreachable',
     error_rate: 'High Error Rate',
@@ -174,17 +202,19 @@ function buildSubject(rule, proxy) {
   return `[CaddyManager Alert] ${typeLabels[rule.condition_type] || rule.condition_type}: ${proxy.name} (${domains})`;
 }
 
-const DETAIL_TEXT = {
-  cert_expiry: (d) => `Domain "${d.domain}" certificate expires in ${d.expiresIn} days (${d.validTo}).`,
-  upstream_down: (d) => `Upstream(s) not accepting connections: ${d.unreachable.join(', ')}.`,
-  error_rate: (d) => `${d.rate}% of requests (${d.errors} of ${d.total}) returned a 5xx error in the last ${d.windowMinutes} minutes.`,
-  no_traffic: (d) => `No requests in the last ${d.minutes} minutes.`,
+// Each wording reads the details its own condition type produces (see checkCondition)
+const DETAIL_TEXT: Record<string, (details: never) => string> = {
+  cert_expiry: (d: Extract<AlertDetails, { domain: string }>) => `Domain "${d.domain}" certificate expires in ${d.expiresIn} days (${d.validTo}).`,
+  upstream_down: (d: Extract<AlertDetails, { unreachable: string[] }>) => `Upstream(s) not accepting connections: ${d.unreachable.join(', ')}.`,
+  error_rate: (d: Extract<AlertDetails, { rate: string }>) => `${d.rate}% of requests (${d.errors} of ${d.total}) returned a 5xx error in the last ${d.windowMinutes} minutes.`,
+  no_traffic: (d: Extract<AlertDetails, { minutes: number }>) => `No requests in the last ${d.minutes} minutes.`,
 };
 
-function buildBody(rule, proxy, details) {
+function buildBody(rule: Pick<AlertRule, 'condition_type' | 'name'>, proxy: Proxy, details: AlertDetails): string {
   const domains = Array.isArray(proxy.domains) ? proxy.domains.join(', ') : proxy.domains;
   const time = new Date().toUTCString();
-  const detail = DETAIL_TEXT[rule.condition_type] ? DETAIL_TEXT[rule.condition_type](details) : '';
+  const describe = DETAIL_TEXT[rule.condition_type];
+  const detail = describe ? describe(details as never) : '';
 
   return `CaddyManager Alert — ${time}\n\nRule: ${rule.name}\nProxy: ${proxy.name}\nDomains: ${domains}\n\n${detail}\n\nLog in to CaddyManager to investigate.`;
 }
@@ -192,7 +222,12 @@ function buildBody(rule, proxy, details) {
 /**
  * Dispatch notifications to all channels associated with a rule.
  */
-async function dispatchNotifications(rule, subject, body, NC) {
+async function dispatchNotifications(
+  rule: Pick<AlertRule, 'channel_ids'>,
+  subject: string,
+  body: string,
+  NC: typeof NotificationChannel,
+): Promise<void> {
   const channelIds = Array.isArray(rule.channel_ids) ? rule.channel_ids : [];
   if (channelIds.length === 0) return;
 
@@ -202,17 +237,32 @@ async function dispatchNotifications(rule, subject, body, NC) {
     try {
       await sendToChannel(channel, subject, body);
     } catch (err) {
-      console.error(`[AlertService] Failed to send to channel ${channel.id} (${channel.type}):`, err.message);
+      console.error(`[AlertService] Failed to send to channel ${channel.id} (${channel.type}):`, err instanceof Error ? err.message : err);
     }
   }
 }
 
-async function sendToChannel(channel, subject, body) {
+/** Channel settings, as validated by channelProblem (see utils/notificationChannels) */
+interface ChannelSettings {
+  from?: string;
+  to?: string;
+  webhook_url: string;
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+}
+
+export async function sendToChannel(
+  channel: Pick<NotificationChannel, 'id' | 'type' | 'config'>,
+  subject: string,
+  body: string,
+): Promise<void> {
   // Channels saved before validation existed are checked again before anything is sent
   const problem = channelProblem(channel.type, channel.config);
   if (problem) {
     throw new Error(`Channel ${channel.id} is not usable: ${problem}`);
   }
+  const config = channel.config as unknown as ChannelSettings;
 
   switch (channel.type) {
     case 'email': {
@@ -222,7 +272,7 @@ async function sendToChannel(channel, subject, body) {
       }
       const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
+        port: parseInt(process.env.SMTP_PORT ?? '', 10) || 587,
         secure: process.env.SMTP_SECURE === 'true',
         auth: process.env.SMTP_USER ? {
           user: process.env.SMTP_USER,
@@ -230,8 +280,8 @@ async function sendToChannel(channel, subject, body) {
         } : undefined,
       });
       await transporter.sendMail({
-        from: channel.config.from || process.env.SMTP_FROM || 'noreply@caddymanager.local',
-        to: channel.config.to,
+        from: config.from || process.env.SMTP_FROM || 'noreply@caddymanager.local',
+        to: config.to,
         subject,
         text: body,
       });
@@ -240,7 +290,7 @@ async function sendToChannel(channel, subject, body) {
 
     case 'slack': {
       await sendOutbound({
-        url: channel.config.webhook_url,
+        url: config.webhook_url,
         data: { text: `*${subject}*\n\`\`\`${body}\`\`\`` },
       });
       break;
@@ -248,7 +298,7 @@ async function sendToChannel(channel, subject, body) {
 
     case 'discord': {
       await sendOutbound({
-        url: channel.config.webhook_url,
+        url: config.webhook_url,
         data: {
           embeds: [{
             title: subject,
@@ -262,9 +312,9 @@ async function sendToChannel(channel, subject, body) {
 
     case 'webhook': {
       await sendOutbound({
-        method: (channel.config.method || 'POST').toUpperCase(),
-        url: channel.config.url,
-        headers: channel.config.headers || {},
+        method: (config.method || 'POST').toUpperCase(),
+        url: config.url,
+        headers: config.headers || {},
         data: { subject, body, timestamp: new Date().toISOString() },
       });
       break;
@@ -278,12 +328,10 @@ async function sendToChannel(channel, subject, body) {
 /**
  * Start scheduled alert checks every `intervalMinutes` minutes.
  */
-function startAlertScheduler(intervalMinutes = 15) {
+export function startAlertScheduler(intervalMinutes = 15): void {
   console.log(`[AlertService] Starting alert scheduler (every ${intervalMinutes} min)`);
   const ms = intervalMinutes * 60 * 1000;
   setInterval(runAlertChecks, ms);
   // Also run immediately on startup (after a short delay)
   setTimeout(runAlertChecks, 10000);
 }
-
-module.exports = { startAlertScheduler, runAlertChecks, sendToChannel, checkCondition, createRunContext };

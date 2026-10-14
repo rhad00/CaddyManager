@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.7 | Phase 3: `alertService` and `authService` to strict TypeScript (all function-style services done) | done |
 | 3.6 | Phase 3: function-style services (`auditService`, `emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`, `trafficStats`, `logService`) to strict TypeScript | done |
 | 3.5b | Review fix: `createdAt` / `updatedAt` stay NOT NULL in the class models, with a guard test | done |
 | 3.5 | Phase 3: `config/database` and `models/index` to strict TypeScript | done |
@@ -1671,9 +1672,27 @@ changed and follow one at a time.)
 - Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
   PostgreSQL suites and a `dist/` boot pass.
 
+### 3.7 alertService and authService
+
+The last two function-style services are strict `.ts` with named exports (callers and
+mocks unchanged).
+
+- `alertService`: `AlertDetails` is the union of what each condition type reports,
+  `RunContext` types `createRunContext`, and the channel settings are read through one
+  `ChannelSettings` interface after `channelProblem` has validated them. Models are still
+  loaded lazily (circular-require avoidance).
+- `Proxy.tls_status` is typed (`TlsStatus`, `TlsDomainResult`: the shape
+  `caddyService.verifyTlsForDomains` writes).
+- `authService`: `AuthResult` is one interface (`success`, optional `message`,
+  `require_2fa`, `totp_session`, `user`, `token`) because the auth route reads those
+  fields without narrowing; Phase 4 can turn it into a union when the routes are typed.
+  `verifyTotpSession` returns `null` (not `undefined`) for a token without a subject.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites and a `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the remaining function-style services (`alertService`, `authService`), then the class-instance services one at a time, with their callers and mocks (`templateService`, `migrationService`, `metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`templateService`, `migrationService`, `metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

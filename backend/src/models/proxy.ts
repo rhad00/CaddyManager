@@ -31,6 +31,24 @@ export interface HealthChecksConfig {
   max_fails?: number;
 }
 
+/** Result of a TLS handshake against one domain of a proxy */
+export interface TlsDomainResult {
+  domain: string;
+  ok: boolean;
+  error?: string;
+  certSubject?: unknown;
+  issuer?: string | null;
+  validFrom?: string;
+  validTo?: string;
+}
+
+/** Last TLS verification of a proxy (written by caddyService.verifyTlsForDomains) */
+export interface TlsStatus {
+  ok?: boolean;
+  error?: string;
+  results?: TlsDomainResult[];
+}
+
 export class Proxy extends Model<InferAttributes<Proxy>, InferCreationAttributes<Proxy>> {
   declare id: CreationOptional<string>;
   declare name: string;
@@ -52,7 +70,7 @@ export class Proxy extends Model<InferAttributes<Proxy>, InferCreationAttributes
   declare load_balancing: CreationOptional<LoadBalancingConfig | null>;
   declare health_checks: CreationOptional<HealthChecksConfig | null>;
   declare caddy_route_index: CreationOptional<number | null>;
-  declare tls_status: CreationOptional<Record<string, unknown> | null>;
+  declare tls_status: CreationOptional<TlsStatus | null>;
   declare tls_checked_at: CreationOptional<Date | null>;
   declare created_by: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
