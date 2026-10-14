@@ -32,7 +32,7 @@ jest.mock('../../src/services/gitService', () => ({ gitService: { commitConfigCh
 const { Proxy } = require('../../src/models/proxy');
 const { Header } = require('../../src/models/header');
 const { Middleware } = require('../../src/models/middleware');
-const proxiesRouter = require('../../src/api/proxies/routes');
+const { router: proxiesRouter } = require('../../src/api/proxies/routes');
 
 // Simple auth middleware bypass for tests
 jest.mock('../../src/middleware/auth', () => ({

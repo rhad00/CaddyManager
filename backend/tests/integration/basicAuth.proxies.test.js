@@ -24,7 +24,7 @@ const express = require('express');
 const request = require('supertest');
 const bcrypt = require('bcrypt');
 const { sequelize, Proxy } = require('../../src/models');
-const proxiesRouter = require('../../src/api/proxies/routes');
+const { router: proxiesRouter } = require('../../src/api/proxies/routes');
 const migration = require('../../src/migrations/20261013-hash-basic-auth-passwords');
 
 const app = express();

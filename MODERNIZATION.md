@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.12 | Phase 4: `proxies` routes to TypeScript; `errorMessage` helper | done |
 | 4.11 | Phase 4: `discovery` routes to TypeScript; list filters validated | done |
 | 4.10 | Phase 4: `templates` routes to TypeScript | done |
 | 4.9 | Phase 4: `alerts` routes to TypeScript | done |
@@ -1948,9 +1949,20 @@ Verification: typecheck (loose and strict), build, full suite (622 tests).
 
 Verification: typecheck (loose and strict), build, full suite (629 tests), PostgreSQL suites (20 suites, 170 tests).
 
+### 4.12 proxy routes, and the shared errorMessage helper
+
+`api/proxies/routes.ts` exports `router`; the three proxy route tests read `{ router }`.
+
+- `utils/errorMessage.ts` exports `errorMessage(error)`: an Error's message, a `{ message }` object's message, else the value as a string. The routes use it for every `catch` value. The services still carry their own copies of the one-line version, which turns a `{ message }` rejection that is not an Error into `[object Object]` (a note of the 3.12–3.14 review); they move to the shared helper in a later step. Tests: `tests/unit/errorMessage.test.js`.
+- `serializeProxy` takes a model instance or a plain object (the duck-typed `toJSON` check is kept); `startTransaction()` is the one place that reaches `Proxy.sequelize`.
+- A proxy just saved is reloaded with its headers and middlewares; if the reload finds nothing, the handler throws (it used to fail on the first property read) and the request ends in the same 500 path.
+- The body checks stay in `validateProxyInput`, which already holds the messages and whitelist, so no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (637 tests), PostgreSQL suites, a `dist/` boot.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.11 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.12 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

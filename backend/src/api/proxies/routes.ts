@@ -1,28 +1,38 @@
-const express = require('express');
-const { Proxy } = require('../../models/proxy');
-const { Header } = require('../../models/header');
-const { Middleware } = require('../../models/middleware');
-const { caddyService } = require('../../services/caddyService');
-const { discardProxy, restoreProxy, tryCompensation } = require('../../services/proxyCompensation');
-const securityHeadersService = require('../../services/securityHeadersService');
-const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
-const { logAction } = require('../../services/auditService');
-const { gitService } = require('../../services/gitService');
-const { GitRepository } = require('../../models');
-const { prepareBasicAuth, redactBasicAuth } = require('../../utils/basicAuth');
-const { PROXY_ALLOWED_FIELDS, validateProxyInput } = require('../../utils/proxyValidation');
+import express, { type Request, type Response } from 'express';
+import { Proxy } from '../../models/proxy';
+import { Header } from '../../models/header';
+import { Middleware } from '../../models/middleware';
+import { caddyService } from '../../services/caddyService';
+import { discardProxy, restoreProxy, tryCompensation } from '../../services/proxyCompensation';
+import * as securityHeadersService from '../../services/securityHeadersService';
+import { authMiddleware, roleMiddleware, requireApiKeyPermission } from '../../middleware/auth';
+import { logAction } from '../../services/auditService';
+import { currentUser } from '../../utils/requestUser';
+import { errorMessage } from '../../utils/errorMessage';
+import { gitService } from '../../services/gitService';
+import { GitRepository, User } from '../../models';
+import type { CreationAttributes, Sequelize, Transaction } from 'sequelize';
+import { prepareBasicAuth, redactBasicAuth, type BasicAuth } from '../../utils/basicAuth';
+import { PROXY_ALLOWED_FIELDS, validateProxyInput } from '../../utils/proxyValidation';
+
+type PlainProxy = { basic_auth?: BasicAuth | null; [field: string]: unknown };
 
 /**
  * Proxy as returned by the API: basic auth hash is never exposed.
- * @param {Object} proxy - Sequelize instance or plain object
- * @returns {Object}
+ * @param proxy - Sequelize instance or plain object
  */
-const serializeProxy = (proxy) => {
-  if (!proxy) return proxy;
-  const data = typeof proxy.toJSON === 'function' ? proxy.toJSON() : { ...proxy };
+const serializeProxy = (proxy: Proxy | PlainProxy | null | undefined): PlainProxy | null | undefined => {
+  if (!proxy) return proxy as null | undefined;
+  const data = (typeof (proxy as { toJSON?: unknown }).toJSON === 'function'
+    ? (proxy as Proxy).toJSON()
+    : { ...proxy }) as PlainProxy;
   return { ...data, basic_auth: redactBasicAuth(data.basic_auth) };
 };
-const router = express.Router();
+
+/** A transaction on the proxies' database */
+const startTransaction = (): Promise<Transaction> => (Proxy.sequelize as Sequelize).transaction();
+
+export const router = express.Router();
 
 
 /**
@@ -30,7 +40,7 @@ const router = express.Router();
  * @desc Re-run TLS verification for a proxy's domains (admin or owner)
  * @access Private
  */
-router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const proxy = await Proxy.findByPk(req.params.id);
 
@@ -50,7 +60,7 @@ router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async
     try {
       await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
     } catch (err) {
-      console.error('Failed to persist TLS status:', err.message);
+      console.error('Failed to persist TLS status:', errorMessage(err));
     }
 
     res.status(200).json({ success: true, tlsStatus });
@@ -94,7 +104,7 @@ router.post('/:id/recheck-tls', [authMiddleware, roleMiddleware('admin')], async
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { page, limit } = req.query;
 
@@ -154,7 +164,7 @@ router.get('/', authMiddleware, async (req, res) => {
  * @desc Get a proxy by ID
  * @access Private
  */
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const proxy = await Proxy.findByPk(/** @type {string} */ (req.params.id), {
       include: [
@@ -217,8 +227,8 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req, res) => {
-  const transaction = await Proxy.sequelize.transaction();
+router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req: Request, res: Response) => {
+  const transaction = await startTransaction();
   
   try {
     // Validate domains and upstream URL
@@ -229,12 +239,12 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
     }
 
     // Format domains consistently as arrays
-    const newDomains = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
+    const newDomains: string[] = Array.isArray(req.body.domains) ? req.body.domains : [req.body.domains];
 
     // Find all proxies and check for per-domain overlaps
     const existingProxies = await Proxy.findAll();
     const domainConflict = existingProxies.some(proxy => {
-      const domains = /** @type {string[]|string} */ (proxy.domains); // older rows may hold a single string
+      const domains = proxy.domains as string[] | string; // older rows may hold a single string
       const proxyDomains = Array.isArray(domains) ? domains : [domains];
       return newDomains.some(d => proxyDomains.includes(d));
     });
@@ -252,16 +262,15 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
     let creatorId = null;
     try {
       if (req.user && req.user.id) {
-        const { User } = require('../../models');
         const dbUser = await User.findByPk(req.user.id);
         if (dbUser) creatorId = dbUser.id;
       }
     } catch (err) {
-      console.error('Failed to resolve creating user:', err.message);
+      console.error('Failed to resolve creating user:', errorMessage(err));
     }
 
     // Build createData from whitelist to prevent mass assignment
-    const createData = { created_by: creatorId };
+    const createData: Record<string, unknown> = { created_by: creatorId };
     for (const field of PROXY_ALLOWED_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
         createData[field] = req.body[field];
@@ -274,11 +283,11 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       if (basicAuth !== undefined) createData.basic_auth = basicAuth;
     } catch (validationError) {
       await transaction.rollback();
-      return res.status(400).json({ success: false, message: validationError.message });
+      return res.status(400).json({ success: false, message: errorMessage(validationError) });
     }
 
     // Create the proxy in the database
-    const proxy = await Proxy.create(createData, { transaction });
+    const proxy = await Proxy.create(createData as CreationAttributes<Proxy>, { transaction });
     
     // Apply security headers if enabled (within transaction)
     if (req.body.security_headers_enabled) {
@@ -318,6 +327,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
         { model: Middleware, as: 'middlewares' }
       ]
     });
+    if (!reloadedProxy) throw new Error('The proxy disappeared after it was saved');
     
     // Add the proxy to Caddy; if Caddy rejects it, drop the row so DB and Caddy agree
     let caddyResult;
@@ -327,12 +337,12 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       console.error('Caddy rejected the new proxy, removing it from the database:', caddyError);
       const removed = await tryCompensation(() => discardProxy(proxy.id));
       const note = removed ? '' : ' The proxy could not be removed from the database; delete it manually.';
-      return res.status(502).json({ success: false, message: `Caddy rejected the proxy: ${caddyError.message}.${note}` });
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy: ${errorMessage(caddyError)}.${note}` });
     }
     
     // Log proxy creation
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'PROXY_CREATED',
       resource: 'proxy',
       resourceId: reloadedProxy.id,
@@ -356,7 +366,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
           'proxy_create',
           'proxy',
           reloadedProxy.id,
-          req.user.id,
+          currentUser(req).id as string,
           null,
           reloadedProxy.toJSON()
         );
@@ -390,8 +400,8 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
  * @desc Update a proxy
  * @access Private
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req, res) => {
-  const transaction = await Proxy.sequelize.transaction();
+router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('write')], async (req: Request<{ id: string }>, res: Response) => {
+  const transaction = await startTransaction();
   
   try {
     // Validate domains and upstream URL
@@ -421,7 +431,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
     const oldValues = proxy.toJSON();
 
     // Build updateData from whitelist to prevent mass assignment
-    const updateData = {};
+    const updateData: Record<string, unknown> = {};
     for (const field of PROXY_ALLOWED_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
         updateData[field] = req.body[field];
@@ -434,7 +444,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       if (basicAuth !== undefined) updateData.basic_auth = basicAuth;
     } catch (validationError) {
       await transaction.rollback();
-      return res.status(400).json({ success: false, message: validationError.message });
+      return res.status(400).json({ success: false, message: errorMessage(validationError) });
     }
     // Update the proxy
     await proxy.update(updateData, { transaction });
@@ -493,6 +503,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
         { model: Middleware, as: 'middlewares' }
       ]
     });
+    if (!reloadedProxy) throw new Error('The proxy disappeared after it was saved');
     
     // Update Caddy; if Caddy rejects the change, restore the previous proxy
     const committedUpdatedAt = reloadedProxy.updatedAt;
@@ -503,12 +514,12 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       console.error('Caddy rejected the proxy update, restoring the previous version:', caddyError);
       const restored = await tryCompensation(() => restoreProxy(oldValues, committedUpdatedAt));
       const note = restored ? '' : ' The previous version could not be restored (it was changed again or the database failed); review the proxy.';
-      return res.status(502).json({ success: false, message: `Caddy rejected the proxy update: ${caddyError.message}.${note}` });
+      return res.status(502).json({ success: false, message: `Caddy rejected the proxy update: ${errorMessage(caddyError)}.${note}` });
     }
     
     // Log proxy update
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'PROXY_UPDATED',
       resource: 'proxy',
       resourceId: reloadedProxy.id,
@@ -532,7 +543,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
           'proxy_update',
           'proxy',
           reloadedProxy.id,
-          req.user.id,
+          currentUser(req).id as string,
           oldValues,
           reloadedProxy.toJSON()
         );
@@ -566,8 +577,8 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
  * @desc Delete a proxy
  * @access Private
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
-  const transaction = await Proxy.sequelize.transaction();
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
+  const transaction = await startTransaction();
   
   try {
     // Find the proxy with all associations
@@ -608,7 +619,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
 
     // Log proxy deletion
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'PROXY_DELETED',
       resource: 'proxy',
       resourceId: proxy.id,
@@ -631,7 +642,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
           'proxy_delete',
           'proxy',
           proxy.id,
-          req.user.id,
+          currentUser(req).id as string,
           proxyData,
           null
         );
@@ -665,5 +676,3 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
     });
   }
 });
-
-module.exports = router;

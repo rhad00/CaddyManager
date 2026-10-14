@@ -25,7 +25,7 @@ const express = require('express');
 const request = require('supertest');
 const { sequelize, Proxy, Header } = require('../../src/models');
 const { caddyService } = require('../../src/services/caddyService');
-const proxiesRouter = require('../../src/api/proxies/routes');
+const { router: proxiesRouter } = require('../../src/api/proxies/routes');
 
 const app = express();
 app.use(express.json());
