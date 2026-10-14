@@ -12,8 +12,10 @@ jest.mock('../../src/config/database', () => ({
 
 // Mock individual model files that route files require directly
 jest.mock('../../src/models/user', () => ({
-  findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
-  create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  User: {
+    findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+    create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  },
 }));
 jest.mock('../../src/models/proxy', () => ({
   findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),

@@ -1,9 +1,41 @@
-const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
-const bcrypt = require('bcrypt');
-const { encrypt, decrypt } = require('../utils/encryption');
+import {
+  DataTypes,
+  Model,
+  type CreationOptional,
+  type InferAttributes,
+  type InferCreationAttributes,
+} from 'sequelize';
+import bcrypt from 'bcrypt';
+import { sequelize } from '../config/database';
+import { encrypt, decrypt } from '../utils/encryption';
 
-const User = sequelize.define('User', {
+export type UserRole = 'admin' | 'read-only';
+export type UserStatus = 'active' | 'locked';
+
+export class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+  declare id: CreationOptional<string>;
+  declare email: string;
+  declare password_hash: string;
+  declare role: CreationOptional<UserRole>;
+  declare last_login: CreationOptional<Date | null>;
+  declare status: CreationOptional<UserStatus>;
+  declare failed_login_attempts: CreationOptional<number>;
+  declare reset_token: CreationOptional<string | null>;
+  declare reset_token_expires: CreationOptional<Date | null>;
+  declare lockout_until: CreationOptional<Date | null>;
+  declare totp_secret: CreationOptional<string | null>;
+  declare totp_enabled: CreationOptional<boolean>;
+  declare totp_backup_codes: CreationOptional<string[] | null>;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+
+  /** Instance method to check password */
+  async checkPassword(password: string): Promise<boolean> {
+    return bcrypt.compare(password, this.password_hash);
+  }
+}
+
+User.init({
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
@@ -64,8 +96,12 @@ const User = sequelize.define('User', {
   totp_backup_codes: {
     type: DataTypes.JSON,
     allowNull: true
-  }
+  },
+  createdAt: DataTypes.DATE,
+  updatedAt: DataTypes.DATE
 }, {
+  sequelize,
+  modelName: 'User',
   timestamps: true, // Adds createdAt and updatedAt
   hooks: {
     beforeCreate: async (user) => {
@@ -101,10 +137,3 @@ const User = sequelize.define('User', {
     }
   }
 });
-
-// Instance method to check password
-User.prototype.checkPassword = async function(password) {
-  return await bcrypt.compare(password, this.password_hash);
-};
-
-module.exports = User;

@@ -1,5 +1,5 @@
 const { sequelize } = require('../config/database');
-const User = require('./user');
+const { User } = require('./user');
 const Proxy = require('./proxy');
 const Header = require('./header');
 const Middleware = require('./middleware');

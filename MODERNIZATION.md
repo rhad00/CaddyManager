@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.1 | Phase 3: first class-based model (`User`) and the pattern for the others | done |
 | 2.6 | Phase 2: typed Caddy route module (`utils/caddyRoute.ts`) extracted from `caddyService` | done |
 | 2.5 | Phase 2: `middleware/*` and `config/swagger` to strict TypeScript (`config/database` waits for Phase 3) | done |
 | 2.4 | Phase 2: `proxyValidation`, `proxyImport`, `basicAuth`, `discoveryLabels` to strict TypeScript (all of `utils` is `.ts`) | done |
@@ -1501,11 +1502,39 @@ they are testable without Caddy or a database.
   same as before; the existing caddyService tests and the Caddy contract test (22/22
   against a real Caddy) pass unchanged.
 - New `tests/unit/caddyRoute.test.js` (23 tests) covers the module directly.
+- Review note: the delegates keep `caddyService.createRouteFromProxy` etc. callable, but
+  spying on `caddyService.buildTlsTransport` or `shouldUseHTTPSTransport` no longer changes
+  what `createRouteFromProxy` produces (it calls the module functions directly). No test
+  does that today.
 - Verification: typecheck (loose and strict), build, full suite and contract test pass.
+
+## Phase 3: class-based models and services
+
+Plan: convert the models one batch at a time (a model file exports a named class; callers
+and `jest.mock` factories change from the class itself to `{ ClassName }`), then the
+services, then `config/database` last, because typing `sequelize` is what makes the
+remaining `sequelize.define()` models fail the type check. Babel needs
+`allowDeclareFields` for the `declare` attribute fields.
+
+### 3.1 First class-based model: User
+
+`models/user.ts` is a `Model<InferAttributes<User>, InferCreationAttributes<User>>`
+subclass with `declare` attribute fields, the same hooks (password hashing, TOTP secret
+encryption and decryption) and `checkPassword` as a method. Table, columns and hooks are
+unchanged (`modelName: 'User'` pluralises to `Users` as `define` did).
+
+- Exported as the named export `User`; `models/index.js` and `models/backup.js` read
+  `const { User } = require('./user')`. The only test that mocked the file
+  (`tests/unit/app.test.js`) now returns `{ User: {...} }`.
+- `api/users/routes.js`: a JSDoc type said the transaction callback returns
+  `Promise<void>`; it returns the updated user and the helper ignores it, so it is
+  `Promise<unknown>`.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  the PostgreSQL integration suites (17 suites, 153 tests) and a `dist/` boot pass.
 
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: class-based Sequelize models and services (also `config/database`).
+1. Phase 3: the remaining models in batches (proxy/header/middleware/template; certificates; the rest), then the services, then `config/database`.
 2. TypeScript phases 3–5 (see the plan at the top).

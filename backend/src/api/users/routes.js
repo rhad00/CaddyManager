@@ -14,7 +14,7 @@ const isActiveAdmin = (user) => user.role === 'admin' && user.status === 'active
  * admin. The admin rows are locked so two concurrent requests cannot both pass the check.
  * @param {Object} user - the user being changed
  * @param {boolean} staysActiveAdmin - whether the user is still an active admin afterwards
- * @param {(transaction) => Promise<void>} change
+ * @param {(transaction) => Promise<unknown>} change
  */
 async function changeUserKeepingAnAdmin(user, staysActiveAdmin, change) {
   await sequelize.transaction(async (transaction) => {
