@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.8 | Phase 3: `templateService` and `migrationService` (first class-instance services, named exports) | done |
 | 3.7 | Phase 3: `alertService` and `authService` to strict TypeScript (all function-style services done) | done |
 | 3.6 | Phase 3: function-style services (`auditService`, `emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`, `trafficStats`, `logService`) to strict TypeScript | done |
 | 3.5b | Review fix: `createdAt` / `updatedAt` stay NOT NULL in the class models, with a guard test | done |
@@ -1690,9 +1691,32 @@ mocks unchanged).
 - Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
   PostgreSQL suites and a `dist/` boot pass.
 
+### 3.8 First class-instance services: templateService and migrationService
+
+The pattern for the services that export `module.exports = new XService()`: the class and
+the instance are both named exports (`export class TemplateService`,
+`export const templateService = new TemplateService()`), callers read
+`const { templateService } = require(...)`, and tests that mocked the module return
+`{ templateService: {...} }`. (Babel's TypeScript preset cannot compile `export =`, and a
+named export is what ESM in Phase 5 needs anyway.) `tests/unit/services.callers.test.js`
+already resolves an instance exported under the service's own name.
+
+- `templateService`: the seven default templates are now one `DEFAULT_TEMPLATES` list (typed
+  `TemplateSeed`) created in a loop inside the same transaction, instead of seven
+  copy-pasted `Template.create` calls. A script ran the original and the new service against
+  a fake `Template` and compared every `create` call (7 calls, same order, same
+  headers and middleware, all in the transaction): identical.
+- `migrationService`: typed `Migration` files (`up` / `down`), results `MigrationRunResult`
+  and `MigrationRollbackResult`. Migrations stay `.js`: the runner only loads `.js` files, and
+  `dist/migrations` holds the same names, so `SequelizeMeta` is unaffected.
+- Callers changed: `src/index.js` (both services), `templateService.real.test.js`,
+  `templateService.test.js`.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites, and a `dist/` boot that ran all 10 migrations through the new service.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`templateService`, `migrationService`, `metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

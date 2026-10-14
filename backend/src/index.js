@@ -1,9 +1,9 @@
 const { sequelize } = require('./config/database');
 const { initializeAdmin } = require('./services/setupService');
-const templateService = require('./services/templateService');
+const { templateService } = require('./services/templateService');
 const backupService = require('./services/backupService');
 const metricsService = require('./services/metricsService');
-const migrationService = require('./services/migrationService');
+const { migrationService } = require('./services/migrationService');
 const { isLeader } = require('./utils/clusterRole');
 const { app, startServer } = require('./app');
 

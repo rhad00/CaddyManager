@@ -7,7 +7,7 @@ jest.mock('../../src/models', () => ({
 }));
 
 const { Template } = require('../../src/models');
-const templateService = require('../../src/services/templateService');
+const { templateService } = require('../../src/services/templateService');
 
 describe('TemplateService.initializeDefaultTemplates', () => {
   afterEach(() => jest.clearAllMocks());

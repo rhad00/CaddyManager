@@ -1,12 +1,31 @@
-const { Sequelize } = require('sequelize');
-const { sequelize } = require('../config/database');
-const path = require('path');
-const fs = require('fs').promises;
+import path from 'path';
+import { promises as fs } from 'fs';
+import { Sequelize, type QueryInterface } from 'sequelize';
+import { sequelize } from '../config/database';
+
+/** A file in src/migrations */
+interface Migration {
+  up(queryInterface: QueryInterface, sequelize: typeof Sequelize): Promise<unknown>;
+  down(queryInterface: QueryInterface, sequelize: typeof Sequelize): Promise<unknown>;
+}
+
+export interface MigrationRunResult {
+  success: boolean;
+  migrationsRun: number;
+  migrations?: string[];
+}
+
+export interface MigrationRollbackResult {
+  success: boolean;
+  rolledBack: string | null;
+}
 
 /**
  * Service for running database migrations
  */
-class MigrationService {
+export class MigrationService {
+  migrationsPath: string;
+
   constructor() {
     this.migrationsPath = path.join(__dirname, '../migrations');
   }
@@ -15,7 +34,7 @@ class MigrationService {
    * Create SequelizeMeta table if it doesn't exist
    * This table tracks which migrations have been run
    */
-  async ensureMetaTable() {
+  async ensureMetaTable(): Promise<unknown> {
     const [results] = await sequelize.query(`
       CREATE TABLE IF NOT EXISTS "SequelizeMeta" (
         "name" VARCHAR(255) NOT NULL PRIMARY KEY
@@ -27,13 +46,13 @@ class MigrationService {
   /**
    * Get list of migrations that have already been run
    */
-  async getExecutedMigrations() {
+  async getExecutedMigrations(): Promise<string[]> {
     try {
       const [results] = await sequelize.query(
         'SELECT name FROM "SequelizeMeta" ORDER BY name ASC'
       );
-      return /** @type {Array<{ name: string }>} */ (results).map(r => r.name);
-    } catch (error) {
+      return (results as Array<{ name: string }>).map(r => r.name);
+    } catch {
       // Table might not exist yet
       return [];
     }
@@ -42,13 +61,13 @@ class MigrationService {
   /**
    * Get list of all migration files
    */
-  async getMigrationFiles() {
+  async getMigrationFiles(): Promise<string[]> {
     try {
       const files = await fs.readdir(this.migrationsPath);
       return files
         .filter(f => f.endsWith('.js'))
         .sort();
-    } catch (error) {
+    } catch {
       console.log('No migrations directory found');
       return [];
     }
@@ -57,7 +76,7 @@ class MigrationService {
   /**
    * Run pending migrations
    */
-  async runMigrations() {
+  async runMigrations(): Promise<MigrationRunResult> {
     try {
       console.log('Checking for pending migrations...');
 
@@ -83,9 +102,9 @@ class MigrationService {
       // Run each pending migration
       for (const migrationFile of pendingMigrations) {
         console.log(`Running migration: ${migrationFile}`);
-        
+
         const migrationPath = path.join(this.migrationsPath, migrationFile);
-        const migration = require(migrationPath);
+        const migration = require(migrationPath) as Migration;
 
         // Start transaction
         const transaction = await sequelize.transaction();
@@ -112,8 +131,8 @@ class MigrationService {
         }
       }
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         migrationsRun: pendingMigrations.length,
         migrations: pendingMigrations
       };
@@ -126,10 +145,10 @@ class MigrationService {
   /**
    * Rollback the last migration
    */
-  async rollbackLastMigration() {
+  async rollbackLastMigration(): Promise<MigrationRollbackResult> {
     try {
       const executedMigrations = await this.getExecutedMigrations();
-      
+
       if (executedMigrations.length === 0) {
         console.log('No migrations to rollback');
         return { success: true, rolledBack: null };
@@ -139,7 +158,7 @@ class MigrationService {
       console.log(`Rolling back migration: ${lastMigration}`);
 
       const migrationPath = path.join(this.migrationsPath, lastMigration);
-      const migration = require(migrationPath);
+      const migration = require(migrationPath) as Migration;
 
       const transaction = await sequelize.transaction();
 
@@ -172,4 +191,4 @@ class MigrationService {
   }
 }
 
-module.exports = new MigrationService();
+export const migrationService = new MigrationService();
