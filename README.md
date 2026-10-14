@@ -455,30 +455,28 @@ cd CaddyManager
 cp .env.prod.example .env.prod
 ```
 
-3. Edit `.env.prod` with your production values:
+3. Edit `.env.prod`. These four are required (the backend refuses to start in
+   production without `JWT_SECRET`, `CSRF_SECRET` and `GIT_SECRET_KEY`); generate the
+   secrets with `openssl rand -hex 32`:
 ```bash
-# Required: Database password
-DB_PASSWORD=your_secure_production_password
-
-# Required: JWT secret (use a long random string)
-JWT_SECRET=your_production_jwt_secret_change_this_in_production_12345678901234567890
-
-# Optional: Customize these if needed
-DB_NAME=caddymanager
-DB_USER=caddyuser
-JWT_EXPIRES_IN=24h
-LOG_LEVEL=info
+DB_PASSWORD=<a strong database password>
+JWT_SECRET=<openssl rand -hex 32>
+CSRF_SECRET=<openssl rand -hex 32>
+GIT_SECRET_KEY=<openssl rand -hex 32>
 ```
+   `.env.prod.example` also lists the recommended and optional settings
+   (`ENCRYPTION_KEY`, `CF_API_TOKEN`, `CORS_ORIGINS`, `DB_NAME`, `DB_USER`,
+   `JWT_EXPIRES_IN`, `LOG_LEVEL`).
 
 4. Start the application:
 ```bash
-docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
 5. Access the application:
-   - **Frontend UI**: http://localhost:8080
+   - **Frontend UI**: http://localhost:8080 (also serves the API under `/api`)
    - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Backend API**: http://localhost:3000
+   - The backend port 3000 is not published to the host in production.
 
 6. **Login with default credentials:**
    - **Email**: `admin@caddymanager.local`
@@ -490,7 +488,8 @@ docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
 All deployment configurations use consistent port mappings:
 
 - **80/443**: Caddy reverse proxy (handles your proxied services)
-- **3000**: Backend API (CaddyManager API)
+- **3000**: Backend API (CaddyManager API); published to the host in development, only
+  reachable through the UI's `/api` in production
 - **8080**: Frontend UI (CaddyManager web interface)
 - **2019**: Caddy Admin API (development only, internal use)
 - **5432**: PostgreSQL (production only, not exposed by default)
@@ -1477,72 +1476,44 @@ The spec covers all endpoints with request/response schemas, authentication meth
 
 ## 🧪 Testing
 
-CaddyManager includes comprehensive integration tests for all features:
+### Automated tests
 
-### Available Test Scripts
-
-**Core Features:**
 ```bash
-./test.sh all          # Run all tests
-./test.sh auth         # Test authentication
-./test.sh proxy        # Test proxy management
-./test.sh template     # Test template functionality
-./test.sh backup       # Test backup and restore
-./test.sh caddy        # Test Caddy integration
+cd backend
+npm test                # unit + integration tests (SQLite in memory)
+npm run test:unit       # unit tests only
+npm run test:integration
+npm run test:ci         # everything once, with the coverage threshold CI enforces
+
+# Integration tests on PostgreSQL (production's database)
+DB_TYPE=postgres DB_URL=postgres://user:pass@localhost:5432/db \
+  npm run test:integration -- --runInBand
+
+# Check the generated Caddy config against a real Caddy build
+CADDY_IMAGE=caddymanager-caddy npm run test:contract
+
+cd ../frontend
+npm test                # unit tests (Vitest)
+npm run e2e             # browser tests (Playwright; run `npx playwright install chromium` once)
 ```
 
-**Docker Auto-Discovery:**
-```bash
-./discovery_test.sh    # Test Docker discovery features
-```
-Tests include:
-- Discovery service status checks
-- Manual container scanning
-- Service management operations (sync, enable/disable)
-- Automatic container detection
-- Label-based configuration
+GitHub Actions runs all of these on every pull request (see `.github/workflows/ci.yml`).
 
-**Git Integration & GitOps:**
-```bash
-./git_integration_test.sh    # Test Git integration features
-```
-Tests include:
-- Repository connection management
-- Configuration export to Git
-- Commit history tracking
-- Repository connection testing
+### Scripts against a running stack
 
-**Full Integration Tests:**
+These need the application running (`docker compose up -d`):
 ```bash
 ./integration_test.sh           # Complete integration test suite
 ./persistence_validation.sh     # Test data persistence
 ./certificate_validation.sh     # Validate TLS certificates
-./metrics_test.sh               # Test metrics collection
-```
-
-### Running Tests with Docker
-
-Make sure the backend is running before executing tests:
-```bash
-docker-compose up -d
-./test.sh all
-```
-
-For Git integration tests with real repositories:
-```bash
-export TEST_GIT_URL="https://github.com/user/test-repo"
-export TEST_GIT_TOKEN="ghp_xxxxxxxxxxxxx"
-export GIT_SECRET_KEY=$(openssl rand -hex 32)
-./git_integration_test.sh
 ```
 
 ---
 
 ## 📚 Documentation
 
-- [CLAUDE.md](./CLAUDE.md) — Architecture deep-dive, service descriptions, and development guide
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — Contributing guidelines
-- [FEATURE_IMPLEMENTATION.md](./FEATURE_IMPLEMENTATION.md) — Detailed implementation notes
+- [.github/workflows/README.md](./.github/workflows/README.md) — CI and release workflows
 - **Swagger / OpenAPI**: `http://localhost:3000/api/docs` (live instance required)
 
 ## 🗺 Roadmap

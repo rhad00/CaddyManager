@@ -54,7 +54,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.24 | Discovery: labels, names, events, template crash, unused labels | done |
 | 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
-| 0.27 | README references missing files | pending |
+| 0.27 | README references missing files | done |
 | 0.28 | Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5 | pending |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
@@ -1051,12 +1051,40 @@ Left open (low risk, not label-reachable):
   the audit and discovery routes and `passwordReset` (6–17%)), and a job that starts
   the real stack (backend + Caddy + frontend) for end-to-end flows.
 
+### 0.27 README references
+
+- Problem (checked every file the README links or names against the repository):
+  - `.env.prod.example` did not exist, but the production quick start starts with
+    `cp .env.prod.example .env.prod`.
+  - That quick start listed two required values, but `docker-compose.prod.yml` also
+    consumes `CSRF_SECRET` and `GIT_SECRET_KEY` (the backend refuses to start in
+    production without them) and `ENCRYPTION_KEY`, `CF_API_TOKEN`, `CORS_ORIGINS`.
+    It also pointed at `http://localhost:3000`, which production does not publish.
+  - The Testing section documented `test.sh`, `discovery_test.sh`,
+    `git_integration_test.sh` and `metrics_test.sh`, none of which exist, and none of
+    the real test commands.
+  - The Documentation list linked `CLAUDE.md` and `FEATURE_IMPLEMENTATION.md`, which do
+    not exist.
+  - `.env.prod`, which the README tells people to create, was not in `.gitignore`.
+- Fix:
+  - New `.env.prod.example`: required, recommended and optional settings with how to
+    generate each secret; `.env.prod` added to `.gitignore`.
+  - Quick start lists the four required values and the real access points.
+  - Testing section: the npm commands (unit, integration, `test:ci`, PostgreSQL,
+    contract, frontend unit and Playwright) and the three scripts that exist.
+  - Documentation list: only files that exist, plus the workflows README.
+  - Not changed: `config/proxies.json` and `proxies.yaml` are files in the user's Git
+    repository, not in this one.
+- Not done: `docker-compose.prod.yml` still starts with an empty `DB_PASSWORD` or
+  `JWT_SECRET` when the variables are unset (`${VAR}` instead of `${VAR:?message}`);
+  the backend then stops or runs with a blank password. Failing fast in the compose
+  file is a behavior change, left for the deployment pass.
+
 ## Where this session stopped
 
-Done: 0.1–0.26. Next up, in order:
+Done: 0.1–0.27. Next up, in order:
 
-1. 0.27 README references missing files.
-2. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
-3. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
+1. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
+2. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
    `custom_ssl_cert_id`, proxy middlewares.
-4. TypeScript phases 1–5.
+3. TypeScript phases 1–5.
