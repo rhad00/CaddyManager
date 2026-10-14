@@ -1,9 +1,20 @@
-const express = require('express');
-const { rateLimit } = require('express-rate-limit');
-const { dockerDiscoveryService } = require('../../services/dockerDiscoveryService');
-const { DiscoveredService, Proxy } = require('../../models');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
+import { z } from 'zod';
+import type { WhereOptions } from 'sequelize';
+import { dockerDiscoveryService } from '../../services/dockerDiscoveryService';
+import { DiscoveredService, Proxy } from '../../models';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { caddyService } from '../../services/caddyService';
+import { queryString } from '../../utils/query';
+
+export const router = express.Router();
+
+/** The list filters; an absent or empty one is no filter */
+const LIST_FILTERS = z.object({
+  source_type: z.enum(['docker', 'kubernetes']).optional(),
+  status: z.enum(['active', 'stopped', 'removed']).optional(),
+});
 
 // Rate-limit the manual scan endpoint to prevent resource exhaustion.
 // Admins can trigger at most 5 full scans per minute.
@@ -47,13 +58,24 @@ const scanRateLimit = rateLimit({
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { source_type, status, page, limit } = req.query;
+    const { page, limit } = req.query;
 
-    const where = {};
-    if (source_type) where.source_type = source_type;
-    if (status) where.status = status;
+    const filters = LIST_FILTERS.safeParse({
+      source_type: queryString(req.query.source_type) || undefined,
+      status: queryString(req.query.status) || undefined,
+    });
+    if (!filters.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid filter',
+        errors: filters.error.issues.map((issue) => ({ path: issue.path.join('.'), msg: issue.message })),
+      });
+    }
+    const where: WhereOptions<DiscoveredService> = Object.fromEntries(
+      Object.entries(filters.data).filter(([, value]) => value !== undefined)
+    );
 
     if (page || limit) {
       const pageNum = Math.max(1, parseInt(String(page)) || 1);
@@ -61,7 +83,7 @@ router.get('/', authMiddleware, async (req, res) => {
       const offset = (pageNum - 1) * limitNum;
 
       const { count, rows: services } = await DiscoveredService.findAndCountAll({
-        where: /** @type {import('sequelize').WhereOptions} */ (where),
+        where,
         include: [{
           model: Proxy,
           as: 'proxy',
@@ -86,7 +108,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     const services = await DiscoveredService.findAll({
-      where: /** @type {import('sequelize').WhereOptions} */ (where),
+      where,
       include: [{
         model: Proxy,
         as: 'proxy',
@@ -121,7 +143,7 @@ router.get('/', authMiddleware, async (req, res) => {
  *       200:
  *         description: Discovery service status for each source
  */
-router.get('/status', authMiddleware, async (req, res) => {
+router.get('/status', authMiddleware, async (req: Request, res: Response) => {
   try {
     const dockerStatus = dockerDiscoveryService.getStatus();
 
@@ -164,7 +186,7 @@ router.get('/status', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const service = await DiscoveredService.findByPk(/** @type {string} */ (req.params.id), {
       include: [{
@@ -215,7 +237,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const service = await DiscoveredService.findByPk(req.params.id);
 
@@ -269,7 +291,7 @@ router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req, 
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/disable', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/disable', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const service = await DiscoveredService.findByPk(req.params.id);
 
@@ -316,7 +338,7 @@ router.post('/:id/disable', [authMiddleware, roleMiddleware('admin')], async (re
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/enable', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/enable', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const service = await DiscoveredService.findByPk(req.params.id);
 
@@ -367,7 +389,7 @@ router.post('/:id/enable', [authMiddleware, roleMiddleware('admin')], async (req
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { deleteProxy } = req.query;
     const service = await DiscoveredService.findByPk(req.params.id);
@@ -386,7 +408,6 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
         await proxy.destroy();
 
         // Update Caddy config
-        const { caddyService } = require('../../services/caddyService');
         await caddyService.rebuildConfigFromDatabase();
       }
     }
@@ -431,7 +452,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
  *       503:
  *         description: Discovery service not initialized
  */
-router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const { source } = req.body;
 
@@ -460,5 +481,3 @@ router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], a
     });
   }
 });
-
-module.exports = router;
