@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.6 | Phase 3: function-style services (`auditService`, `emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`, `trafficStats`, `logService`) to strict TypeScript | done |
 | 3.5b | Review fix: `createdAt` / `updatedAt` stay NOT NULL in the class models, with a guard test | done |
 | 3.5 | Phase 3: `config/database` and `models/index` to strict TypeScript | done |
 | 3.4 | Phase 3: `Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository` models as typed classes (all models done) | done |
@@ -1642,9 +1643,37 @@ requires them because the class declares them). Sequelize only makes a timestamp
 - Verification: typecheck (loose and strict), build, full suite (66 suites, 582 tests),
   PostgreSQL suites (18 suites, 155 tests) and a `dist/` boot pass.
 
+### 3.6 Function-style services
+
+Seven services that export plain functions are strict `.ts` (`git mv`): `auditService`,
+`emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`,
+`trafficStats`, `logService`. `module.exports = { a, b }` became named exports, which
+compile to the same `exports.a` shape, so no caller or mock changed. (The services that
+export a class instance, `module.exports = new XService()`, need their callers and mocks
+changed and follow one at a time.)
+
+- Types: `AuditEvent`, `ProxySnapshot`, `SecurityHeader`, `LogEntry`, `LogFilters`,
+  `TrafficSince`, `HostTraffic`. `AuditLog.details` is typed `AuditDetails` (an object, a
+  list or a plain message: callers have always logged all three).
+- `auditService` reads the client address from `req.socket` (`req.connection` is its
+  deprecated alias).
+- **Fixed on the way:** the access-log route passed `req.query` values straight to
+  `logService`, so a repeated parameter (`?method=a&method=b`) reached `.toUpperCase()` as an
+  array and failed with a 500. The route now takes the first string of each filter with
+  `queryString`.
+- **Guard gap closed:** `tests/unit/services.callers.test.js` (every `xService.method(` call
+  must name an existing method) only scanned `.js` files, so each converted service silently
+  dropped out of it (59 -> 55 tests). It now scans `.ts` too, and understands both service
+  shapes (the module itself, or an instance exported under the service's own name).
+- New `tests/unit/logService.test.js` (11 tests): `logService` had none. It covers line
+  parsing, the filters, the limit, the stats and the route, including the repeated
+  parameter.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites and a `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the services one by one (small ones first; `caddyService`, `gitService`, `dockerDiscoveryService` last).
+1. Phase 3: the remaining function-style services (`alertService`, `authService`), then the class-instance services one at a time, with their callers and mocks (`templateService`, `migrationService`, `metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

@@ -5,7 +5,8 @@
  * state, e.g. for the Cloudflare DNS-01 policy). When Caddy then refuses the change, these
  * helpers bring the database back in line with what Caddy is actually running.
  */
-const { sequelize, Proxy, Header, Middleware } = require('../models');
+import type { InferAttributes } from 'sequelize';
+import { sequelize, Proxy, Header, Middleware } from '../models';
 
 // Fields of a proxy snapshot that are not written back on restore. The route index and TLS
 // status are maintained by caddyService, and a concurrent delete may have shifted the index
@@ -15,12 +16,16 @@ const NON_RESTORED_FIELDS = new Set([
   'caddy_route_index', 'tls_status', 'tls_checked_at',
 ]);
 
-/**
- * Remove a newly created proxy with its headers and middlewares.
- * @param {string} proxyId
- * @returns {Promise<void>}
- */
-async function discardProxy(proxyId) {
+/** `proxy.toJSON()` of an instance loaded with its headers and middlewares */
+export interface ProxySnapshot {
+  id: string;
+  headers?: Array<InferAttributes<Header>>;
+  middlewares?: Array<InferAttributes<Middleware>>;
+  [field: string]: unknown;
+}
+
+/** Remove a newly created proxy with its headers and middlewares. */
+export async function discardProxy(proxyId: string): Promise<void> {
   await sequelize.transaction(async (transaction) => {
     await Header.destroy({ where: { proxy_id: proxyId }, transaction });
     await Middleware.destroy({ where: { proxy_id: proxyId }, transaction });
@@ -34,14 +39,14 @@ async function discardProxy(proxyId) {
  *
  * The restore is skipped when the row changed again after the failed update (its
  * `updatedAt` no longer matches), so a concurrent edit is not overwritten.
- * @param {Object} snapshot
- * @param {Date} expectedUpdatedAt - `updatedAt` written by the failed update
- * @returns {Promise<boolean>} whether the snapshot was restored
+ * @param snapshot
+ * @param expectedUpdatedAt - `updatedAt` written by the failed update
+ * @returns whether the snapshot was restored
  */
-async function restoreProxy(snapshot, expectedUpdatedAt) {
+export async function restoreProxy(snapshot: ProxySnapshot, expectedUpdatedAt: Date): Promise<boolean> {
   const fields = Object.fromEntries(
     Object.entries(snapshot).filter(([key]) => !NON_RESTORED_FIELDS.has(key))
-  );
+  ) as Partial<InferAttributes<Proxy>>;
 
   return sequelize.transaction(async (transaction) => {
     const [updated] = await Proxy.update(fields, {
@@ -65,10 +70,10 @@ async function restoreProxy(snapshot, expectedUpdatedAt) {
 
 /**
  * Run a compensation step without letting its failure hide the original Caddy error.
- * @param {() => Promise<boolean|void>} step - resolves false when it chose not to act
- * @returns {Promise<boolean>} whether the step completed
+ * @param step - resolves false when it chose not to act
+ * @returns whether the step completed
  */
-async function tryCompensation(step) {
+export async function tryCompensation(step: () => Promise<boolean | void>): Promise<boolean> {
   try {
     return (await step()) !== false;
   } catch (error) {
@@ -76,5 +81,3 @@ async function tryCompensation(step) {
     return false;
   }
 }
-
-module.exports = { discardProxy, restoreProxy, tryCompensation };

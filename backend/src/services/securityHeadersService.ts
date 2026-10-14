@@ -1,4 +1,14 @@
-const DEFAULT_SECURITY_HEADERS = [
+import type { Transaction } from 'sequelize';
+import type { Header, HeaderType } from '../models/header';
+
+export interface SecurityHeader {
+  header_type: HeaderType;
+  header_name: string;
+  header_value: string;
+  enabled: boolean;
+}
+
+export const DEFAULT_SECURITY_HEADERS: SecurityHeader[] = [
   {
     header_type: 'response',
     header_name: 'Strict-Transport-Security',
@@ -37,7 +47,11 @@ const DEFAULT_SECURITY_HEADERS = [
   }
 ];
 
-const applySecurityHeaders = async (proxyId, headersModel, transaction) => {
+export const applySecurityHeaders = async (
+  proxyId: string,
+  headersModel: typeof Header,
+  transaction?: Transaction,
+): Promise<void> => {
   try {
     // Remove any existing security headers for this proxy
     await headersModel.destroy({
@@ -61,7 +75,11 @@ const applySecurityHeaders = async (proxyId, headersModel, transaction) => {
   }
 };
 
-const removeSecurityHeaders = async (proxyId, headersModel, transaction) => {
+export const removeSecurityHeaders = async (
+  proxyId: string,
+  headersModel: typeof Header,
+  transaction?: Transaction,
+): Promise<void> => {
   try {
     await headersModel.destroy({
       where: {
@@ -74,10 +92,4 @@ const removeSecurityHeaders = async (proxyId, headersModel, transaction) => {
     console.error('Error removing security headers:', error);
     throw new Error('Failed to remove security headers');
   }
-};
-
-module.exports = {
-  DEFAULT_SECURITY_HEADERS,
-  applySecurityHeaders,
-  removeSecurityHeaders
 };

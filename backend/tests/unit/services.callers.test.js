@@ -1,6 +1,6 @@
 /**
  * Every `<name>Service.<method>(` call in src must name a method that exists on
- * src/services/<name>Service.js. GitOps sync and Docker discovery called a non-existent
+ * src/services/<name>Service.{js,ts}. GitOps sync and Docker discovery called a non-existent
  * caddyService.updateCaddyConfig() (MODERNIZATION.md 0.18) and discovery a non-existent
  * templateService.applyTemplateToProxy() (0.24) for a long time without anyone noticing.
  */
@@ -13,17 +13,19 @@ jest.mock('../../src/models', () => new Proxy({}, { get: (_t, key) => (key === '
 const SRC = path.join(__dirname, '../../src');
 const SERVICES = path.join(SRC, 'services');
 
-function jsFiles(dir) {
+const SOURCE_EXTENSIONS = ['.js', '.ts'];
+
+function sourceFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return jsFiles(full);
-    return entry.name.endsWith('.js') ? [full] : [];
+    if (entry.isDirectory()) return sourceFiles(full);
+    return SOURCE_EXTENSIONS.includes(path.extname(entry.name)) && !entry.name.endsWith('.d.ts') ? [full] : [];
   });
 }
 
-const serviceExists = (name) => fs.existsSync(path.join(SERVICES, `${name}.js`));
+const serviceExists = (name) => SOURCE_EXTENSIONS.some((ext) => fs.existsSync(path.join(SERVICES, `${name}${ext}`)));
 
-const calls = jsFiles(SRC).flatMap((file) => {
+const calls = sourceFiles(SRC).flatMap((file) => {
   const source = fs.readFileSync(file, 'utf8');
   return [...source.matchAll(/\b(\w+Service)\.(\w+)\(/g)]
     .filter((m) => serviceExists(m[1]))
@@ -40,5 +42,8 @@ test('the scan finds the known callers', () => {
 
 test.each(unique)('%s calls %s.%s, which exists', (_file, service, method) => {
   const mod = require(path.join(SERVICES, service));
-  expect(typeof mod[method]).toBe('function');
+  // A service is either the module itself (functions exported by name) or an instance
+  // exported under the service's own name (`{ caddyService }`)
+  const target = mod[service] && typeof mod[service] === 'object' ? mod[service] : mod;
+  expect(typeof target[method]).toBe('function');
 });

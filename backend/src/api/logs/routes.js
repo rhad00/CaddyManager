@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware } = require('../../middleware/auth');
 const { getLogs, streamLogs, getLogStats } = require('../../services/logService');
+const { queryString } = require('../../utils/query');
 
 const router = express.Router();
 
@@ -58,8 +59,11 @@ const router = express.Router();
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { limit, status, method, host, ip, search, from, to } = req.query;
-    const entries = await getLogs({ limit, status, method, host, ip, search, from, to });
+    const filters = {};
+    for (const name of ['limit', 'status', 'method', 'host', 'ip', 'search', 'from', 'to']) {
+      filters[name] = queryString(req.query[name]);
+    }
+    const entries = await getLogs(filters);
     res.json({ success: true, count: entries.length, logs: entries });
   } catch (err) {
     console.error('Log query error:', err);

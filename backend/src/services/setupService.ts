@@ -1,13 +1,15 @@
-const crypto = require('crypto');
-const { sequelize, User } = require('../models');
-require('dotenv').config();
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { sequelize, User } from '../models';
+
+dotenv.config();
 
 /**
  * Generate a cryptographically secure random password
- * @param {number} length - Password length (default 20)
- * @returns {string} Random password
+ * @param length - Password length (default 20)
+ * @returns Random password
  */
-const generateSecurePassword = (length = 20) => {
+const generateSecurePassword = (length = 20): string => {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
   const bytes = crypto.randomBytes(length);
   let password = '';
@@ -20,20 +22,21 @@ const generateSecurePassword = (length = 20) => {
 /**
  * Initialize the admin user if it doesn't exist
  * This is called during application startup
+ * @returns whether the check (and a creation, if needed) succeeded
  */
-const initializeAdmin = async () => {
+export const initializeAdmin = async (): Promise<boolean> => {
   try {
     // Check if admin user exists
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@caddymanager.local';
     const adminPassword = process.env.ADMIN_PASSWORD;
-    
+
     // Use transaction to ensure data consistency
     const transaction = await sequelize.transaction();
-    
+
     try {
       // Check if any users exist
       const userCount = await User.count({ transaction });
-      
+
       // If no users exist, create admin user
       if (userCount === 0) {
         // Generate a secure random password if none provided
@@ -41,14 +44,14 @@ const initializeAdmin = async () => {
         const isGenerated = !adminPassword;
 
         console.log('No users found. Creating default admin user...');
-        
+
         await User.create({
           email: adminEmail,
           password_hash: password, // Will be hashed by model hook
           role: 'admin',
           status: 'active'
         }, { transaction });
-        
+
         console.log(`Admin user created with email: ${adminEmail}`);
         if (isGenerated) {
           console.log('='.repeat(60));
@@ -61,7 +64,7 @@ const initializeAdmin = async () => {
           console.log('IMPORTANT: Change the default admin password immediately!');
         }
       }
-      
+
       await transaction.commit();
       return true;
     } catch (error) {
@@ -73,8 +76,4 @@ const initializeAdmin = async () => {
     console.error('Failed to initialize admin user:', error);
     return false;
   }
-};
-
-module.exports = {
-  initializeAdmin
 };

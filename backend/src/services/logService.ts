@@ -1,14 +1,45 @@
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
+import type { Request, Response } from 'express';
 
-const LOG_FILE = process.env.CADDY_ACCESS_LOG || path.join(__dirname, '../../logs/access.log');
+export const LOG_FILE = process.env.CADDY_ACCESS_LOG || path.join(__dirname, '../../logs/access.log');
+
+/** One parsed line of Caddy's structured JSON access log */
+export interface LogEntry {
+  ts: number;
+  timestamp: string;
+  level: string;
+  logger: string;
+  status?: number;
+  method?: string;
+  host?: string;
+  uri?: string;
+  remote_ip?: string;
+  user_agent?: string;
+  duration?: number;
+  size?: number;
+  /** Raw entry for anything else */
+  raw: Record<string, unknown>;
+}
+
+/** Filter options of the log viewer; the values come straight from the query string */
+export interface LogFilters {
+  status?: string | number;
+  method?: string;
+  host?: string;
+  ip?: string;
+  search?: string;
+  from?: string;
+  to?: string;
+  limit?: string | number;
+}
 
 /**
  * Parse a single line of a Caddy structured JSON access log.
  * Returns null if the line is not a valid JSON access log entry.
  */
-function parseLine(line) {
+export function parseLine(line: string): LogEntry | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   try {
@@ -41,9 +72,9 @@ function parseLine(line) {
  * Read the last `lines` lines from a file efficiently.
  * Uses a reverse-read approach to avoid loading the entire file.
  */
-async function readLastLines(filePath, maxLines) {
+async function readLastLines(filePath: string, maxLines: number): Promise<LogEntry[]> {
   return new Promise((resolve) => {
-    const results = [];
+    const results: LogEntry[] = [];
     if (!fs.existsSync(filePath)) {
       return resolve([]);
     }
@@ -69,10 +100,8 @@ async function readLastLines(filePath, maxLines) {
 
 /**
  * Filter log entries based on query parameters.
- * @param {Object[]} entries
- * @param {{ status?: *, method?: *, host?: *, ip?: *, search?: *, from?: *, to?: * }} filters
  */
-function filterEntries(entries, { status, method, host, ip, search, from, to }) {
+function filterEntries(entries: LogEntry[], { status, method, host, ip, search, from, to }: LogFilters): LogEntry[] {
   return entries.filter((e) => {
     if (status && String(e.status) !== String(status)) return false;
     if (method && e.method && e.method.toUpperCase() !== method.toUpperCase()) return false;
@@ -96,11 +125,10 @@ function filterEntries(entries, { status, method, host, ip, search, from, to }) 
 
 /**
  * Get log entries with optional filters.
- * @param {{ status?: *, method?: *, host?: *, ip?: *, search?: *, from?: *, to?: *, limit?: * }} [opts]
- *   Filter options
+ * @param opts - Filter options
  */
-async function getLogs(opts = {}) {
-  const limit = Math.min(parseInt(opts.limit) || 500, 2000);
+export async function getLogs(opts: LogFilters = {}): Promise<LogEntry[]> {
+  const limit = Math.min(parseInt(String(opts.limit)) || 500, 2000);
   const entries = await readLastLines(LOG_FILE, limit * 4); // over-fetch then filter
   const filtered = filterEntries(entries, opts);
   return filtered.slice(-limit).reverse(); // newest first
@@ -109,10 +137,10 @@ async function getLogs(opts = {}) {
 /**
  * Stream new log lines to an HTTP response via Server-Sent Events.
  * Watches the log file for changes and forwards new lines.
- * @param {import('express').Request} req - Express request
- * @param {import('express').Response} res - Express response
+ * @param req - Express request
+ * @param res - Express response
  */
-function streamLogs(req, res) {
+export function streamLogs(req: Request, res: Response): void {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -130,9 +158,9 @@ function streamLogs(req, res) {
     res.write(': keep-alive\n\n');
   }, 15000);
 
-  let watcher = null;
+  let watcher: fs.FSWatcher | null = null;
 
-  const watchFile = () => {
+  const watchFile = (): void => {
     if (!fs.existsSync(LOG_FILE)) {
       // Retry in 2s if file doesn't exist yet
       setTimeout(watchFile, 2000);
@@ -152,7 +180,7 @@ function streamLogs(req, res) {
         stream.on('data', (chunk) => {
           buffer += chunk;
           const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete last line
+          buffer = lines.pop() ?? ''; // keep incomplete last line
           for (const line of lines) {
             const entry = parseLine(line);
             if (entry) {
@@ -176,7 +204,7 @@ function streamLogs(req, res) {
 /**
  * Get log file stats (size, line count estimate, path).
  */
-function getLogStats() {
+export function getLogStats(): { exists: boolean; path: string; size: number; mtime?: Date } {
   try {
     if (!fs.existsSync(LOG_FILE)) {
       return { exists: false, path: LOG_FILE, size: 0 };
@@ -187,5 +215,3 @@ function getLogStats() {
     return { exists: false, path: LOG_FILE, size: 0 };
   }
 }
-
-module.exports = { getLogs, streamLogs, getLogStats, parseLine, LOG_FILE };

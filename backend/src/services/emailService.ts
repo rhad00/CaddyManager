@@ -1,12 +1,12 @@
-const nodemailer = require('nodemailer');
+import nodemailer, { type Transporter } from 'nodemailer';
 
-let transporter = null;
+let transporter: Transporter | null = null;
 
 /**
  * Initialize the email transporter from environment variables.
  * If SMTP_HOST is not set, emails are logged to console instead of sent.
  */
-function getTransporter() {
+function getTransporter(): Transporter | null {
   if (transporter) return transporter;
 
   if (!process.env.SMTP_HOST) {
@@ -31,10 +31,10 @@ function getTransporter() {
  * Send a password reset email containing the reset link.
  * Falls back to console logging when SMTP is not configured.
  *
- * @param {string} to - Recipient email address
- * @param {string} resetToken - Raw (unhashed) reset token
+ * @param to - Recipient email address
+ * @param resetToken - Raw (unhashed) reset token
  */
-async function sendPasswordResetEmail(to, resetToken) {
+export async function sendPasswordResetEmail(to: string, resetToken: string): Promise<void> {
   const baseUrl = process.env.APP_URL || 'http://localhost:8080';
   const resetLink = `${baseUrl}/password-reset/confirm?token=${encodeURIComponent(resetToken)}`;
   const from = process.env.SMTP_FROM || 'noreply@caddymanager.local';
@@ -69,5 +69,3 @@ async function sendPasswordResetEmail(to, resetToken) {
 
   console.info(`Password reset email sent to ${to}`);
 }
-
-module.exports = { sendPasswordResetEmail };

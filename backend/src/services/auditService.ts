@@ -1,34 +1,46 @@
-const { AuditLog } = require('../models/auditLog');
-const { User } = require('../models');
+import type { Request } from 'express';
+import type { CreationAttributes } from 'sequelize';
+import { AuditLog, type AuditDetails } from '../models/auditLog';
+import { User } from '../models';
 
 /**
  * Details to store: the caller's details plus the id of the affected resource (the audit
  * table has no column for it)
- * @param {*} details
- * @param {string|number|undefined} resourceId
  */
-const withResourceId = (details, resourceId) => {
+const withResourceId = (details: unknown, resourceId: string | number | null | undefined): unknown => {
     if (resourceId === undefined || resourceId === null) return details;
     if (details === undefined || details === null) return { resource_id: resourceId };
     if (typeof details === 'object' && !Array.isArray(details)) return { ...details, resource_id: resourceId };
     return { message: details, resource_id: resourceId };
 };
 
+export interface AuditEvent {
+    /** User ID (optional) */
+    userId?: string | number;
+    /** Action name (e.g., 'LOGIN', 'CREATE_PROXY') */
+    action: string;
+    /** Resource affected (e.g., 'auth', 'proxy:example.com') */
+    resource?: string;
+    /** Id of the affected resource (kept in the details) */
+    resourceId?: string | number | null;
+    /** Additional details (optional) */
+    details?: unknown;
+    /** Status of the action ('success', 'failure') */
+    status?: string;
+}
+
 /**
  * Log an audit event
- * @param {Object} params - Log parameters
- * @param {Number|string} [params.userId] - User ID (optional)
- * @param {String} params.action - Action name (e.g., 'LOGIN', 'CREATE_PROXY')
- * @param {String} params.resource - Resource affected (e.g., 'auth', 'proxy:example.com')
- * @param {String|Number} [params.resourceId] - Id of the affected resource (kept in the details)
- * @param {*} [params.details] - Additional details (optional)
- * @param {String} [params.status] - Status of the action ('success', 'failure')
- * @param {import('express').Request|null} [req] - Express request object (optional, for IP/UserAgent)
+ * @param event - Log parameters
+ * @param req - Express request object (optional, for IP/UserAgent)
  */
-const logAction = async ({ userId, action, resource, resourceId, details, status = 'success' }, req = null) => {
+export const logAction = async (
+    { userId, action, resource, resourceId, details, status = 'success' }: AuditEvent,
+    req: Request | null = null,
+): Promise<void> => {
     try {
         // Resolve userId against DB to ensure foreign key validity
-        let creatorId = null;
+        let creatorId: string | null = null;
         try {
             const candidateId = userId || (req && req.user && req.user.id);
             if (candidateId) {
@@ -36,19 +48,19 @@ const logAction = async ({ userId, action, resource, resourceId, details, status
                 if (dbUser) creatorId = dbUser.id;
             }
         } catch (err) {
-            console.error('Failed to resolve user for audit log:', err.message);
+            console.error('Failed to resolve user for audit log:', err instanceof Error ? err.message : err);
         }
 
-        const logData = {
+        const logData: CreationAttributes<AuditLog> = {
             user_id: creatorId,
             action,
             resource,
-            details: withResourceId(details, resourceId),
+            details: withResourceId(details, resourceId) as AuditDetails | undefined,
             status
         };
 
         if (req) {
-            logData.ip_address = req.ip || req.connection.remoteAddress;
+            logData.ip_address = req.ip || req.socket.remoteAddress;
             logData.user_agent = req.get('User-Agent');
         }
 
@@ -56,7 +68,7 @@ const logAction = async ({ userId, action, resource, resourceId, details, status
             await AuditLog.create(logData);
         } catch (err) {
             // If foreign key constraint fails (e.g. user_id mismatch), try logging without user_id
-            if (err.name === 'SequelizeForeignKeyConstraintError') {
+            if (err instanceof Error && err.name === 'SequelizeForeignKeyConstraintError') {
                 console.warn('AuditLog creation failed due to FK constraint. Retrying without user_id.', err.message);
                 logData.user_id = null;
                 await AuditLog.create(logData);
@@ -68,8 +80,4 @@ const logAction = async ({ userId, action, resource, resourceId, details, status
         console.error('Failed to create audit log:', error);
         // Don't throw error to prevent disrupting the main flow
     }
-};
-
-module.exports = {
-    logAction
 };
