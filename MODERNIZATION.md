@@ -2085,7 +2085,7 @@ next rebuild or proxy change (`initializeConfig` loads the backup file when ther
 
 `skip_tls_verify` was read by the route builder but no column, API field or migration existed, so a self-signed HTTPS
 upstream (Proxmox, Unifi...) could never be trusted. Added the column (migration `20261014-add-skip-tls-verify-to-proxies`),
-the model attribute and the API field. The web UI has no checkbox for it yet.
+the model attribute and the API field. The proxy form has a checkbox for it.
 
 Behaviour changes for existing installs: header rules now also apply to path-routed proxies; compression is skipped
 for HEAD and S3-signed/presigned requests on every proxy; the repair migration only removes the legacy S3 rules from
@@ -2117,7 +2117,6 @@ their exact messages, and the login and reset rules depend on `normalizeEmail`, 
 - In cluster mode the Docker status and the Git auto-sync timers run per worker.
 - The Caddy route builder applies only the first 10 `ip_filtering` entries.
 - The Docker `domain` label accepts wildcards; template lookup by name is case-sensitive.
-- The web UI has no checkbox for `skip_tls_verify` (API only).
 - The e2e suites need Docker with host networking (Linux) or a `caddy` binary; macOS Docker Desktop is not supported.
 - Kubernetes discovery and backup upload are planned (the API answers 501 and says so).
 - `docker-compose.prod.yml` does not fail fast on empty secrets.
