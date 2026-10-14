@@ -118,7 +118,7 @@ class BackupService {
         version: '1.0',
         timestamp: new Date().toISOString(),
         proxies: proxies.map(proxy => {
-          const proxyData = proxy.toJSON();
+          const proxyData = /** @type {Record<string, unknown>} */ (proxy.toJSON());
           // Include headers and middleware if available
           if (proxy.headers) {
             proxyData.headers = proxy.headers.map(header => header.toJSON());

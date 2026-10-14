@@ -143,7 +143,7 @@ const sameFeature = (field: FeatureField, a: unknown, b: unknown): boolean => (B
  * @param next - labelFeatures of the labels now
  */
 export const featureUpdates = (
-  proxy: Partial<LabelFeatures>,
+  proxy: Partial<Record<FeatureField, unknown>>,
   previous: LabelFeatures,
   next: LabelFeatures,
 ): { updates: Partial<LabelFeatures>; diverged: FeatureField[] } => {

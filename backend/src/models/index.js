@@ -1,9 +1,9 @@
 const { sequelize } = require('../config/database');
 const { User } = require('./user');
-const Proxy = require('./proxy');
-const Header = require('./header');
-const Middleware = require('./middleware');
-const Template = require('./template');
+const { Proxy } = require('./proxy');
+const { Header } = require('./header');
+const { Middleware } = require('./middleware');
+const { Template } = require('./template');
 const Backup = require('./backup');
 const Certificate = require('./certificate');
 const CertificateAuthority = require('./certificateAuthority');

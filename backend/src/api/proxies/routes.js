@@ -1,7 +1,7 @@
 const express = require('express');
-const Proxy = require('../../models/proxy');
-const Header = require('../../models/header');
-const Middleware = require('../../models/middleware');
+const { Proxy } = require('../../models/proxy');
+const { Header } = require('../../models/header');
+const { Middleware } = require('../../models/middleware');
 const caddyService = require('../../services/caddyService');
 const { discardProxy, restoreProxy, tryCompensation } = require('../../services/proxyCompensation');
 const securityHeadersService = require('../../services/securityHeadersService');
@@ -156,7 +156,7 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const proxy = await Proxy.findByPk(req.params.id, {
+    const proxy = await Proxy.findByPk(/** @type {string} */ (req.params.id), {
       include: [
         { model: Header, as: 'headers' },
         { model: Middleware, as: 'middlewares' }
@@ -234,7 +234,8 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
     // Find all proxies and check for per-domain overlaps
     const existingProxies = await Proxy.findAll();
     const domainConflict = existingProxies.some(proxy => {
-      const proxyDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+      const domains = /** @type {string[]|string} */ (proxy.domains); // older rows may hold a single string
+      const proxyDomains = Array.isArray(domains) ? domains : [domains];
       return newDomains.some(d => proxyDomains.includes(d));
     });
 

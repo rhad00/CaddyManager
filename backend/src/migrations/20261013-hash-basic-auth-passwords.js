@@ -11,7 +11,7 @@ const { BCRYPT_ROUNDS } = require('../utils/basicAuth');
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     // Loaded lazily so the migration runner can require this file before models init
-    const Proxy = require('../models/proxy');
+    const { Proxy } = require('../models/proxy');
     const proxies = await Proxy.findAll({ attributes: ['id', 'basic_auth'] });
 
     for (const proxy of proxies) {

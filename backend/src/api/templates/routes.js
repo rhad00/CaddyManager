@@ -1,8 +1,8 @@
 const express = require('express');
-const Template = require('../../models/template');
+const { Template } = require('../../models/template');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const caddyService = require('../../services/caddyService');
-const Proxy = require('../../models/proxy');
+const { Proxy } = require('../../models/proxy');
 const { logAction } = require('../../services/auditService');
 const { validateMiddlewares } = require('../../utils/proxyMiddlewares');
 const { validateHeadersConfig } = require('../../utils/proxyValidation');
@@ -110,7 +110,7 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const template = await Template.findByPk(req.params.id);
+    const template = await Template.findByPk(/** @type {string} */ (req.params.id));
     
     if (!template) {
       return res.status(404).json({ 

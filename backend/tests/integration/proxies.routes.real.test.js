@@ -3,14 +3,16 @@ const express = require('express');
 
 // Mock models and services used by routes
 jest.mock('../../src/models/proxy', () => ({
-  findAll: jest.fn(),
-  findByPk: jest.fn(),
-  create: jest.fn(),
-  sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
+  Proxy: {
+    findAll: jest.fn(),
+    findByPk: jest.fn(),
+    create: jest.fn(),
+    sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
+  }
 }));
 
-jest.mock('../../src/models/header', () => ({ create: jest.fn(), destroy: jest.fn() }));
-jest.mock('../../src/models/middleware', () => ({ create: jest.fn(), destroy: jest.fn() }));
+jest.mock('../../src/models/header', () => ({ Header: { create: jest.fn(), destroy: jest.fn() } }));
+jest.mock('../../src/models/middleware', () => ({ Middleware: { create: jest.fn(), destroy: jest.fn() } }));
 
 // Mock the models index to prevent setupAssociations from running
 jest.mock('../../src/models', () => ({
@@ -27,9 +29,9 @@ jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHea
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 jest.mock('../../src/services/gitService', () => ({ commitConfigChange: jest.fn().mockResolvedValue(null) }));
 
-const Proxy = require('../../src/models/proxy');
-const Header = require('../../src/models/header');
-const Middleware = require('../../src/models/middleware');
+const { Proxy } = require('../../src/models/proxy');
+const { Header } = require('../../src/models/header');
+const { Middleware } = require('../../src/models/middleware');
 const proxiesRouter = require('../../src/api/proxies/routes');
 
 // Simple auth middleware bypass for tests

@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.2 | Phase 3: `Proxy`, `Header`, `Middleware`, `Template` models as typed classes | done |
 | 3.1 | Phase 3: first class-based model (`User`) and the pattern for the others | done |
 | 2.6 | Phase 2: typed Caddy route module (`utils/caddyRoute.ts`) extracted from `caddyService` | done |
 | 2.5 | Phase 2: `middleware/*` and `config/swagger` to strict TypeScript (`config/database` waits for Phase 3) | done |
@@ -1532,9 +1533,32 @@ unchanged (`modelName: 'User'` pluralises to `Users` as `define` did).
 - Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
   the PostgreSQL integration suites (17 suites, 153 tests) and a `dist/` boot pass.
 
+### 3.2 Proxy, Header, Middleware and Template models
+
+`models/proxy.ts`, `header.ts`, `middleware.ts` and `template.ts` are typed classes (same
+pattern as User). Tables, columns and defaults are unchanged.
+
+- `Proxy` declares typed JSON columns (`RateLimitConfig`, `IpFilteringConfig`,
+  `PathRoutingConfig`, `LoadBalancingConfig`, `HealthChecksConfig`, `BasicAuth`) and the
+  `headers` / `middlewares` association properties (`NonAttribute`, present when loaded with
+  `include`). `Template.headers` / `middleware` are typed lists (`TemplateHeader`,
+  `TemplateMiddleware`).
+- Named exports; `models/index.js`, `api/proxies/routes.js`, `api/templates/routes.js`,
+  `services/alertService.js` and the basic-auth hashing migration read `{ Proxy }` etc.
+  The mocks in `app.test.js`, `templates.routes.test.js` and
+  `proxies.routes.real.test.js` return `{ Proxy: {...} }` etc.
+- `src/types/sequelize.d.ts` declares `Transaction.finished` (set by Sequelize, used by the
+  route handlers to skip a second rollback; it was untyped).
+- Type fixes in JS callers that typed models exposed: route params are cast to `string`
+  (Express types them `string | string[]`), `proxy.domains` is read as `string[] | string`
+  (older rows may hold a single string), `toJSON()` results that get `headers` added are
+  cast to a record, and `featureUpdates` takes the proxy as a loose record.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests), Caddy contract test (22/22) and a `dist/` boot.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the remaining models in batches (proxy/header/middleware/template; certificates; the rest), then the services, then `config/database`.
+1. Phase 3: the remaining models in batches (certificates; the rest), then the services, then `config/database`.
 2. TypeScript phases 3–5 (see the plan at the top).

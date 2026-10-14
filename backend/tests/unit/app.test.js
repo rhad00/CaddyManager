@@ -18,19 +18,25 @@ jest.mock('../../src/models/user', () => ({
   },
 }));
 jest.mock('../../src/models/proxy', () => ({
-  findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
-  create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  Proxy: {
+    findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+    create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  },
 }));
 jest.mock('../../src/models/header', () => ({
-  findAll: jest.fn(), bulkCreate: jest.fn(), destroy: jest.fn(),
+  Header: { findAll: jest.fn(), bulkCreate: jest.fn(), destroy: jest.fn() },
 }));
 jest.mock('../../src/models/middleware', () => ({
-  findAll: jest.fn(), findOne: jest.fn(), create: jest.fn(),
-  upsert: jest.fn(), destroy: jest.fn(),
+  Middleware: {
+    findAll: jest.fn(), findOne: jest.fn(), create: jest.fn(),
+    upsert: jest.fn(), destroy: jest.fn(),
+  },
 }));
 jest.mock('../../src/models/template', () => ({
-  findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
-  create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  Template: {
+    findAll: jest.fn(), findByPk: jest.fn(), findOne: jest.fn(),
+    create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
+  },
 }));
 
 // Mock models/index.js (used by services and other imports)

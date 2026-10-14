@@ -2,10 +2,12 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../src/models/template', () => ({
-  findAll: jest.fn(),
-  findByPk: jest.fn(),
-  create: jest.fn(),
-  findAndCountAll: jest.fn(),
+  Template: {
+    findAll: jest.fn(),
+    findByPk: jest.fn(),
+    create: jest.fn(),
+    findAndCountAll: jest.fn(),
+  },
 }));
 
 jest.mock('../../src/middleware/auth', () => ({
@@ -15,10 +17,10 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 
 jest.mock('../../src/services/caddyService', () => ({}));
-jest.mock('../../src/models/proxy', () => ({ findByPk: jest.fn() }));
+jest.mock('../../src/models/proxy', () => ({ Proxy: { findByPk: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 
-const Template = require('../../src/models/template');
+const { Template } = require('../../src/models/template');
 const templateRouter = require('../../src/api/templates/routes');
 
 describe('Templates routes', () => {
