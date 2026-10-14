@@ -1,12 +1,14 @@
-const express = require('express');
-const fs = require('fs');
-const { Certificate, CertificateAuthority } = require('../../models');
-const { certificateService } = require('../../services/certificateService');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const { certificateUploadLimiter } = require('../../middleware/rateLimiter');
-const { logAction } = require('../../services/auditService');
-const { CertificateError, toCertificateResponse } = require('../../utils/certificates');
-const multer = require('multer');
+import express, { type Request, type Response } from 'express';
+import fs from 'fs';
+import { Certificate, CertificateAuthority } from '../../models';
+import { certificateService } from '../../services/certificateService';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { certificateUploadLimiter } from '../../middleware/rateLimiter';
+import { logAction } from '../../services/auditService';
+import { currentUser } from '../../utils/requestUser';
+import { errorMessage } from '../../utils/errorMessage';
+import { CertificateError, toCertificateResponse } from '../../utils/certificates';
+import multer from 'multer';
 const upload = multer({
   dest: 'uploads/',
   limits: {
@@ -18,10 +20,11 @@ const upload = multer({
     fieldSize: 16 * 1024,
   }
 });
-const router = express.Router();
 
-const cleanupUploadedFiles = async (filePaths) => {
-  await Promise.all((filePaths || []).filter(Boolean).map(async (filePath) => {
+export const router = express.Router();
+
+const cleanupUploadedFiles = async (filePaths?: Array<string | undefined>): Promise<void> => {
+  await Promise.all((filePaths || []).filter((filePath): filePath is string => Boolean(filePath)).map(async (filePath) => {
     try {
       await fs.promises.unlink(filePath);
     } catch {
@@ -32,11 +35,10 @@ const cleanupUploadedFiles = async (filePaths) => {
 
 /**
  * Validate PEM file content
- * @param {string} filePath - Path to the uploaded file
- * @param {string} expectedType - Expected PEM type ('CERTIFICATE' or 'PRIVATE KEY' or 'RSA PRIVATE KEY')
- * @returns {{ valid: boolean, message?: string }}
+ * @param filePath - Path to the uploaded file
+ * @param expectedType - Expected PEM type ('CERTIFICATE' or 'PRIVATE KEY')
  */
-const validatePemFile = (filePath, expectedType) => {
+const validatePemFile = (filePath: string, expectedType: 'CERTIFICATE' | 'PRIVATE KEY'): { valid: boolean; message?: string } => {
   try {
     const content = fs.readFileSync(filePath, 'utf8').trim();
     const validHeaders = expectedType === 'CERTIFICATE'
@@ -77,7 +79,7 @@ const validatePemFile = (filePath, expectedType) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const certificates = await Certificate.findAll({
       attributes: { exclude: ['private_key_pem'] }
@@ -136,7 +138,7 @@ router.get('/', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/domains/:domain', authMiddleware, async (req, res) => {
+router.get('/domains/:domain', authMiddleware, async (req: Request<{ domain: string }>, res: Response) => {
   try {
     const domain = /** @type {string} */ (req.params.domain); // a named route parameter is always a single string
     const certificates = await certificateService.getCertificatesForDomain(domain);
@@ -188,14 +190,15 @@ router.get('/domains/:domain', authMiddleware, async (req, res) => {
 router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUploadLimiter, upload.fields([
   { name: 'certificate', maxCount: 1 },
   { name: 'privateKey', maxCount: 1 }
-])], async (req, res) => {
+])], async (req: Request, res: Response) => {
+  const uploaded = req.files as { certificate?: Express.Multer.File[]; privateKey?: Express.Multer.File[] } | undefined;
   const uploadedFilePaths = [
-    req.files?.certificate?.[0]?.path,
-    req.files?.privateKey?.[0]?.path
+    uploaded?.certificate?.[0]?.path,
+    uploaded?.privateKey?.[0]?.path
   ];
 
   try {
-    if (!req.files || !req.files.certificate || !req.files.privateKey) {
+    if (!uploaded || !uploaded.certificate || !uploaded.privateKey) {
       return res.status(400).json({
         success: false,
         message: 'Certificate and private key files are required'
@@ -213,11 +216,11 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
     }
 
     // Validate PEM format of uploaded files
-    const certValidation = validatePemFile(req.files.certificate[0].path, 'CERTIFICATE');
+    const certValidation = validatePemFile(uploaded.certificate[0].path, 'CERTIFICATE');
     if (!certValidation.valid) {
       return res.status(400).json({ success: false, message: certValidation.message });
     }
-    const keyValidation = validatePemFile(req.files.privateKey[0].path, 'PRIVATE KEY');
+    const keyValidation = validatePemFile(uploaded.privateKey[0].path, 'PRIVATE KEY');
     if (!keyValidation.valid) {
       return res.status(400).json({ success: false, message: keyValidation.message });
     }
@@ -225,14 +228,14 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
     const result = await certificateService.uploadCertificate(
       name,
       domains,
-      req.files.certificate[0].path,
-      req.files.privateKey[0].path,
-      req.user.id || null
+      uploaded.certificate[0].path,
+      uploaded.privateKey[0].path,
+      (currentUser(req).id as string) || null
     );
     
     // Log certificate upload
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'CERTIFICATE_UPLOADED',
       resource: 'certificate',
       resourceId: result.id,
@@ -251,7 +254,7 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
   } catch (error) {
     console.error('Upload certificate error:', error);
     if (error instanceof CertificateError) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, message: errorMessage(error) });
     }
     res.status(500).json({
       success: false, 
@@ -282,7 +285,7 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin'), certificateUplo
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const certificate = await Certificate.findByPk(req.params.id);
     
@@ -295,7 +298,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     
     // Log certificate deletion
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'CERTIFICATE_DELETED',
       resource: 'certificate',
       resourceId: certificate.id,
@@ -349,7 +352,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const { name, domains, validityDays } = req.body;
     
@@ -364,12 +367,12 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
       name,
       domains,
       validityDays || 365,
-      req.user.id || null
+      (currentUser(req).id as string) || null
     );
     
     // Log certificate generation
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'CERTIFICATE_GENERATED',
       resource: 'certificate',
       resourceId: result.id,
@@ -390,7 +393,7 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
   } catch (error) {
     console.error('Generate certificate error:', error);
     if (error instanceof CertificateError) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, message: errorMessage(error) });
     }
     res.status(500).json({
       success: false, 
@@ -419,7 +422,7 @@ router.post('/generate', [authMiddleware, roleMiddleware('admin')], async (req, 
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const certificate = await Certificate.findByPk(req.params.id);
     
@@ -434,7 +437,7 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
     
     // Log certificate renewal
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'CERTIFICATE_RENEWED',
       resource: 'certificate',
       resourceId: certificate.id,
@@ -453,7 +456,7 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
   } catch (error) {
     console.error('Renew certificate error:', error);
     if (error instanceof CertificateError) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, message: errorMessage(error) });
     }
     res.status(500).json({
       success: false, 
@@ -467,7 +470,7 @@ router.post('/:id/renew', [authMiddleware, roleMiddleware('admin')], async (req,
  * @desc Get all certificate authorities
  * @access Private
  */
-router.get('/cas', authMiddleware, async (req, res) => {
+router.get('/cas', authMiddleware, async (req: Request, res: Response) => {
   try {
     const cas = await CertificateAuthority.findAll();
     
@@ -489,7 +492,7 @@ router.get('/cas', authMiddleware, async (req, res) => {
  * @desc Add a custom certificate authority
  * @access Private (Admin only)
  */
-router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('certificate')], async (req, res) => {
+router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('certificate')], async (req: Request, res: Response) => {
   const uploadedFilePath = req.file?.path;
 
   try {
@@ -527,7 +530,7 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
   } catch (error) {
     console.error('Add CA error:', error);
     if (error instanceof CertificateError) {
-      return res.status(400).json({ success: false, message: error.message });
+      return res.status(400).json({ success: false, message: errorMessage(error) });
     }
     res.status(500).json({
       success: false, 
@@ -543,7 +546,7 @@ router.post('/cas', [authMiddleware, roleMiddleware('admin'), upload.single('cer
  * @desc Remove a certificate authority
  * @access Private (Admin only)
  */
-router.delete('/cas/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/cas/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const ca = await CertificateAuthority.findByPk(req.params.id);
     
@@ -574,7 +577,7 @@ router.delete('/cas/:id', [authMiddleware, roleMiddleware('admin')], async (req,
  * @desc Trust/untrust a certificate authority
  * @access Private (Admin only)
  */
-router.put('/cas/:id/trust', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.put('/cas/:id/trust', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const ca = await CertificateAuthority.findByPk(req.params.id);
     
@@ -618,7 +621,7 @@ router.put('/cas/:id/trust', [authMiddleware, roleMiddleware('admin')], async (r
 // Caddy's admin API has no ACME account endpoints; ACME accounts are created by Caddy
 // itself from the issuer config. These routes previously proxied to non-existent
 // endpoints and always failed (see MODERNIZATION.md 0.11e).
-const acmeAccountsNotImplemented = (req, res) => res.status(501).json({
+const acmeAccountsNotImplemented = (_req: Request, res: Response) => res.status(501).json({
   success: false,
   message: 'ACME accounts are managed by Caddy automatically; this endpoint is not implemented'
 });
@@ -646,7 +649,7 @@ router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], a
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const certificate = await Certificate.findByPk(/** @type {string} */ (req.params.id), {
       attributes: { exclude: ['private_key_pem'] }
@@ -671,5 +674,3 @@ router.get('/:id', authMiddleware, async (req, res) => {
     });
   }
 });
-
-module.exports = router;

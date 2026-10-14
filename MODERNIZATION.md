@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.13 | Phase 4: `certificates` routes to TypeScript | done |
 | 4.12 | Phase 4: `proxies` routes to TypeScript; `errorMessage` helper | done |
 | 4.11 | Phase 4: `discovery` routes to TypeScript; list filters validated | done |
 | 4.10 | Phase 4: `templates` routes to TypeScript | done |
@@ -1960,9 +1961,20 @@ Verification: typecheck (loose and strict), build, full suite (629 tests), Postg
 
 Verification: typecheck (loose and strict), build, full suite (637 tests), PostgreSQL suites, a `dist/` boot.
 
+### 4.13 certificate routes
+
+`api/certificates/routes.ts` exports `router`. `@types/multer` is a new dev dependency (it types `req.files` and `req.file`).
+
+- The upload route reads `req.files` once, as `{ certificate?, privateKey? }`, and narrows it after the existing check, instead of reading it through the `File[] | { [field]: File[] }` union six times.
+- `cleanupUploadedFiles` and `validatePemFile` are typed; the ACME stubs keep answering 501.
+- Nothing required this router in a test before, so `tests/integration/certificates.routes.test.js` (9 tests) covers the lists, the 404, the ACME 501s and the upload's three rejections, including that a rejected upload leaves no temp file in `uploads/`.
+- The body checks keep their messages, so there is no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), PostgreSQL suites, a `dist/` boot.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.12 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.13 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.
