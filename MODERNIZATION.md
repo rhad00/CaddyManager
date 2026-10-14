@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.6 | Phase 4: `keys` routes to TypeScript, `currentUser` helper | done |
 | 4.5 | Phase 4: `metrics` routes to TypeScript | done |
 | 4.4 | Phase 4: `backups` routes to TypeScript | done |
 | 4.3 | Phase 4: `auth` routes (login, password reset, 2FA) to TypeScript | done |
@@ -1881,9 +1882,19 @@ where a route checks its body by hand. `zod` 4 is a dependency of the backend;
 
 Verification: typecheck (loose and strict), build, full suite (612 tests).
 
+### 4.6 API key routes, and currentUser
+
+`api/keys/routes.ts` exports `router`; `keys.routes.regression.test.js` reads `{ router }`.
+
+- `utils/requestUser.ts` exports `currentUser(req)`: the signed-in user, or a thrown error when `authMiddleware` did not run. `req.user` is optional on `Request`, and the routes that sit behind `authMiddleware` read it in many places; one helper replaces the casts. (`backups/routes.ts` keeps its own cast; it moves to this helper when that file is next touched.) Tests: `tests/unit/requestUser.test.js`.
+- The key list drops `key_hash` by destructuring instead of `delete`, which the strict config rejects for a required field, and which no longer mutates the object `toJSON()` returned.
+- The body checks keep their own messages ('name must be between 1 and 100 characters', ...), so there is no zod schema here: the tests and API clients depend on those messages.
+
+Verification: typecheck (loose and strict), build, full suite.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.5 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.6 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

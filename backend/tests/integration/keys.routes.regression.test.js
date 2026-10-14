@@ -29,7 +29,7 @@ jest.mock('../../src/services/auditService', () => ({
   logAction: (...args) => mockLogAction(...args),
 }));
 
-const keysRouter = require('../../src/api/keys/routes');
+const { router: keysRouter } = require('../../src/api/keys/routes');
 
 describe('API keys route regressions', () => {
   let app;

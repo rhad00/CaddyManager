@@ -1,13 +1,14 @@
-const express = require('express');
-const crypto = require('crypto');
-const { ApiKey, User } = require('../../models');
-const { authMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
-const { logAction } = require('../../services/auditService');
+import express, { type Request, type Response } from 'express';
+import crypto from 'crypto';
+import { ApiKey, User } from '../../models';
+import { currentUser } from '../../utils/requestUser';
+import { authMiddleware, requireApiKeyPermission } from '../../middleware/auth';
+import { logAction } from '../../services/auditService';
 
-const router = express.Router();
+export const router = express.Router();
 
 /** Hash the raw API key for storage. */
-const hashKey = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
+const hashKey = (raw: string): string => crypto.createHash('sha256').update(raw).digest('hex');
 
 /** Generate a new key: `cm_<random32hex>` */
 const generateRawKey = () => `cm_${crypto.randomBytes(20).toString('hex')}`;
@@ -32,9 +33,9 @@ const generateRawKey = () => `cm_${crypto.randomBytes(20).toString('hex')}`;
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
+router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request, res: Response) => {
   try {
-    const where = req.user.role === 'admin' ? {} : { created_by: req.user.id };
+    const where = currentUser(req).role === 'admin' ? {} : { created_by: currentUser(req).id };
     const keys = await ApiKey.findAll({
       where,
       include: [{ model: User, as: 'owner', attributes: ['id', 'email'] }],
@@ -42,9 +43,8 @@ router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, 
     });
     // Never return key_hash
     const safe = keys.map(k => {
-      const obj = k.toJSON();
-      delete obj.key_hash;
-      return obj;
+      const { key_hash: _keyHash, ...rest } = k.toJSON();
+      return rest;
     });
     res.json({ success: true, keys: safe });
   } catch (err) {
@@ -91,7 +91,7 @@ router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, 
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
+router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request, res: Response) => {
   try {
     const { name, permissions = ['read'], expires_at } = req.body;
     if (!name || typeof name !== 'string') {
@@ -117,7 +117,7 @@ router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req,
     }
 
     // Non-admins cannot create admin-level keys
-    if (perms.includes('admin') && req.user.role !== 'admin') {
+    if (perms.includes('admin') && currentUser(req).role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Only admins can create admin-level keys' });
     }
 
@@ -139,12 +139,12 @@ router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req,
       key_hash: hashKey(rawKey),
       key_prefix: rawKey.substring(0, 8),
       permissions: perms,
-      created_by: req.user.id,
+      created_by: currentUser(req).id as string,
       expires_at: expiresAt,
     });
 
     await logAction({
-      userId: req.user.id, action: 'API_KEY_CREATED',
+      userId: currentUser(req).id, action: 'API_KEY_CREATED',
       resource: 'api_key', resourceId: key.id,
       details: { name, permissions: perms }, status: 'success',
     }, req);
@@ -182,16 +182,16 @@ router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req,
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const key = await ApiKey.findByPk(req.params.id);
     if (!key) return res.status(404).json({ success: false, message: 'Key not found' });
-    if (req.user.role !== 'admin' && key.created_by !== req.user.id) {
+    if (currentUser(req).role !== 'admin' && key.created_by !== currentUser(req).id) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     await logAction({
-      userId: req.user.id, action: 'API_KEY_REVOKED',
+      userId: currentUser(req).id, action: 'API_KEY_REVOKED',
       resource: 'api_key', resourceId: key.id,
       details: { name: key.name }, status: 'success',
     }, req);
@@ -235,11 +235,11 @@ router.delete('/:id', [authMiddleware, requireApiKeyPermission('admin')], async 
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const key = await ApiKey.findByPk(req.params.id);
     if (!key) return res.status(404).json({ success: false, message: 'Key not found' });
-    if (req.user.role !== 'admin' && key.created_by !== req.user.id) {
+    if (currentUser(req).role !== 'admin' && key.created_by !== currentUser(req).id) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -261,7 +261,7 @@ router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (re
     await key.save();
 
     await logAction({
-      userId: req.user.id, action: 'API_KEY_UPDATED',
+      userId: currentUser(req).id, action: 'API_KEY_UPDATED',
       resource: 'api_key', resourceId: key.id,
       details: {
         name: key.name,
@@ -271,12 +271,9 @@ router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (re
       status: 'success',
     }, req);
 
-    const safe = key.toJSON();
-    delete safe.key_hash;
+    const { key_hash: _keyHash, ...safe } = key.toJSON();
     res.json({ success: true, key: safe });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to update API key' });
   }
 });
-
-module.exports = router;
