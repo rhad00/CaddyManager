@@ -88,7 +88,7 @@ class BackupService {
   /**
    * Create a backup of the current configuration
    * @param {Object} user - User creating the backup
-   * @param {String} backupType - Type of backup (auto or manual)
+   * @param {'auto'|'manual'} backupType - Type of backup
    * @returns {Promise<Object>} Backup information
    */
   async createBackup(user, backupType = 'manual') {

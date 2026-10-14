@@ -4,17 +4,17 @@ const { Proxy } = require('./proxy');
 const { Header } = require('./header');
 const { Middleware } = require('./middleware');
 const { Template } = require('./template');
-const Backup = require('./backup');
+const { Backup } = require('./backup');
 const Certificate = require('./certificate');
 const CertificateAuthority = require('./certificateAuthority');
-const AuditLog = require('./auditLog');
-const Metric = require('./metric');
+const { AuditLog } = require('./auditLog');
+const { Metric } = require('./metric');
 const DiscoveredService = require('./discoveredService');
 const GitRepository = require('./gitRepository');
 const ConfigChange = require('./configChange');
-const AlertRule = require('./alertRule');
-const NotificationChannel = require('./notificationChannel');
-const ApiKey = require('./apiKey');
+const { AlertRule } = require('./alertRule');
+const { NotificationChannel } = require('./notificationChannel');
+const { ApiKey } = require('./apiKey');
 
 // Define associations after all models are loaded
 const setupAssociations = () => {

@@ -18,8 +18,8 @@ let AlertRule, NotificationChannel, Proxy;
  */
 function getModels() {
   if (!AlertRule) {
-    AlertRule = require('../models/alertRule');
-    NotificationChannel = require('../models/notificationChannel');
+    AlertRule = require('../models/alertRule').AlertRule;
+    NotificationChannel = require('../models/notificationChannel').NotificationChannel;
     Proxy = require('../models/proxy').Proxy;
   }
   return { AlertRule, NotificationChannel, Proxy };

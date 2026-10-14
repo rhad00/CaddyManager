@@ -23,6 +23,15 @@ jest.mock('../../src/models/proxy', () => ({
     create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
   },
 }));
+jest.mock('../../src/models/auditLog', () => ({
+  AuditLog: { create: jest.fn(), findAll: jest.fn(), findAndCountAll: jest.fn() },
+}));
+jest.mock('../../src/models/alertRule', () => ({
+  AlertRule: { findAll: jest.fn(), findByPk: jest.fn(), create: jest.fn(), count: jest.fn() },
+}));
+jest.mock('../../src/models/notificationChannel', () => ({
+  NotificationChannel: { findAll: jest.fn(), findByPk: jest.fn(), create: jest.fn(), count: jest.fn() },
+}));
 jest.mock('../../src/models/header', () => ({
   Header: { findAll: jest.fn(), bulkCreate: jest.fn(), destroy: jest.fn() },
 }));

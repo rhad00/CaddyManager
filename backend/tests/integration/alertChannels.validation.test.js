@@ -16,7 +16,7 @@ jest.mock('../../src/middleware/auth', () => ({
 const express = require('express');
 const request = require('supertest');
 const { sequelize } = require('../../src/models');
-const NotificationChannel = require('../../src/models/notificationChannel');
+const { NotificationChannel } = require('../../src/models/notificationChannel');
 
 const app = express();
 app.use(express.json());

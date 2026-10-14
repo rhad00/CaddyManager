@@ -1,7 +1,27 @@
-const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+import {
+  DataTypes,
+  Model,
+  type CreationOptional,
+  type InferAttributes,
+  type InferCreationAttributes,
+} from 'sequelize';
+import { sequelize } from '../config/database';
 
-const ApiKey = sequelize.define('ApiKey', {
+export class ApiKey extends Model<InferAttributes<ApiKey>, InferCreationAttributes<ApiKey>> {
+  declare id: CreationOptional<string>;
+  declare name: string;
+  declare key_hash: string;
+  declare key_prefix: string;
+  declare permissions: CreationOptional<string[]>;
+  declare created_by: string;
+  declare last_used_at: CreationOptional<Date | null>;
+  declare expires_at: CreationOptional<Date | null>;
+  declare enabled: CreationOptional<boolean>;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
+ApiKey.init({
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
@@ -46,8 +66,10 @@ const ApiKey = sequelize.define('ApiKey', {
     defaultValue: true,
     allowNull: false,
   },
+  createdAt: DataTypes.DATE,
+  updatedAt: DataTypes.DATE,
 }, {
+  sequelize,
+  modelName: 'ApiKey',
   timestamps: true,
 });
-
-module.exports = ApiKey;

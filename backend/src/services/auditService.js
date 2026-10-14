@@ -1,4 +1,4 @@
-const AuditLog = require('../models/auditLog');
+const { AuditLog } = require('../models/auditLog');
 const { User } = require('../models');
 
 /**

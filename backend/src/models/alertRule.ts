@@ -1,5 +1,13 @@
-const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');
+import {
+  DataTypes,
+  Model,
+  type CreationOptional,
+  type InferAttributes,
+  type InferCreationAttributes,
+} from 'sequelize';
+import { sequelize } from '../config/database';
+
+export type AlertConditionType = 'cert_expiry' | 'upstream_down' | 'error_rate' | 'no_traffic';
 
 /**
  * AlertRule — defines a condition and which channels to notify.
@@ -10,7 +18,21 @@ const { sequelize } = require('../config/database');
  *   error_rate         — percentage of 5xx responses exceeds `threshold`% (requires log access)
  *   no_traffic         — no requests to a proxy within `threshold` minutes
  */
-const AlertRule = sequelize.define('AlertRule', {
+export class AlertRule extends Model<InferAttributes<AlertRule>, InferCreationAttributes<AlertRule>> {
+  declare id: CreationOptional<string>;
+  declare name: string;
+  declare condition_type: AlertConditionType;
+  declare threshold: CreationOptional<number | null>;
+  declare proxy_id: CreationOptional<string | null>;
+  declare channel_ids: CreationOptional<string[]>;
+  declare cooldown_minutes: CreationOptional<number>;
+  declare enabled: CreationOptional<boolean>;
+  declare last_triggered_at: CreationOptional<Date | null>;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+
+AlertRule.init({
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
@@ -61,6 +83,6 @@ const AlertRule = sequelize.define('AlertRule', {
     type: DataTypes.DATE,
     allowNull: true,
   },
-}, { timestamps: true });
-
-module.exports = AlertRule;
+  createdAt: DataTypes.DATE,
+  updatedAt: DataTypes.DATE,
+}, { sequelize, modelName: 'AlertRule', timestamps: true });

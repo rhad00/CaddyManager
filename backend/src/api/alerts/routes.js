@@ -1,7 +1,7 @@
 const express = require('express');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const AlertRule = require('../../models/alertRule');
-const NotificationChannel = require('../../models/notificationChannel');
+const { AlertRule } = require('../../models/alertRule');
+const { NotificationChannel } = require('../../models/notificationChannel');
 const { runAlertChecks, sendToChannel } = require('../../services/alertService');
 const { channelProblem, redactChannel } = require('../../utils/notificationChannels');
 

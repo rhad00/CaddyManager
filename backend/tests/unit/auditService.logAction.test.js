@@ -2,10 +2,10 @@
  * logAction used to ignore the `resourceId` that 19 call sites pass: the audit table has
  * no such column, so the id of the affected proxy/template/key never reached the log.
  */
-jest.mock('../../src/models/auditLog', () => ({ create: jest.fn().mockResolvedValue({}) }));
+jest.mock('../../src/models/auditLog', () => ({ AuditLog: { create: jest.fn().mockResolvedValue({}) } }));
 jest.mock('../../src/models', () => ({ User: { findByPk: jest.fn().mockResolvedValue(null) } }));
 
-const AuditLog = require('../../src/models/auditLog');
+const { AuditLog } = require('../../src/models/auditLog');
 const { logAction } = require('../../src/services/auditService');
 
 const stored = () => AuditLog.create.mock.calls[0][0];
