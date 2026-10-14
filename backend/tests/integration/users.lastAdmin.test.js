@@ -19,7 +19,7 @@ const { sequelize, User } = require('../../src/models');
 
 const app = express();
 app.use(express.json());
-app.use('/api/users', require('../../src/api/users/routes'));
+app.use('/api/users', require('../../src/api/users/routes').router);
 
 let counter = 0;
 const makeUser = (role, status = 'active') => {

@@ -27,7 +27,7 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 
 const { User } = require('../../src/models');
-const usersRouter = require('../../src/api/users/routes');
+const { router: usersRouter } = require('../../src/api/users/routes');
 
 describe('Users routes', () => {
   let app;

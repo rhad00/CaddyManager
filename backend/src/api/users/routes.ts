@@ -1,22 +1,29 @@
-const express = require('express');
-const { sequelize, User, ApiKey } = require('../../models');
-const { generateToken } = require('../../services/authService');
-const { userValidation } = require('../../middleware/validation');
-const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { sequelize, User, ApiKey } from '../../models';
+import { generateToken } from '../../services/authService';
+import type { Transaction } from 'sequelize';
+import { currentUser } from '../../utils/requestUser';
+import { queryString } from '../../utils/query';
+import { userValidation } from '../../middleware/validation';
+import { authMiddleware, roleMiddleware, requireApiKeyPermission } from '../../middleware/auth';
+
+export const router = express.Router();
 
 class LastAdminError extends Error {}
 
-const isActiveAdmin = (user) => user.role === 'admin' && user.status === 'active';
+const isActiveAdmin = (user: Pick<User, 'role' | 'status'>): boolean => user.role === 'admin' && user.status === 'active';
 
 /**
  * Apply a change to a user in a transaction, refusing it when it would leave no active
  * admin. The admin rows are locked so two concurrent requests cannot both pass the check.
- * @param {Object} user - the user being changed
- * @param {boolean} staysActiveAdmin - whether the user is still an active admin afterwards
- * @param {(transaction) => Promise<unknown>} change
+ * @param user - the user being changed
+ * @param staysActiveAdmin - whether the user is still an active admin afterwards
  */
-async function changeUserKeepingAnAdmin(user, staysActiveAdmin, change) {
+async function changeUserKeepingAnAdmin(
+  user: User,
+  staysActiveAdmin: boolean,
+  change: (transaction: Transaction) => Promise<unknown>
+): Promise<void> {
   await sequelize.transaction(async (transaction) => {
     if (isActiveAdmin(user) && !staysActiveAdmin) {
       const admins = await User.findAll({
@@ -63,7 +70,7 @@ async function changeUserKeepingAnAdmin(user, staysActiveAdmin, change) {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], userValidation, async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], userValidation, async (req: Request, res: Response) => {
   try {
     const { email, password, role } = req.body;
 
@@ -133,15 +140,15 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.get('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request, res: Response) => {
   try {
     const { page, limit } = req.query;
 
     const attributes = ['id', 'email', 'role', 'status', 'last_login', 'createdAt', 'updatedAt'];
 
     if (page || limit) {
-      const pageNum = Math.max(1, parseInt(page) || 1);
-      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const pageNum = Math.max(1, parseInt(queryString(page) ?? '', 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(queryString(limit) ?? '', 10) || 25));
       const offset = (pageNum - 1) * limitNum;
 
       const { count, rows: users } = await User.findAndCountAll({
@@ -210,7 +217,7 @@ router.get('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissio
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const userId = req.params.id;
     const { role, status, password } = req.body;
@@ -221,14 +228,14 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
     }
 
     // Prevent demoting or locking self
-    if (role && role !== 'admin' && req.user.id === userId) {
+    if (role && role !== 'admin' && currentUser(req).id === userId) {
       return res.status(400).json({ success: false, message: 'Cannot change your own admin role' });
     }
-    if (status === 'locked' && req.user.id === userId) {
+    if (status === 'locked' && currentUser(req).id === userId) {
       return res.status(400).json({ success: false, message: 'Cannot lock your own account' });
     }
 
-    const updates = {};
+    const updates: Partial<Pick<User, 'role' | 'status' | 'failed_login_attempts' | 'lockout_until' | 'password_hash'>> = {};
     if (role && ['admin', 'read-only'].includes(role)) {
       updates.role = role;
     }
@@ -244,7 +251,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
     }
 
     const staysActiveAdmin = isActiveAdmin({ role: updates.role ?? user.role, status: updates.status ?? user.status });
-    await changeUserKeepingAnAdmin(user, staysActiveAdmin, (transaction) => user.update(updates, { transaction }));
+    await changeUserKeepingAnAdmin(user, staysActiveAdmin, (transaction: Transaction) => user.update(updates, { transaction }));
 
     res.status(200).json({
       success: true,
@@ -286,7 +293,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const userId = req.params.id;
 
@@ -301,7 +308,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
     }
 
     // API keys act as their owner, so they go with the user (created_by is NOT NULL)
-    await changeUserKeepingAnAdmin(user, false, async (transaction) => {
+    await changeUserKeepingAnAdmin(user, false, async (transaction: Transaction) => {
       await ApiKey.destroy({ where: { created_by: user.id }, transaction });
       await user.destroy({ transaction });
     });
@@ -315,5 +322,3 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
     res.status(500).json({ success: false, message: 'Server error while deleting user' });
   }
 });
-
-module.exports = router;
