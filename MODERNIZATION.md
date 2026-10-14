@@ -55,7 +55,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | done |
-| 0.28 | Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5 | pending |
+| 0.28 | Major upgrades: `dockerode` 5 (done), `nodemailer` 10, `sqlite3` 6, `simple-git` 4 | in progress |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
 ## Changes
@@ -1079,6 +1079,20 @@ Left open (low risk, not label-reachable):
   `JWT_SECRET` when the variables are unset (`${VAR}` instead of `${VAR:?message}`);
   the backend then stops or runs with a blank password. Failing fast in the compose
   file is a behavior change, left for the deployment pass.
+
+### 0.28 Major upgrades (one commit per package)
+
+Release notes read before each upgrade; each package is verified on its own.
+
+#### 0.28a dockerode 4.0.2 → 5.0.1
+
+- Upstream changes: dropped the `uuid` dependency, raised the minimum Node version
+  (the package says >= 14.17; we run 24). Nothing in the API changed.
+- Used by: `dockerDiscoveryService` only (`new Docker`, `ping`, `getEvents`,
+  `listContainers`, `getContainer().inspect()`).
+- Verification: the live discovery check against the real Docker daemon (API 1.55)
+  still gets the start event, parses the inspect labels and reaches
+  `createOrUpdateProxy`; backend 60 suites passed, 1 skipped; 498 tests passed.
 
 ## Where this session stopped
 
