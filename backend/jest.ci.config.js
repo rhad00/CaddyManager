@@ -9,7 +9,7 @@ module.exports = {
   ...base,
   verbose: false,
   collectCoverage: true,
-  collectCoverageFrom: ['src/**/*.js'],
+  collectCoverageFrom: ['src/**/*.{js,ts}', '!src/**/*.d.ts'],
   coverageReporters: ['text-summary', 'json-summary', 'lcov'],
   coverageThreshold: {
     global: { statements: 53, branches: 50, functions: 55, lines: 53 },

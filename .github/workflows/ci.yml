@@ -76,6 +76,10 @@ jobs:
           SQLITE_PATH: ':memory:'
         run: npm run test:ci
 
+      - name: Build the backend
+        working-directory: backend
+        run: npm run build
+
       - name: Build Caddy image (with project plugins)
         run: docker build -t caddymanager-caddy:ci ./caddy
 
@@ -96,6 +100,17 @@ jobs:
           name: backend-coverage
           path: backend/coverage/
           retention-days: 7
+
+  # The image production runs: compiled in a build stage, only dist/ shipped. A separate
+  # job so the build context is a fresh checkout (no node_modules)
+  backend-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the backend Docker image
+        run: docker build -t caddymanager-backend:ci ./backend
 
   # Production runs on PostgreSQL; the model syncs and migrations differ from SQLite
   backend-postgres:

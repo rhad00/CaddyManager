@@ -2,9 +2,9 @@
  * Cluster-aware entry point for CaddyManager backend.
  *
  * Usage:
- *   CLUSTER_MODE=true node src/cluster.js
+ *   npm run start:cluster        (builds, then CLUSTER_MODE=true node dist/cluster.js)
  *   — or simply —
- *   node src/cluster.js          (runs in single-process mode when CLUSTER_MODE is unset)
+ *   node dist/cluster.js         (runs in single-process mode when CLUSTER_MODE is unset)
  *
  * Workers default to the number of CPU cores.
  * Override with CLUSTER_WORKERS=<n>.

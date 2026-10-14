@@ -34,6 +34,8 @@ services:
       - JWT_SECRET=dev_secret_key_123_2316492642314
       - JWT_EXPIRES_IN=24h
       - LOG_LEVEL=debug
+    # Rebuilds dist/ and restarts when a file in src/ changes (needs `npm install` in ./backend on the host)
+    command: ["npm", "run", "dev"]
     volumes:
       - ./backend:/app  # Mount source code for development
       - backend_data:/app/data

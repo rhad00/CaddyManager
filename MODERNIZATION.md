@@ -59,6 +59,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.29 | Declared but unimplemented: middlewares implemented; `custom_ssl_cert_id` removed; Kubernetes discovery and backup upload stay planned, stated honestly | done |
 | 1.1a | Phase 1 finding: audit entries lost the resource id | done |
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
+| 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 
 ## Changes
 
@@ -1327,8 +1328,55 @@ therefore lacked the id of the affected object.
   compiler does not offer the API that `ts-jest` uses, so the choice (an SWC or esbuild
   transformer, or Node's built-in type stripping) is the first step of that phase.
 
+## Phase 2: converting to TypeScript
+
+### 2.1 Build pipeline and the first .ts file
+
+Nothing can be converted until `.ts` files can be built, tested and shipped. This step
+puts that in place and proves it with one real module (`utils/query`, now `query.ts`).
+
+- **Build** (`tsconfig.build.json`, `npm run build`): `tsc` compiles `src/**/*.{js,ts}` to
+  `dist/` (CommonJS, source maps, comments kept because Swagger reads the JSDoc of the API
+  files). TypeScript 7 does it in about a second. `dist/` mirrors `src/`, so the
+  `__dirname`-relative paths (backups, config backups, migrations, Swagger globs) stay
+  valid; the Swagger spec has the same 56 paths from `src` and from `dist`.
+- **Run**: `npm start` builds then runs `dist/index.js`; `npm run dev` is nodemon
+  rebuilding and restarting on a change in `src/` (checked: a touched file restarts the
+  server); `npm run start:cluster` runs `dist/cluster.js`. `node src/index.js` stops
+  working as soon as a `.ts` file exists (documented in the backend README).
+- **Tests**: Jest keeps running the sources. `babel.config.js` (Babel 7 `preset-env` for
+  the current Node + `preset-typescript`, matching the Babel 7 inside Jest 30) strips the
+  types and turns `import`/`export` into CommonJS. `ts-jest` is not an option: its
+  peer dependency is `typescript >=4.3 <7`, and this project uses TypeScript 7. The coverage run
+  (`test:ci`) counts `.ts` files too.
+- **Docker** (`backend/Dockerfile`): two stages. The first installs everything and runs
+  `npm run build`; the second installs production dependencies only and copies `dist/`.
+  Starts with `node --enable-source-maps dist/index.js`. The repository ignores
+  `.dockerignore` files on purpose (root `.gitignore`), so none is added: a local
+  `docker build` sends the whole `backend/` directory, `node_modules` included, as
+  context (only `src/` and the package files are copied into the image).
+  The dev compose file now runs `npm run dev` (the source is mounted over `/app`).
+- **CI**: a "Build the backend" step after the type check, and a new `backend-image` job
+  that builds the Docker image from a fresh checkout (no `node_modules` in its context).
+- Rule for the conversions that follow: a converted module keeps exporting what its
+  callers `require`. Modules that do `module.exports = { a, b }` become `export const a`
+  (compiled to `exports.a`), which `require` callers and `jest.mock` factories still
+  match. Babel's TypeScript preset cannot compile `export =`, so a module that exports a
+  single object or class (the services) needs its consumers and test mocks changed in
+  step; that is Phase 3.
+- Verification:
+  - `npm run typecheck` and `npm run build` exit 0; backend 64 suites passed, 1 skipped;
+    557 tests passed; coverage 56.6% statements (threshold 53).
+  - `dist/` booted against a real Caddy: `/health` and `/ready` 200, migrations ran.
+  - Cluster mode from `dist/cluster.js`: one leader, two request-only workers, health 200.
+  - The built Docker image (486 MB) boots against a real Caddy, health 200, runs as the
+    `node` user, has no dev tooling and no `src/`, only `dist/`.
+- Not done: the Docker image build is only exercised in CI from now on, not the
+  production compose file.
+
 ## Where this session stopped
 
-Done: 0.1–0.29 and Phase 1. Next up, in order:
+Done: 0.1–0.29, Phase 1 and the Phase 2 pipeline (2.1). Next up, in order:
 
-1. TypeScript phases 2–5 (see the plan at the top).
+1. Phase 2: convert `utils`, `config`, `middleware` to `.ts`, file by file, turning `strict` on for each.
+2. TypeScript phases 3–5 (see the plan at the top).

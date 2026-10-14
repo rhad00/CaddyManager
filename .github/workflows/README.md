@@ -52,10 +52,12 @@ This directory contains the CI/CD workflows for CaddyManager.
    - Type-checks the backend (`npm run typecheck`, `tsc` with `checkJs`)
    - Runs all backend tests once with coverage (`npm run test:ci`); the build fails
      when coverage drops below the thresholds in `backend/jest.ci.config.js`
+   - Compiles the backend (`npm run build`)
    - Builds the Caddy image and runs the Caddy config contract tests
-2. **backend-postgres**: Runs the backend integration tests against PostgreSQL 16
+2. **backend-image**: Builds the backend Docker image (compile stage + runtime stage)
+3. **backend-postgres**: Runs the backend integration tests against PostgreSQL 16
    (production's database; the other job uses SQLite)
-3. **frontend-e2e**: Runs the Playwright browser tests (Chromium, API mocked)
+4. **frontend-e2e**: Runs the Playwright browser tests (Chromium, API mocked)
 
 ## Workflow Flow
 
