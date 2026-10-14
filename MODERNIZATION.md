@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.2 | Phase 4: `features` and `logs` routes to TypeScript | done |
 | 4.1 | Phase 4: `zod` and the `validateBody` middleware | done |
 | 3.14 | Phase 3: `caddyService` to strict TypeScript (Phase 3 complete) | done |
 | 3.13 | Phase 3: `gitService` to strict TypeScript | done |
@@ -1846,9 +1847,16 @@ where a route checks its body by hand. `zod` 4 is a dependency of the backend;
 - The existing express-validator rules stay until the route that uses them is converted.
 - Tests: `tests/unit/validateRequest.test.js` (6 tests).
 
+### 4.2 features and logs routes
+
+`api/features/routes.ts` and `api/logs/routes.ts`. The pattern for every converted route module: a named export `router` (Babel's TypeScript preset cannot compile `export =`). `api/index.js` loads a module with `loaded.router ?? loaded`, so converted and not yet converted modules mix until the last one is done; tests read `{ router }`.
+
+- The log filters are typed with `LogFilters` and a `FILTER_NAMES` tuple. No behaviour change.
+- Verification: typecheck (loose and strict), build, full suite (612 tests), a `dist/` boot, and the swagger spec built from `dist/` still lists `/features` and `/logs/*` (56 paths in all).
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.1 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.2 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

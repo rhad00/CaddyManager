@@ -1,5 +1,6 @@
-const express = require('express');
-const router = express.Router();
+import express from 'express';
+
+export const router = express.Router();
 
 /**
  * @swagger
@@ -26,7 +27,7 @@ const router = express.Router();
  *                   properties:
  *                     cloudflare: { type: boolean, description: "Whether Cloudflare DNS challenge is enabled" }
  */
-router.get('/', async (req, res) => {
+router.get('/', async (_req, res) => {
   try {
     const cloudflareEnabled = !!process.env.CF_API_TOKEN;
     res.status(200).json({ success: true, features: { cloudflare: cloudflareEnabled } });
@@ -35,5 +36,3 @@ router.get('/', async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch features' });
   }
 });
-
-module.exports = router;

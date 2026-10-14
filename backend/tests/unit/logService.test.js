@@ -32,7 +32,7 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 
 const { parseLine, getLogs, getLogStats, LOG_FILE } = require('../../src/services/logService');
-const logsRouter = require('../../src/api/logs/routes');
+const { router: logsRouter } = require('../../src/api/logs/routes');
 
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 

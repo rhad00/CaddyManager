@@ -31,7 +31,9 @@ const ROUTES = [
 function buildApiRouter() {
   const router = express.Router();
   for (const [path, module, ...marks] of ROUTES) {
-    router.use(path, ...marks, require(module));
+    const loaded = require(module);
+    // Converted route modules export `router`; the others still export the router itself
+    router.use(path, ...marks, loaded.router ?? loaded);
   }
   return router;
 }

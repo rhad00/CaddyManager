@@ -1,9 +1,11 @@
-const express = require('express');
-const { authMiddleware } = require('../../middleware/auth');
-const { getLogs, streamLogs, getLogStats } = require('../../services/logService');
-const { queryString } = require('../../utils/query');
+import express from 'express';
+import { authMiddleware } from '../../middleware/auth';
+import { getLogs, streamLogs, getLogStats, type LogFilters } from '../../services/logService';
+import { queryString } from '../../utils/query';
 
-const router = express.Router();
+export const router = express.Router();
+
+const FILTER_NAMES = ['limit', 'status', 'method', 'host', 'ip', 'search', 'from', 'to'] as const;
 
 /**
  * @swagger
@@ -59,8 +61,8 @@ const router = express.Router();
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const filters = {};
-    for (const name of ['limit', 'status', 'method', 'host', 'ip', 'search', 'from', 'to']) {
+    const filters: LogFilters = {};
+    for (const name of FILTER_NAMES) {
       filters[name] = queryString(req.query[name]);
     }
     const entries = await getLogs(filters);
@@ -114,13 +116,11 @@ router.get('/stream', authMiddleware, (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/stats', authMiddleware, async (req, res) => {
+router.get('/stats', authMiddleware, async (_req, res) => {
   try {
     const stats = getLogStats();
     res.json({ success: true, stats });
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false, message: 'Failed to get log stats' });
   }
 });
-
-module.exports = router;
