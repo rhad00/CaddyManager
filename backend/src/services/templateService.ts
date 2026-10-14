@@ -1,5 +1,6 @@
 import { sequelize, Template } from '../models';
 import type { TemplateHeader, TemplateMiddleware } from '../models/template';
+import { S3_TEMPLATE_NAME, S3_TEMPLATE_DESCRIPTION } from '../utils/s3Template';
 
 /** A template that ships with CaddyManager */
 interface TemplateSeed {
@@ -65,50 +66,9 @@ const DEFAULT_TEMPLATES: TemplateSeed[] = [
     middleware: []
   },
   {
-    name: 'Amazon S3',
-    description: 'S3 compatible storage with proper CORS and forwarding headers',
-    headers: [
-      {
-        header_type: 'request',
-        header_name: 'Host',
-        header_value: '{http.request.host}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'Authorization',
-        header_value: '{http.request.header.Authorization}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'Content-Type',
-        header_value: '{http.request.header.Content-Type}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'Content-Length',
-        header_value: '{http.request.header.Content-Length}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'Content-MD5',
-        header_value: '{http.request.header.Content-MD5}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'X-Amz-Date',
-        header_value: '{http.request.header.X-Amz-Date}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'X-Amz-Content-Sha256',
-        header_value: '{http.request.header.X-Amz-Content-Sha256}'
-      },
-      {
-        header_type: 'request',
-        header_name: 'X-Amz-Acl',
-        header_value: '{http.request.header.X-Amz-Acl}'
-      }
-    ],
+    name: S3_TEMPLATE_NAME,
+    description: S3_TEMPLATE_DESCRIPTION,
+    headers: [],
     middleware: []
   },
   {

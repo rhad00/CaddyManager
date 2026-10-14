@@ -34,7 +34,7 @@ describe('createRouteFromProxy', () => {
       middlewares: [{ middleware_type: 'redirect', configuration: { from: '/a', to: '/b' }, enabled: true }],
     });
     expect(handlers.map((h) => h.handler)).toEqual([
-      'rate_limit', 'subroute', 'authentication', 'subroute', 'encode', 'reverse_proxy',
+      'rate_limit', 'subroute', 'authentication', 'subroute', 'subroute', 'reverse_proxy',
     ]);
   });
 
@@ -135,6 +135,21 @@ describe('createRouteFromProxy', () => {
       });
     });
 
+    it('skips rules that only pass a request header through to itself', () => {
+      const handler = terminal(handlersOf({
+        ...base,
+        headers: [
+          { enabled: true, header_type: 'request', header_name: 'Content-MD5', header_value: '{http.request.header.Content-MD5}' },
+          { enabled: true, header_type: 'request', header_name: 'x-amz-acl', header_value: '{http.request.header.X-Amz-Acl}' },
+          { enabled: true, header_type: 'request', header_name: 'X-Real-IP', header_value: '{http.request.remote.host}' },
+          { enabled: true, header_type: 'request', header_name: 'X-A', header_value: '{http.request.header.X-B}' },
+        ],
+      }));
+      expect(handler.headers).toEqual({
+        request: { set: { 'X-Real-IP': ['{http.request.remote.host}'], 'X-A': ['{http.request.header.X-B}'] } },
+      });
+    });
+
     it('leaves headers out when none is enabled', () => {
       const handler = terminal(handlersOf({
         ...base,
@@ -156,6 +171,24 @@ describe('createRouteFromProxy', () => {
       }));
       expect(handler.transport.tls.insecure_skip_verify).toBe(false);
     });
+  });
+});
+
+describe('compression', () => {
+  const base = { domains: ['a.example.com'], upstream_url: 'http://app:8080', compression_enabled: true };
+
+  it('is skipped for HEAD requests and S3-signed requests', () => {
+    const wrapper = createRouteFromProxy(base).handle.find((h) => h.handler === 'subroute');
+    const route = wrapper.routes[0];
+    expect(route.handle).toEqual([{ handler: 'encode', encodings: { gzip: {}, zstd: {} } }]);
+    expect(route.match).toEqual([{
+      not: [
+        { method: ['HEAD'] },
+        { header: { Authorization: ['AWS4-HMAC-SHA256*', 'AWS *'] } },
+        { query: { 'X-Amz-Signature': ['*'] } },
+        { query: { Signature: ['*'], AWSAccessKeyId: ['*'] } },
+      ],
+    }]);
   });
 });
 

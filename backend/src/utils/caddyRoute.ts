@@ -136,6 +136,27 @@ function ipFilterHandler(ipFiltering: ProxyRouteInput['ip_filtering']): CaddyHan
   };
 }
 
+/**
+ * `X: {http.request.header.X}` changes nothing when the client sent X, and when it did not Caddy
+ * sets X to an empty string, which strict origins (S3 Content-MD5, x-amz-acl) reject. Caddy already
+ * forwards the header untouched, so such a rule is never emitted.
+ */
+function isSelfPassthrough(name: string, value: string): boolean {
+  const match = /^\{http\.request\.header\.([^{}]+)\}$/.exec(String(value).trim());
+  return match !== null && match[1].toLowerCase() === String(name).trim().toLowerCase();
+}
+
+/**
+ * Compression must not touch S3-signed traffic: a gzip'd body changes the ETag and a gzip'd HEAD
+ * reports the wrong Content-Length, which breaks SDKs that verify them.
+ */
+const COMPRESSION_SKIPPED_FOR = [
+  { method: ['HEAD'] },
+  { header: { Authorization: ['AWS4-HMAC-SHA256*', 'AWS *'] } },
+  { query: { 'X-Amz-Signature': ['*'] } },
+  { query: { Signature: ['*'], AWSAccessKeyId: ['*'] } },
+];
+
 /** Request and response header rules of the proxy, in the reverse_proxy `headers` shape */
 function headerRules(headers: NonNullable<ProxyRouteInput['headers']>): ReverseProxyHandler['headers'] {
   const requestHeaders: Record<string, string[]> = {};
@@ -143,6 +164,7 @@ function headerRules(headers: NonNullable<ProxyRouteInput['headers']>): ReverseP
 
   for (const header of headers.filter((h) => h.enabled)) {
     if (header.header_type === 'request') {
+      if (isSelfPassthrough(header.header_name, header.header_value)) continue;
       requestHeaders[header.header_name] = [header.header_value];
     } else if (header.header_type === 'response') {
       responseHeaders[header.header_name] = [header.header_value];
@@ -270,11 +292,11 @@ export function createRouteFromProxy(proxy: ProxyRouteInput): CaddyRoute {
 
   if (proxy.compression_enabled) {
     handlers.push({
-      handler: 'encode',
-      encodings: {
-        gzip: {},
-        zstd: {},
-      },
+      handler: 'subroute',
+      routes: [{
+        match: [{ not: COMPRESSION_SKIPPED_FOR }],
+        handle: [{ handler: 'encode', encodings: { gzip: {}, zstd: {} } }],
+      }],
     });
   }
 

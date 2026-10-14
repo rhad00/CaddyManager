@@ -328,8 +328,9 @@ describe('CaddyService', () => {
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
     expect(handlers[2].handler).toBe('authentication');
-    // compression encode may appear before reverse_proxy/subroute
-    expect(handlers.some(h => h.handler === 'encode')).toBe(true);
+    // compression is an encode handler wrapped in a subroute (it skips HEAD and S3-signed requests)
+    const encodeWrapper = handlers.find(h => h.handler === 'subroute' && h.routes[0].handle[0].handler === 'encode');
+    expect(encodeWrapper).toBeDefined();
     // subroute must exist for path routing (there will be 2 subroutes: one for IP filtering, one for path routing)
     const subroutes = handlers.filter(h => h.handler === 'subroute');
     expect(subroutes.length).toBeGreaterThanOrEqual(1);
@@ -376,7 +377,8 @@ describe('CaddyService', () => {
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
     expect(handlers[2].handler).toBe('authentication');
-    expect(handlers[3].handler).toBe('encode');
+    expect(handlers[3].handler).toBe('subroute');
+    expect(handlers[3].routes[0].handle[0].handler).toBe('encode');
     const rp = handlers[4];
     expect(rp.handler).toBe('reverse_proxy');
 
