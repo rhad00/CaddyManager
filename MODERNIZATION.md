@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.4 | Phase 3: `Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository` models as typed classes (all models done) | done |
 | 3.3 | Phase 3: `AlertRule`, `ApiKey`, `AuditLog`, `Backup`, `Metric`, `NotificationChannel` models as typed classes | done |
 | 3.2 | Phase 3: `Proxy`, `Header`, `Middleware`, `Template` models as typed classes | done |
 | 3.1 | Phase 3: first class-based model (`User`) and the pattern for the others | done |
@@ -1574,9 +1575,29 @@ Six more typed classes (same pattern; tables, columns, indexes and defaults unch
 - Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
   PostgreSQL suites (17 suites, 153 tests) and a `dist/` boot pass.
 
+### 3.4 Certificate, CertificateAuthority, ConfigChange, DiscoveredService and GitRepository models
+
+The last five models are typed classes; every model in `src/models` is a class now. Tables,
+columns and defaults are unchanged.
+
+- The encryption hooks of `Certificate` (`private_key_pem`) and `GitRepository`
+  (`access_token`, `ssh_key`) moved from `addHook` calls into the `hooks` option of
+  `init`, the way `User` has them: `addHook` hands the hook an untyped `Model`, `init`
+  hands it the typed instance. Same hooks, same order, same effect.
+- `Certificate` and `CertificateAuthority` had a `description` key on some columns.
+  Sequelize ignores it (the option is `comment`), so it never reached the schema; the
+  text is kept as doc comments on the class fields, and no `comment` was added (that
+  would change the schema).
+- Type fixes in JS callers: route params cast to `string`; the discovery list filter
+  (`?source_type=`, `?status=`) is cast to `WhereOptions` (the query values are still not
+  validated; that is Phase 4); the certificate sync status and the CA type are cast to their
+  unions.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests) and a `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the remaining models (`Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository`), then the services, then `config/database`.
+1. Phase 3: `models/index` and `config/database` to TypeScript, then the services one by one.
 2. TypeScript phases 3–5 (see the plan at the top).

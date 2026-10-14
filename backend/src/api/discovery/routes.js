@@ -61,7 +61,7 @@ router.get('/', authMiddleware, async (req, res) => {
       const offset = (pageNum - 1) * limitNum;
 
       const { count, rows: services } = await DiscoveredService.findAndCountAll({
-        where,
+        where: /** @type {import('sequelize').WhereOptions} */ (where),
         include: [{
           model: Proxy,
           as: 'proxy',
@@ -86,7 +86,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     const services = await DiscoveredService.findAll({
-      where,
+      where: /** @type {import('sequelize').WhereOptions} */ (where),
       include: [{
         model: Proxy,
         as: 'proxy',
@@ -166,7 +166,7 @@ router.get('/status', authMiddleware, async (req, res) => {
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const service = await DiscoveredService.findByPk(req.params.id, {
+    const service = await DiscoveredService.findByPk(/** @type {string} */ (req.params.id), {
       include: [{
         model: Proxy,
         as: 'proxy'

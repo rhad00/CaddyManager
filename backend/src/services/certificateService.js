@@ -77,7 +77,7 @@ class CertificateService {
         issuer: result.issuer || 'Unknown',
         valid_from: new Date(result.validFrom),
         valid_to: validTo,
-        status: validTo > new Date() ? 'valid' : 'expired'
+        status: /** @type {'valid'|'expired'} */ (validTo > new Date() ? 'valid' : 'expired')
       };
       const existing = byKey.get(key);
       if (existing) {
@@ -408,7 +408,7 @@ class CertificateService {
 
     return CertificateAuthority.create({
       name,
-      type,
+      type: /** @type {'acme'|'custom'} */ (type), // checked above
       url: type === 'acme' ? url : null,
       email: email || null,
       certificate_pem: certificatePem,

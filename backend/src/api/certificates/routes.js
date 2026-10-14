@@ -648,7 +648,7 @@ router.delete('/acme/accounts/:id', [authMiddleware, roleMiddleware('admin')], a
  */
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const certificate = await Certificate.findByPk(req.params.id, {
+    const certificate = await Certificate.findByPk(/** @type {string} */ (req.params.id), {
       attributes: { exclude: ['private_key_pem'] }
     });
 

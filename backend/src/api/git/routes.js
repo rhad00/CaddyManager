@@ -68,7 +68,7 @@ router.get('/repositories', authMiddleware, async (req, res) => {
  */
 router.get('/repositories/:id', authMiddleware, async (req, res) => {
   try {
-    const repo = await GitRepository.findByPk(req.params.id, {
+    const repo = await GitRepository.findByPk(/** @type {string} */ (req.params.id), {
       attributes: { exclude: ['access_token', 'ssh_key'] },
       include: [{
         model: ConfigChange,
