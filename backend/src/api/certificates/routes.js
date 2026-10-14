@@ -138,7 +138,7 @@ router.get('/', authMiddleware, async (req, res) => {
  */
 router.get('/domains/:domain', authMiddleware, async (req, res) => {
   try {
-    const domain = req.params.domain;
+    const domain = /** @type {string} */ (req.params.domain); // a named route parameter is always a single string
     const certificates = await certificateService.getCertificatesForDomain(domain);
 
     res.status(200).json({

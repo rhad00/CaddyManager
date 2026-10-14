@@ -1,10 +1,10 @@
-const { rateLimit } = require('express-rate-limit');
+import { rateLimit } from 'express-rate-limit';
 
 /**
  * Rate limiter for login endpoints
  * stricter limits to prevent brute force attacks
  */
-const loginLimiter = rateLimit({
+export const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5, // Limit each IP to 5 login requests per windowMs
     message: {
@@ -19,7 +19,7 @@ const loginLimiter = rateLimit({
  * Rate limiter for password reset requests
  * Very strict to prevent abuse and email enumeration via timing
  */
-const passwordResetLimiter = rateLimit({
+export const passwordResetLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 3, // Limit each IP to 3 password reset requests per hour
     message: {
@@ -33,7 +33,7 @@ const passwordResetLimiter = rateLimit({
 /**
  * General rate limiter for all API endpoints
  */
-const apiLimiter = rateLimit({
+export const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per windowMs
     message: {
@@ -48,7 +48,7 @@ const apiLimiter = rateLimit({
  * Rate limiter for 2FA challenge endpoint
  * Prevents brute-force TOTP code guessing
  */
-const twoFaLimiter = rateLimit({
+export const twoFaLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10, // Limit each IP to 10 2FA attempts per windowMs
     message: {
@@ -63,7 +63,7 @@ const twoFaLimiter = rateLimit({
  * Rate limiter for certificate upload endpoints
  * Restricts repeated private-key upload attempts
  */
-const certificateUploadLimiter = rateLimit({
+export const certificateUploadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10,
     message: {
@@ -79,7 +79,7 @@ const certificateUploadLimiter = rateLimit({
  * The endpoint is unauthenticated so it could be abused to waste resources;
  * 60 requests per minute per IP is generous for legitimate SPA usage.
  */
-const csrfTokenLimiter = rateLimit({
+export const csrfTokenLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 60,
     message: {
@@ -89,12 +89,3 @@ const csrfTokenLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
-
-module.exports = {
-    loginLimiter,
-    passwordResetLimiter,
-    apiLimiter,
-    twoFaLimiter,
-    certificateUploadLimiter,
-    csrfTokenLimiter
-};

@@ -1,8 +1,9 @@
-const swaggerJsdoc = require('swagger-jsdoc');
-const swaggerUi = require('swagger-ui-express');
-const path = require('path');
+import path from 'path';
+import type { Express, Request, Response } from 'express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
 
-const options = {
+const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.3',
     info: {
@@ -85,12 +86,12 @@ const options = {
   ],
 };
 
-const swaggerSpec = swaggerJsdoc(options);
+export const swaggerSpec = swaggerJsdoc(options);
 
 /**
  * Mount Swagger UI at /api/docs
  */
-function setupSwagger(app) {
+export function setupSwagger(app: Express): void {
   app.use(
     '/api/docs',
     swaggerUi.serve,
@@ -101,10 +102,8 @@ function setupSwagger(app) {
   );
 
   // Raw OpenAPI JSON spec
-  app.get('/api/docs/openapi.json', (req, res) => {
+  app.get('/api/docs/openapi.json', (_req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(swaggerSpec);
   });
 }
-
-module.exports = { setupSwagger, swaggerSpec };

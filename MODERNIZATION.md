@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 2.5 | Phase 2: `middleware/*` and `config/swagger` to strict TypeScript (`config/database` waits for Phase 3) | done |
 | 2.4 | Phase 2: `proxyValidation`, `proxyImport`, `basicAuth`, `discoveryLabels` to strict TypeScript (all of `utils` is `.ts`) | done |
 | 2.3 | Phase 2: `outboundRequest`, `notificationChannels`, `proxyMiddlewares`, `upstreamProbe` to strict TypeScript | done |
 | 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
@@ -1456,9 +1457,36 @@ The last four `utils` modules are strict `.ts` now (`git mv`): `proxyValidation`
   557 tests) pass; `dist/` boots against a real Caddy (health, ready and API docs 200,
   10 migrations ran).
 
+### 2.5 Middleware and Swagger config
+
+`middleware/auth`, `middleware/rateLimiter`, `middleware/validation` and
+`config/swagger` are strict `.ts` (`git mv`); exports are unchanged. `@types/swagger-jsdoc`
+and `@types/swagger-ui-express` were added as dev dependencies.
+
+- **`config/database` stays JavaScript on purpose.** Typing `sequelize` makes every
+  `sequelize.define(...)` model an attribute-less `Model<any, any>`, which breaks the type
+  check in about 350 places across the services. It is converted with the class-based
+  models in Phase 3.
+- `auth.ts` reads the `ApiKey` and `User` models through two small interfaces
+  (`ApiKeyModel`, `UserModel`) for the same reason; Phase 3 replaces them with the real
+  model classes. The lazy `require('../models')` (circular-require avoidance) is kept.
+- `authMiddleware` is now typed, so Express infers the `req` type of route handlers after
+  it. That surfaced one place where a named route parameter is typed
+  `string | string[]` (`api/certificates/routes.js`); it is cast to `string`.
+- Behaviour changes, all on malformed requests: an `X-API-Key` header that is not a string
+  is stringified instead of throwing; a `?token=` query parameter that is not a single
+  string (`?token=a&token=b`) is ignored, giving 401 "No token provided" instead of 401
+  "Invalid token"; `roleMiddleware` denies a user without a role.
+- Open item (not changed here): with `DB_SSL=true`, `config/database` connects with
+  `rejectUnauthorized: false`, so the PostgreSQL server certificate is not verified. It
+  needs a setting for a CA file or a verify flag before it can be tightened without
+  breaking existing deployments.
+- Verification: typecheck (loose and strict), build and the full suite (64 suites,
+  557 tests) pass; `dist/` boots against a real Caddy.
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). Next up, in order:
+Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). and the middleware (2.5). Next up, in order:
 
-1. Phase 2: convert `config` and `middleware`, then add a typed Caddy config module.
+1. Phase 2: a typed Caddy config module.
 2. TypeScript phases 3–5 (see the plan at the top).

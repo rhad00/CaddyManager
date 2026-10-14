@@ -1,9 +1,13 @@
-const { body, validationResult } = require('express-validator');
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { body, validationResult, type ValidationChain } from 'express-validator';
+
+/** A route's validation: the rules, then the handler that rejects a request that broke them */
+export type ValidationRules = Array<ValidationChain | RequestHandler>;
 
 /**
  * Middleware to check for validation errors
  */
-const validate = (req, res, next) => {
+const validate = (req: Request, res: Response, next: NextFunction): void | Response => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(400).json({
@@ -18,7 +22,7 @@ const validate = (req, res, next) => {
 /**
  * Validation rules for login
  */
-const loginValidation = [
+export const loginValidation: ValidationRules = [
     body('email')
         .trim()
         .isEmail()
@@ -34,7 +38,7 @@ const loginValidation = [
 /**
  * Validation rules for user registration/creation
  */
-const userValidation = [
+export const userValidation: ValidationRules = [
     body('email')
         .trim()
         .isEmail()
@@ -61,8 +65,3 @@ const userValidation = [
         .escape(),
     validate
 ];
-
-module.exports = {
-    loginValidation,
-    userValidation
-};
