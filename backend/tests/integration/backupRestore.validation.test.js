@@ -16,7 +16,7 @@ jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase:
 const bcrypt = require('bcrypt');
 const { sequelize, Proxy, Header, Backup } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
-const backupService = require('../../src/services/backupService');
+const { backupService } = require('../../src/services/backupService');
 
 const HASH = bcrypt.hashSync('correct horse', 4);
 const user = { id: null };

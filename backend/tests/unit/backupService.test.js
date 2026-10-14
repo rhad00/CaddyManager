@@ -1,7 +1,7 @@
 let backupService;
 try {
   // eslint-disable-next-line global-require
-  backupService = require('../../src/services/backupService');
+  ({ backupService } = require('../../src/services/backupService'));
 } catch (e) {
   backupService = null;
 }

@@ -10,7 +10,7 @@ jest.mock('../../src/middleware/auth', () => ({
   roleMiddleware: () => (_req, _res, next) => next(),
   requireApiKeyPermission: () => (_req, _res, next) => next(),
 }));
-jest.mock('../../src/services/backupService', () => ({ restoreBackup: jest.fn() }));
+jest.mock('../../src/services/backupService', () => ({ backupService: { restoreBackup: jest.fn() } }));
 jest.mock('../../src/services/gitService', () => {
   class GitRollbackError extends Error {
     constructor(message, statusCode) { super(message); this.statusCode = statusCode; }
@@ -21,7 +21,7 @@ jest.mock('../../src/services/gitService', () => {
 const express = require('express');
 const request = require('supertest');
 const { sequelize, GitRepository } = require('../../src/models');
-const backupService = require('../../src/services/backupService');
+const { backupService } = require('../../src/services/backupService');
 const gitService = require('../../src/services/gitService');
 const { ProxyImportError } = require('../../src/utils/proxyImport');
 

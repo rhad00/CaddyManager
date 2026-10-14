@@ -12,7 +12,7 @@ jest.mock('../../src/models', () => ({
 }));
 
 const { Proxy, Template, Backup } = require('../../src/models');
-const backupService = require('../../src/services/backupService');
+const { backupService } = require('../../src/services/backupService');
 
 describe('BackupService.createBackup', () => {
   const tmpBackupDir = path.join(__dirname, '../../temp-backups');

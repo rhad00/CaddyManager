@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.11 | Phase 3: `backupService` to strict TypeScript | done |
 | 3.10 | Phase 3: `certificateService` to strict TypeScript | done |
 | 3.9 | Phase 3: `metricsService` to strict TypeScript, with real tests | done |
 | 3.8 | Phase 3: `templateService` and `migrationService` (first class-instance services, named exports) | done |
@@ -1748,9 +1749,23 @@ updated. It still `require`s `caddyService`, which is converted last.
 - Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
   PostgreSQL suites, Caddy contract test (22/22) and a `dist/` boot pass.
 
+### 3.11 backupService
+
+`backupService.ts`: class and instance exported by name (`{ backupService }`); callers
+`api/backups/routes.js`, `src/index.js` and four tests updated (the `jest.mock` factory in
+`importRoutes.errors.test.js` now returns `{ backupService: { restoreBackup } }`).
+
+- Types: `CreateBackupResult`, `RestoreBackupResult`, the parsed `BackupFile`, and a small
+  `BackupUser` (a token may carry only the id). Rows built from imported data are cast to
+  `CreationAttributes` at the point where `prepareImportedProxies` has already validated them.
+- `Buffer.slice` (deprecated) became `subarray` in the backup decryption; the retention
+  query imports `Op` at the top instead of requiring it inside the method. No other change.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
+  PostgreSQL suites (the backup restore integration tests included) and a `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

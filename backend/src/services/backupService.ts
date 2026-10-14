@@ -1,11 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { promisify } = require('util');
-const writeFileAsync = promisify(fs.writeFile);
-const readFileAsync = promisify(fs.readFile);
-const mkdirAsync = promisify(fs.mkdir);
-const { 
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { promisify } from 'util';
+import dotenv from 'dotenv';
+import { Op, type CreationAttributes } from 'sequelize';
+import {
   sequelize,
   User,
   Proxy,
@@ -13,15 +12,54 @@ const {
   Middleware,
   Template,
   Backup
-} = require('../models');
-const { prepareImportedProxies, ProxyImportError } = require('../utils/proxyImport');
-const caddyService = require('./caddyService');
-require('dotenv').config();
+} from '../models';
+import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
+import type { TemplateHeader, TemplateMiddleware } from '../models/template';
+
+const writeFileAsync = promisify(fs.writeFile);
+const readFileAsync = promisify(fs.readFile);
+const mkdirAsync = promisify(fs.mkdir);
+// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
+const caddyService = require('./caddyService') as typeof import('./caddyService');
+dotenv.config();
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** What a backup file holds once parsed (the proxies are validated by prepareImportedProxies) */
+interface BackupFile {
+  version?: string;
+  timestamp?: string;
+  proxies?: unknown;
+  templates?: Array<{
+    name: string;
+    description: string | null;
+    headers: TemplateHeader[];
+    middleware: TemplateMiddleware[];
+  }>;
+}
+
+/** The user a backup is made or restored for (a token may carry only the id) */
+interface BackupUser {
+  id?: string;
+}
+
+export interface CreateBackupResult {
+  success: boolean;
+  backup: Backup;
+  filePath: string;
+}
+
+export interface RestoreBackupResult {
+  success: boolean;
+  message: string;
+  caddy: { applied: boolean; error?: string };
+  timestamp: string;
+}
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
 const ENCRYPTION_ALGO = 'aes-256-gcm';
 
-function getEncryptionKey() {
+function getEncryptionKey(): Buffer | null {
   const keyHex = process.env.BACKUP_ENCRYPTION_KEY;
   if (!keyHex) return null;
   const normalizedKey = keyHex.trim();
@@ -32,7 +70,7 @@ function getEncryptionKey() {
   return Buffer.from(normalizedKey, 'hex');
 }
 
-function encryptBuffer(plainBuf) {
+function encryptBuffer(plainBuf: Buffer): { encrypted: boolean; data: Buffer } {
   const key = getEncryptionKey();
   if (!key) return { encrypted: false, data: plainBuf };
   const iv = crypto.randomBytes(16);
@@ -45,16 +83,16 @@ function encryptBuffer(plainBuf) {
   return { encrypted: true, data: Buffer.concat([header, iv, authTag, cipherBuf]) };
 }
 
-function decryptBuffer(buf) {
-  if (buf.length < 4 || buf.slice(0, 4).toString() !== 'CMEK') {
+function decryptBuffer(buf: Buffer): Buffer {
+  if (buf.length < 4 || buf.subarray(0, 4).toString() !== 'CMEK') {
     // Not encrypted — return as-is
     return buf;
   }
   const key = getEncryptionKey();
   if (!key) throw new Error('BACKUP_ENCRYPTION_KEY is required to decrypt this backup');
-  const iv = buf.slice(4, 20);
-  const authTag = buf.slice(20, 36);
-  const cipherBuf = buf.slice(36);
+  const iv = buf.subarray(4, 20);
+  const authTag = buf.subarray(20, 36);
+  const cipherBuf = buf.subarray(36);
   const decipher = crypto.createDecipheriv(ENCRYPTION_ALGO, key, iv);
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(cipherBuf), decipher.final()]);
@@ -63,7 +101,9 @@ function decryptBuffer(buf) {
 /**
  * Service for backup and restore functionality
  */
-class BackupService {
+export class BackupService {
+  backupDir: string;
+
   constructor() {
     this.backupDir = process.env.BACKUP_DIR || path.join(__dirname, '../../backups');
     
@@ -74,7 +114,7 @@ class BackupService {
   /**
    * Ensure backup directory exists
    */
-  async ensureBackupDir() {
+  async ensureBackupDir(): Promise<void> {
     try {
       if (!fs.existsSync(this.backupDir)) {
         await mkdirAsync(this.backupDir, { recursive: true });
@@ -87,11 +127,11 @@ class BackupService {
   
   /**
    * Create a backup of the current configuration
-   * @param {Object} user - User creating the backup
-   * @param {'auto'|'manual'} backupType - Type of backup
-   * @returns {Promise<Object>} Backup information
+   * @param user - User creating the backup
+   * @param backupType - Type of backup
+   * @returns Backup information
    */
-  async createBackup(user, backupType = 'manual') {
+  async createBackup(user: BackupUser | null, backupType: 'auto' | 'manual' = 'manual'): Promise<CreateBackupResult> {
     try {
       // Ensure backup directory exists
       await this.ensureBackupDir();
@@ -118,7 +158,7 @@ class BackupService {
         version: '1.0',
         timestamp: new Date().toISOString(),
         proxies: proxies.map(proxy => {
-          const proxyData = /** @type {Record<string, unknown>} */ (proxy.toJSON());
+          const proxyData = proxy.toJSON() as unknown as Record<string, unknown>;
           // Include headers and middleware if available
           if (proxy.headers) {
             proxyData.headers = proxy.headers.map(header => header.toJSON());
@@ -140,7 +180,7 @@ class BackupService {
       const stats = fs.statSync(filePath);
       
       // Resolve actual user ID from DB if possible (token may contain minimal data)
-      let creatorId = null;
+      let creatorId: string | null = null;
       try {
         if (user && user.id) {
           const dbUser = await User.findByPk(user.id);
@@ -149,7 +189,7 @@ class BackupService {
           }
         }
       } catch (err) {
-        console.error('Failed to resolve user for backup record:', err.message);
+        console.error('Failed to resolve user for backup record:', errorMessage(err));
       }
 
       // Create backup record in database
@@ -183,21 +223,21 @@ class BackupService {
             created_by: creatorId
           });
         } catch (err) {
-          console.error('Failed to create failed backup record:', err.message);
+          console.error('Failed to create failed backup record:', errorMessage(err));
         }
       }
       
-      throw new Error(`Backup creation failed: ${error.message}`);
+      throw new Error(`Backup creation failed: ${errorMessage(error)}`);
     }
   }
   
   /**
    * Restore configuration from a backup file
-   * @param {String} backupId - ID of the backup to restore
-   * @param {Object} user - User performing the restore
-   * @returns {Promise<Object>} Restore result
+   * @param backupId - ID of the backup to restore
+   * @param user - User performing the restore
+   * @returns Restore result
    */
-  async restoreBackup(backupId, user) {
+  async restoreBackup(backupId: string, user: { id: string }): Promise<RestoreBackupResult> {
     const transaction = await sequelize.transaction();
     
     try {
@@ -226,7 +266,7 @@ class BackupService {
       const filePath = resolvedPath;
       const rawBuf = await readFileAsync(filePath);
       const plainBuf = decryptBuffer(rawBuf);
-      const backupData = JSON.parse(plainBuf.toString('utf8'));
+      const backupData = JSON.parse(plainBuf.toString('utf8')) as BackupFile;
       
       // Validate backup data
       if (!backupData.version || !backupData.proxies || !backupData.templates) {
@@ -256,14 +296,14 @@ class BackupService {
       
       // Restore proxies and their related data
       for (const { fields, headers, middlewares } of proxies) {
-        const proxy = await Proxy.create({ ...fields, created_by: user.id }, { transaction });
+        const proxy = await Proxy.create({ ...fields, created_by: user.id } as CreationAttributes<Proxy>, { transaction });
 
         for (const header of headers) {
-          await Header.create({ ...header, proxy_id: proxy.id }, { transaction });
+          await Header.create({ ...header, proxy_id: proxy.id } as CreationAttributes<Header>, { transaction });
         }
 
         for (const middleware of middlewares) {
-          await Middleware.create({ ...middleware, proxy_id: proxy.id }, { transaction });
+          await Middleware.create({ ...middleware, proxy_id: proxy.id } as CreationAttributes<Middleware>, { transaction });
         }
       }
 
@@ -272,12 +312,12 @@ class BackupService {
 
       // Push the restored proxies to Caddy. The restore itself stands either way; a
       // failure here is reported so the admin can retry once Caddy is reachable.
-      let caddy = { applied: true };
+      let caddy: RestoreBackupResult['caddy'] = { applied: true };
       try {
         await caddyService.rebuildConfigFromDatabase();
       } catch (caddyError) {
         console.error('Restored backup could not be applied to Caddy:', caddyError);
-        caddy = { applied: false, error: caddyError.message };
+        caddy = { applied: false, error: errorMessage(caddyError) };
       }
 
       return {
@@ -294,15 +334,15 @@ class BackupService {
       console.error('Restore failed:', error);
       // Keep the type so the API can answer 400 with the invalid entries
       if (error instanceof ProxyImportError) throw error;
-      throw new Error(`Restore failed: ${error.message}`);
+      throw new Error(`Restore failed: ${errorMessage(error)}`);
     }
   }
   
   /**
    * Get list of available backups
-   * @returns {Promise<Array>} List of backups
+   * @returns List of backups
    */
-  async getBackups() {
+  async getBackups(): Promise<Backup[]> {
     try {
       const backups = await Backup.findAll({
         include: [
@@ -314,16 +354,16 @@ class BackupService {
       return backups;
     } catch (error) {
       console.error('Failed to get backups:', error);
-      throw new Error(`Failed to get backups: ${error.message}`);
+      throw new Error(`Failed to get backups: ${errorMessage(error)}`);
     }
   }
   
   /**
    * Get a specific backup file
-   * @param {String} backupId - ID of the backup
-   * @returns {Promise<Object>} Backup file information
+   * @param backupId - ID of the backup
+   * @returns Backup file information
    */
-  async getBackupFile(backupId) {
+  async getBackupFile(backupId: string): Promise<CreateBackupResult> {
     try {
       const backup = await Backup.findByPk(backupId);
       
@@ -344,16 +384,16 @@ class BackupService {
       };
     } catch (error) {
       console.error('Failed to get backup file:', error);
-      throw new Error(`Failed to get backup file: ${error.message}`);
+      throw new Error(`Failed to get backup file: ${errorMessage(error)}`);
     }
   }
   
   /**
    * Delete a backup
-   * @param {String} backupId - ID of the backup to delete
-   * @returns {Promise<Object>} Delete result
+   * @param backupId - ID of the backup to delete
+   * @returns Delete result
    */
-  async deleteBackup(backupId) {
+  async deleteBackup(backupId: string): Promise<{ success: boolean; message: string }> {
     try {
       const backup = await Backup.findByPk(backupId);
       
@@ -377,7 +417,7 @@ class BackupService {
       };
     } catch (error) {
       console.error('Failed to delete backup:', error);
-      throw new Error(`Failed to delete backup: ${error.message}`);
+      throw new Error(`Failed to delete backup: ${errorMessage(error)}`);
     }
   }
   
@@ -385,12 +425,11 @@ class BackupService {
    * Delete backups older than BACKUP_RETENTION_DAYS (default 30).
    * Only deletes auto backups; manual backups are kept unless retain_days=0.
    */
-  async enforceRetention() {
+  async enforceRetention(): Promise<void> {
     const retainDays = parseInt(process.env.BACKUP_RETENTION_DAYS || '30', 10);
     if (!retainDays || retainDays <= 0) return; // 0 = disabled
 
     const cutoff = new Date(Date.now() - retainDays * 24 * 60 * 60 * 1000);
-    const { Op } = require('sequelize');
 
     const old = await Backup.findAll({
       where: {
@@ -406,16 +445,16 @@ class BackupService {
         await backup.destroy();
         console.log(`Retention: deleted old backup ${backup.filename}`);
       } catch (err) {
-        console.error(`Retention: failed to delete backup ${backup.filename}:`, err.message);
+        console.error(`Retention: failed to delete backup ${backup.filename}:`, errorMessage(err));
       }
     }
   }
 
   /**
    * Schedule automatic backups
-   * @param {Number} intervalHours - Interval in hours between backups
+   * @param intervalHours - Interval in hours between backups
    */
-  scheduleAutoBackups(intervalHours = 24) {
+  scheduleAutoBackups(intervalHours = 24): void {
     // Get admin user for automatic backups
     const getAdminUser = async () => {
       try {
@@ -453,4 +492,4 @@ class BackupService {
   }
 }
 
-module.exports = new BackupService();
+export const backupService = new BackupService();
