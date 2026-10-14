@@ -981,16 +981,21 @@ Left open (low risk, not label-reachable):
   (development only) each worker also had its own random key and could not decrypt
   the Git tokens another worker had stored.
 - Fix:
-  - `utils/clusterRole.js`: `isLeader()` is true for a single process and, in cluster
-    mode, only for the worker started with `CLUSTER_ROLE=leader`.
+  - `utils/clusterRole.js`: `isLeader()` is false only for a worker the primary started
+    with `CLUSTER_ROLE=follower`. (A first version also required the leader role in
+    cluster mode; a review showed that `CLUSTER_MODE=true` left in a shared `.env`
+    with `node src/index.js` would then have no leader at all.)
   - `index.js`: the one-time and background work moved into `runLeaderTasks()`, which
     only the leader runs. Other workers validate the environment and serve requests.
     After `startServer()` the process sends `{ type: 'ready' }` to the primary.
   - `clusterSupervisor.js` (the primary): forks the leader alone, forks the followers
     when the leader reports ready (so they never meet an unmigrated database),
-    replaces a dead follower with a follower and a dead leader with a new leader (after
-    1 s, so a failing leader does not spin), and stops respawning on SIGTERM/SIGINT.
-    `cluster.js` forwards the signal to the workers.
+    replaces a dead follower with a follower and a dead leader with a new leader, and
+    stops forking on SIGTERM/SIGINT (a pending respawn or a late "ready" forks
+    nothing after that). `cluster.js` forwards the signal to the workers and exits
+    after 20 s if one hangs.
+  - A leader that dies before it is ready is retried after 1 s, 2 s, 4 s … (max 30 s);
+    after 8 failures in a row the primary exits with an error instead of crash-looping.
   - Outside production the primary creates one `GIT_SECRET_KEY` for all workers when
     none is set. Production still refuses to start without it.
 - Not fixed (documented in `cluster.js`):
@@ -999,10 +1004,16 @@ Left open (low risk, not label-reachable):
     shared across processes (database or file). Until then `CLUSTER_WORKERS=1`, or one
     instance behind a load balancer, is the safe setting for heavy writers.
   - A Git repository created or edited through a follower starts its auto-sync timer in
-    that follower (`startAutoSync`); only the leader starts timers at boot.
-- Tests: new `clusterSupervisor` unit (9) with a fake cluster: roles, start order,
-  follower and leader replacement, no second follower start, retry of a leader that
-  dies before it is ready.
+    that follower (`startAutoSync`; the timer is never stopped, also in a single
+    process); only the leader starts timers at boot.
+  - Docker discovery runs only in the leader, so `GET /discovery/status` and manual
+    container sync answer "not initialized" when a follower handles the request.
+    Fixing both needs the leader to own the work (IPC) or the follower to initialize
+    its own Docker client lazily; left for the cluster rework if clustering is kept.
+- Tests: new `clusterSupervisor` unit (14) with a fake cluster: roles, start order,
+  follower and leader replacement, no second follower start, retry and give-up of a
+  leader that keeps dying, no forking after stop, a direct start with
+  `CLUSTER_MODE=true`.
 - Verification: the real `node src/cluster.js` with 3 workers, a file SQLite database
   and a real Caddy 2.10.2: one "Database synchronized", two request-only workers,
   three listening servers, `/health` 200, clean exit on SIGTERM with no respawn.

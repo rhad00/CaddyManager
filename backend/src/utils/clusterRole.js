@@ -1,11 +1,12 @@
 /**
  * Which process owns the background work (migrations, schedulers, Docker discovery,
- * Git init). A single process always does; in cluster mode only the worker the primary
- * started as leader does, so that work does not run once per worker.
+ * Git init). A process does unless the cluster primary started it as a follower, so a
+ * single process, or `node src/index.js` with CLUSTER_MODE=true left in a shared .env,
+ * still runs the migrations and the schedulers.
  */
 const LEADER_ROLE = 'leader';
+const FOLLOWER_ROLE = 'follower';
 
-const isLeader = (env = process.env) =>
-  env.CLUSTER_MODE !== 'true' || env.CLUSTER_ROLE === LEADER_ROLE;
+const isLeader = (env = process.env) => env.CLUSTER_ROLE !== FOLLOWER_ROLE;
 
-module.exports = { LEADER_ROLE, isLeader };
+module.exports = { LEADER_ROLE, FOLLOWER_ROLE, isLeader };

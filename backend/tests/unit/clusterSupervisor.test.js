@@ -13,10 +13,15 @@ describe('isLeader', () => {
     expect(isLeader({ CLUSTER_MODE: 'false' })).toBe(true);
   });
 
-  test('in cluster mode only the worker started as leader is one', () => {
-    expect(isLeader({ CLUSTER_MODE: 'true' })).toBe(false);
+  test('only a worker the primary started as a follower is not a leader', () => {
     expect(isLeader({ CLUSTER_MODE: 'true', CLUSTER_ROLE: 'follower' })).toBe(false);
     expect(isLeader({ CLUSTER_MODE: 'true', CLUSTER_ROLE: LEADER_ROLE })).toBe(true);
+  });
+
+  // CLUSTER_MODE=true can sit in a shared .env while the app is started with
+  // `node src/index.js`: nobody would run the migrations or the schedulers
+  test('a process started directly with CLUSTER_MODE=true is still a leader', () => {
+    expect(isLeader({ CLUSTER_MODE: 'true' })).toBe(true);
   });
 });
 
@@ -101,6 +106,66 @@ describe('superviseCluster', () => {
     expect(roles(cluster)).toEqual([LEADER_ROLE, LEADER_ROLE]);
     cluster.forked[1].emit('message', { type: 'ready' });
     expect(roles(cluster)).toEqual([LEADER_ROLE, LEADER_ROLE, 'follower']);
+  });
+
+  test('after stop() nothing is forked: not a pending follower, not a late ready', () => {
+    const cluster = makeCluster();
+    const schedule = jest.fn();
+    const supervisor = superviseCluster(cluster, { workerCount: 3, schedule });
+    cluster.forked[0].emit('message', { type: 'ready' });
+    cluster.emit('exit', cluster.forked[1], 1, null); // a follower respawn is now pending
+    const forkedBefore = cluster.forked.length;
+
+    supervisor.stop();
+    schedule.mock.calls[0][0]();
+
+    expect(cluster.forked).toHaveLength(forkedBefore);
+  });
+
+  test('a ready that arrives after stop() starts no followers', () => {
+    const cluster = makeCluster();
+    const supervisor = superviseCluster(cluster, { workerCount: 3, schedule: noWait });
+
+    supervisor.stop();
+    cluster.forked[0].emit('message', { type: 'ready' });
+
+    expect(cluster.forked).toHaveLength(1);
+  });
+
+  describe('a leader that keeps failing', () => {
+    test('is retried with growing delays and then the primary gives up', () => {
+      const cluster = makeCluster();
+      const schedule = jest.fn();
+      const onFatal = jest.fn();
+      superviseCluster(cluster, { workerCount: 2, schedule, onFatal, maxLeaderFailures: 3 });
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        cluster.emit('exit', cluster.forked[attempt], 1, null);
+        schedule.mock.calls[attempt][0]();
+      }
+      const delays = schedule.mock.calls.map((call) => call[1]);
+      expect(delays[1]).toBeGreaterThan(delays[0]);
+      expect(onFatal).not.toHaveBeenCalled();
+
+      cluster.emit('exit', cluster.forked[2], 1, null);
+
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(schedule).toHaveBeenCalledTimes(2);
+    });
+
+    test('starts counting again once a leader got ready', () => {
+      const cluster = makeCluster();
+      const schedule = jest.fn();
+      const onFatal = jest.fn();
+      superviseCluster(cluster, { workerCount: 1, schedule, onFatal, maxLeaderFailures: 2 });
+
+      cluster.emit('exit', cluster.forked[0], 1, null);
+      schedule.mock.calls[0][0]();
+      cluster.forked[1].emit('message', { type: 'ready' });
+      cluster.emit('exit', cluster.forked[1], 1, null);
+
+      expect(onFatal).not.toHaveBeenCalled();
+    });
   });
 
   test('one worker means a leader and no followers', () => {

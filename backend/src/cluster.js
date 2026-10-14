@@ -30,9 +30,13 @@ if (clusterEnabled && cluster.isPrimary) {
   console.log(`Primary ${process.pid}: starting ${workerCount} workers (leader first)`);
   const supervisor = superviseCluster(cluster, { workerCount });
 
+  // Workers drain their requests within 15 s (app.js); a worker that hangs longer
+  // must not keep the primary, and with it the container, alive
+  const SHUTDOWN_TIMEOUT_MS = 20000;
   const shutdown = (signal) => {
     supervisor.stop();
     for (const worker of Object.values(cluster.workers)) worker.kill(signal);
+    setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
