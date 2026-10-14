@@ -55,7 +55,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | done |
-| 0.28 | Major upgrades: `dockerode` 5 (done), `nodemailer` 10, `sqlite3` 6, `simple-git` 4 | in progress |
+| 0.28 | Major upgrades: `dockerode` 5 and `nodemailer` 10 (done), `sqlite3` 6, `simple-git` 4 | in progress |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
 ## Changes
@@ -1093,6 +1093,20 @@ Release notes read before each upgrade; each package is verified on its own.
 - Verification: the live discovery check against the real Docker daemon (API 1.55)
   still gets the start event, parses the inspect labels and reaches
   `createOrUpdateProxy`; backend 60 suites passed, 1 skipped; 498 tests passed.
+
+#### 0.28b nodemailer 8.0.11 → 10.1.1
+
+- Upstream breaking changes: 9.0 validates TLS certificates by default when fetching
+  remote content (attachment URLs, OAuth2 token endpoints, HTTP proxy CONNECT); 10.0
+  requires Node 20+ and is rewritten in TypeScript, still shipping a CommonJS build.
+  10.1.x hardens the SMTP connection and pool.
+- Used by: `emailService` (password reset) and `alertService` (email alert channel).
+  Both create a plain SMTP transport (host, port, secure, auth) and send text mail, with
+  no attachments, OAuth2 or proxy, so neither breaking change applies. The 9.0 change
+  does not affect the SMTP connection itself.
+- Verification: a real SMTP server (Mailpit in Docker) received both the password reset
+  mail and an alert email sent through the real `emailService` and
+  `alertService.sendToChannel`; backend 60 suites passed, 1 skipped; 498 tests passed.
 
 ## Where this session stopped
 
