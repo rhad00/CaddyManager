@@ -8,24 +8,29 @@
  * failing before they are ready, and the primary gives up after too many in a row (a
  * bad migration or a missing database would otherwise crash-loop forever).
  */
-const { LEADER_ROLE, FOLLOWER_ROLE } = require('./utils/clusterRole');
+import type { Cluster, Worker } from 'node:cluster';
+import { LEADER_ROLE, FOLLOWER_ROLE } from './utils/clusterRole';
 
 const RESTART_DELAY_MS = 1000;
 const MAX_RESTART_DELAY_MS = 30000;
 const MAX_LEADER_FAILURES = 8;
 
-/**
- * @param {import('node:cluster').Cluster} cluster
- * @param {{ workerCount: number, schedule?: Function, onFatal?: Function, maxLeaderFailures?: number }} options
- * @returns {{ stop: () => void }}
- */
-function superviseCluster(cluster, {
+export interface SuperviseOptions {
+  workerCount: number;
+  /** setTimeout by default; tests pass their own clock */
+  schedule?: (callback: () => void, delayMs: number) => unknown;
+  /** Called when the leader keeps failing before it is ready; exits the process by default */
+  onFatal?: () => void;
+  maxLeaderFailures?: number;
+}
+
+export function superviseCluster(cluster: Cluster, {
   workerCount,
   schedule = setTimeout,
   onFatal = () => process.exit(1),
   maxLeaderFailures = MAX_LEADER_FAILURES,
-}) {
-  let leader = null;
+}: SuperviseOptions): { stop: () => void } {
+  let leader: Worker | null = null;
   let leaderReady = false;
   let followersStarted = false;
   let failedLeaders = 0;
@@ -41,7 +46,7 @@ function superviseCluster(cluster, {
     const worker = cluster.fork({ CLUSTER_ROLE: LEADER_ROLE });
     leader = worker;
     leaderReady = false;
-    worker.on('message', (message) => {
+    worker.on('message', (message: { type?: string } | undefined) => {
       if (message?.type !== 'ready' || stopping || worker !== leader) return;
       leaderReady = true;
       failedLeaders = 0;
@@ -76,5 +81,3 @@ function superviseCluster(cluster, {
 
   return { stop: () => { stopping = true; } };
 }
-
-module.exports = { superviseCluster };

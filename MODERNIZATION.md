@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.18 | Phase 4: `cluster` and `clusterSupervisor` to TypeScript | done |
 | 4.17 | Phase 4: `index` to TypeScript | done |
 | 4.16 | Phase 4: `app` to TypeScript | done |
 | 4.15 | Phase 4: `api/index` to TypeScript, static route imports | done |
@@ -2009,9 +2010,20 @@ Verification: typecheck (loose and strict), build, full suite (646 tests), a `di
 
 Verification: typecheck (loose and strict), build, a `dist/` boot with a real Caddy (the leader tasks run: 10 migrations, config init).
 
+### 4.18 the cluster entry points
+
+`cluster.ts` and `clusterSupervisor.ts`. `superviseCluster` is a named export typed with the Node `Cluster` and `Worker` types and a `SuperviseOptions` interface (the clock and the fatal handler stay injectable for the tests). `cluster.ts` still loads `./index` only in a worker or a single process, with `require`, because loading it starts the app.
+
+- `cluster.workers` is optional in the types: the shutdown loop reads `cluster.workers ?? {}`.
+- No behaviour change. `dist/cluster.js` was booted with two workers against a real Caddy: the primary starts the leader, the leader reports ready, the second worker starts and serves requests only, `/health` and `/ready` answer 200, and SIGTERM leaves no process behind.
+
+**Phase 4 is complete.** Every file under `src` is TypeScript except the four database migrations, which stay JavaScript on purpose (they are loaded by file name at runtime). Where a route validates its body by hand with messages that clients and tests depend on, the checks stay as they were; zod is used where nothing depended on the old behaviour (4.1 the middleware, 4.11 the discovery filters).
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), the `dist/` cluster boot above.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.17 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.18 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.
