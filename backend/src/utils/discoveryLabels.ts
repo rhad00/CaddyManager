@@ -2,25 +2,57 @@
  * Docker discovery labels: where Docker keeps them, how they are checked and which proxy
  * fields they become (MODERNIZATION.md 0.24).
  */
-const net = require('net');
+import net from 'net';
 
 const MAX_RATE_LIMIT = 100000;
 const MAX_IP_FILTER_ENTRIES = 10; // the Caddy builder applies at most 10 entries
 const PATH_PREFIX_PATTERN = /^\/[A-Za-z0-9._~\-/]{0,200}$/;
 
+/** Parsed `caddymanager.*` labels (label values are strings; the parser may set booleans) */
+export interface LabelConfig {
+  rate_limit?: string | number;
+  ip_filter?: string;
+  path_prefix?: string;
+  security_headers?: boolean;
+  compression?: boolean;
+  template?: string;
+  [label: string]: unknown;
+}
+
+/** The parts of `docker inspect` / the container list that this module reads */
+export interface DockerContainer {
+  Id?: string;
+  Name?: string;
+  Names?: string[];
+  Labels?: Record<string, string>;
+  Config?: { Labels?: Record<string, string> };
+}
+
+/** Proxy fields the labels control */
+export interface LabelFeatures {
+  rate_limit: { enabled: boolean; requests_per_second: number } | null;
+  ip_filtering: { enabled: boolean; mode: string; ip_list: string[] } | null;
+  path_routing: { enabled: boolean; routes: Array<{ path: string; upstream_url: string }> } | null;
+  security_headers_enabled: boolean;
+  compression_enabled: boolean;
+}
+
+type FeatureField = keyof LabelFeatures;
+
 /**
  * Labels of a container. `docker inspect` keeps them in Config.Labels; the container
  * list (and older fixtures) have them at the top level.
  */
-const labelsOf = (container) => container?.Config?.Labels || container?.Labels || {};
+export const labelsOf = (container: DockerContainer | null | undefined): Record<string, string> =>
+  container?.Config?.Labels || container?.Labels || {};
 
 /** Container name without the leading slash: Name from inspect, Names[0] from the list. */
-const containerNameOf = (container) => {
+export const containerNameOf = (container: DockerContainer | null | undefined): string => {
   const name = container?.Name || container?.Names?.[0];
   return name ? name.replace(/^\//, '') : String(container?.Id || '').slice(0, 12);
 };
 
-const isIpOrCidr = (entry) => {
+const isIpOrCidr = (entry: string): boolean => {
   const [address, prefix, extra] = entry.split('/');
   const version = net.isIP(address);
   // Node accepts an IPv6 zone ("fe80::1%eth0"); Caddy's remote_ip matcher does not
@@ -30,16 +62,17 @@ const isIpOrCidr = (entry) => {
   return /^\d{1,3}$/.test(prefix) && bits <= (version === 4 ? 32 : 128);
 };
 
-const splitList = (value) => String(value).split(',').map((s) => s.trim()).filter(Boolean);
+const splitList = (value: unknown): string[] =>
+  String(value).split(',').map((s) => s.trim()).filter(Boolean);
 
 // '/api/' and '/api' are the same prefix; '/' alone means no prefix
-const normalizePrefix = (prefix) => (prefix ? String(prefix).replace(/\/+$/, '') : '');
+const normalizePrefix = (prefix: unknown): string => (prefix ? String(prefix).replace(/\/+$/, '') : '');
 
 /**
  * Check the feature labels (rate_limit, ip_filter, path_prefix).
- * @returns {string|null} the problem, or null when the labels are usable
+ * @returns the problem, or null when the labels are usable
  */
-const validateFeatureLabels = (config) => {
+export const validateFeatureLabels = (config: LabelConfig): string | null => {
   if (config.rate_limit !== undefined) {
     const rps = Number(config.rate_limit);
     if (!/^\d+$/.test(String(config.rate_limit)) || rps < 1 || rps > MAX_RATE_LIMIT) {
@@ -70,7 +103,7 @@ const validateFeatureLabels = (config) => {
  * Proxy fields the labels control. A label that is absent gives null (or false), so
  * removing a label removes the feature.
  */
-const labelFeatures = (config, upstream) => {
+export const labelFeatures = (config: LabelConfig, upstream: string): LabelFeatures => {
   const prefix = normalizePrefix(config.path_prefix);
   return {
     rate_limit: config.rate_limit !== undefined
@@ -90,12 +123,13 @@ const labelFeatures = (config, upstream) => {
 
 // Fields where a change can widen access or alter what is served; a label change to
 // one of them sends an approved proxy back to review (compression is not one of them)
-const REVIEWED_FIELDS = ['rate_limit', 'ip_filtering', 'path_routing', 'security_headers_enabled'];
-const BOOLEAN_FIELDS = ['security_headers_enabled', 'compression_enabled'];
+export const REVIEWED_FIELDS: readonly string[] = ['rate_limit', 'ip_filtering', 'path_routing', 'security_headers_enabled'];
+const BOOLEAN_FIELDS: FeatureField[] = ['security_headers_enabled', 'compression_enabled'];
 
 // A feature saved as { enabled: false } is the same as no feature
-const effective = (value) => (value && value.enabled ? value : null);
-const sameFeature = (field, a, b) => (BOOLEAN_FIELDS.includes(field)
+const effective = (value: unknown): unknown =>
+  (value && (value as { enabled?: boolean }).enabled ? value : null);
+const sameFeature = (field: FeatureField, a: unknown, b: unknown): boolean => (BOOLEAN_FIELDS.includes(field)
   ? Boolean(a) === Boolean(b)
   : JSON.stringify(effective(a)) === JSON.stringify(effective(b)));
 
@@ -104,27 +138,21 @@ const sameFeature = (field, a, b) => (BOOLEAN_FIELDS.includes(field)
  * changed since the last scan AND the proxy still holds what the previous labels set;
  * a value an admin changed by hand is kept, and unchanged labels change nothing (a
  * restart must not undo the admin's work).
- * @param {Object} proxy - the stored proxy
- * @param {Object} previous - labelFeatures of the labels at the last scan
- * @param {Object} next - labelFeatures of the labels now
- * @returns {{ updates: Object, diverged: string[] }}
+ * @param proxy - the stored proxy
+ * @param previous - labelFeatures of the labels at the last scan
+ * @param next - labelFeatures of the labels now
  */
-const featureUpdates = (proxy, previous, next) => {
-  const updates = {};
-  const diverged = [];
-  Object.keys(next).forEach((field) => {
+export const featureUpdates = (
+  proxy: Partial<LabelFeatures>,
+  previous: LabelFeatures,
+  next: LabelFeatures,
+): { updates: Partial<LabelFeatures>; diverged: FeatureField[] } => {
+  const updates: Record<string, unknown> = {};
+  const diverged: FeatureField[] = [];
+  (Object.keys(next) as FeatureField[]).forEach((field) => {
     if (sameFeature(field, previous[field], next[field])) return;
     if (sameFeature(field, proxy[field], previous[field])) updates[field] = next[field];
     else diverged.push(field);
   });
-  return { updates, diverged };
-};
-
-module.exports = {
-  labelsOf,
-  containerNameOf,
-  validateFeatureLabels,
-  labelFeatures,
-  featureUpdates,
-  REVIEWED_FIELDS,
+  return { updates: updates as Partial<LabelFeatures>, diverged };
 };

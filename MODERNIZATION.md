@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 2.4 | Phase 2: `proxyValidation`, `proxyImport`, `basicAuth`, `discoveryLabels` to strict TypeScript (all of `utils` is `.ts`) | done |
 | 2.3 | Phase 2: `outboundRequest`, `notificationChannels`, `proxyMiddlewares`, `upstreamProbe` to strict TypeScript | done |
 | 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
 
@@ -1434,9 +1435,30 @@ now strict `.ts` (`git mv`). Exports and behaviour are unchanged for callers.
 - Verification: typecheck (loose and strict), build, and the full suite (64 suites,
   557 tests) pass.
 
+### 2.4 Proxy validation, import, basic auth and discovery labels
+
+The last four `utils` modules are strict `.ts` now (`git mv`): `proxyValidation`,
+`proxyImport`, `basicAuth`, `discoveryLabels`. Every file in `src/utils` is TypeScript.
+
+- Request bodies stay `unknown` / `Record<string, unknown>` and are narrowed by the
+  existing runtime checks; small input interfaces (`LoadBalancingInput`,
+  `HealthChecksInput`, …) document what each validator reads.
+- Shared types are exported: `ValidationResult`, `BasicAuth`, `PreparedProxy`,
+  `LabelConfig`, `LabelFeatures`, `DockerContainer`.
+- `bcrypt` is still loaded lazily with `require` inside `hash()` (typed as
+  `typeof import('bcrypt')`): `caddyService` only needs `toCaddyAuthHandler`, and its unit
+  tests mock `fs`, which breaks native module resolution.
+- `REVIEWED_FIELDS` is typed `readonly string[]` so the JS caller can test arbitrary
+  field names against it.
+- Behaviour: unchanged. Header names that are not strings are compared as their string
+  form (`String(name)`) instead of relying on regex coercion.
+- Verification: typecheck (loose and strict), build and the full suite (64 suites,
+  557 tests) pass; `dist/` boots against a real Caddy (health, ready and API docs 200,
+  10 migrations ran).
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and ten helpers (2.2, 2.3). Next up, in order:
+Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). Next up, in order:
 
-1. Phase 2: convert the remaining `utils` (`discoveryLabels`, `basicAuth`, `proxyValidation`, `proxyImport`), then `config` and `middleware`, and a typed Caddy config module.
+1. Phase 2: convert `config` and `middleware`, then add a typed Caddy config module.
 2. TypeScript phases 3–5 (see the plan at the top).
