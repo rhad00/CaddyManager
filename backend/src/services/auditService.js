@@ -2,16 +2,30 @@ const AuditLog = require('../models/auditLog');
 const { User } = require('../models');
 
 /**
+ * Details to store: the caller's details plus the id of the affected resource (the audit
+ * table has no column for it)
+ * @param {*} details
+ * @param {string|number|undefined} resourceId
+ */
+const withResourceId = (details, resourceId) => {
+    if (resourceId === undefined || resourceId === null) return details;
+    if (details === undefined || details === null) return { resource_id: resourceId };
+    if (typeof details === 'object' && !Array.isArray(details)) return { ...details, resource_id: resourceId };
+    return { message: details, resource_id: resourceId };
+};
+
+/**
  * Log an audit event
  * @param {Object} params - Log parameters
- * @param {Number} params.userId - User ID (optional)
+ * @param {Number|string} [params.userId] - User ID (optional)
  * @param {String} params.action - Action name (e.g., 'LOGIN', 'CREATE_PROXY')
  * @param {String} params.resource - Resource affected (e.g., 'auth', 'proxy:example.com')
- * @param {Object} params.details - Additional details (optional)
- * @param {Object} req - Express request object (optional, for IP/UserAgent)
- * @param {String} params.status - Status of the action ('success', 'failure')
+ * @param {String|Number} [params.resourceId] - Id of the affected resource (kept in the details)
+ * @param {*} [params.details] - Additional details (optional)
+ * @param {String} [params.status] - Status of the action ('success', 'failure')
+ * @param {import('express').Request|null} [req] - Express request object (optional, for IP/UserAgent)
  */
-const logAction = async ({ userId, action, resource, details, status = 'success' }, req = null) => {
+const logAction = async ({ userId, action, resource, resourceId, details, status = 'success' }, req = null) => {
     try {
         // Resolve userId against DB to ensure foreign key validity
         let creatorId = null;
@@ -29,7 +43,7 @@ const logAction = async ({ userId, action, resource, details, status = 'success'
             user_id: creatorId,
             action,
             resource,
-            details,
+            details: withResourceId(details, resourceId),
             status
         };
 

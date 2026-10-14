@@ -57,6 +57,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.27 | README references missing files | done |
 | 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10, `simple-git` 4 done; `sqlite3` 6 declined (0.28d) | done |
 | 0.29 | Declared but unimplemented: middlewares implemented; `custom_ssl_cert_id` removed; Kubernetes discovery and backup upload stay planned, stated honestly | done |
+| 1.1a | Phase 1 finding: audit entries lost the resource id | done |
 
 ## Changes
 
@@ -1268,6 +1269,20 @@ Left open, with the reasoning:
 - A template apply whose Caddy update fails after the database commit leaves the new
   middlewares in the database with Caddy on the old route (same shape as the proxy
   create/update compensation of 0.15, not yet applied to templates).
+
+## Phase 1: type checking
+
+### 1.1a Audit entries lost the resource id
+
+Found by running `tsc` with `checkJs` for the first time (see 1.1b): 19 call sites pass
+`resourceId` to `logAction` (proxy, template and API key changes, certificates), but
+`logAction` did not read it, and the audit table has no column for it. Every such entry
+therefore lacked the id of the affected object.
+
+- Fix: `logAction` keeps it in the entry's `details` as `resource_id` (no schema change;
+  details that are not an object are wrapped as `{ message, resource_id }`). Its JSDoc
+  now lists `resourceId`, `status` and the optional parameters.
+- Tests: new `auditService.logAction` (5). Entries written before this fix have no id.
 
 ## Where this session stopped
 
