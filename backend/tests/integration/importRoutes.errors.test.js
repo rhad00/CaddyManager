@@ -15,14 +15,14 @@ jest.mock('../../src/services/gitService', () => {
   class GitRollbackError extends Error {
     constructor(message, statusCode) { super(message); this.statusCode = statusCode; }
   }
-  return { syncFromGit: jest.fn(), rollbackToCommit: jest.fn(), GitRollbackError };
+  return { gitService: { syncFromGit: jest.fn(), rollbackToCommit: jest.fn(), GitRollbackError } };
 });
 
 const express = require('express');
 const request = require('supertest');
 const { sequelize, GitRepository } = require('../../src/models');
 const { backupService } = require('../../src/services/backupService');
-const gitService = require('../../src/services/gitService');
+const { gitService } = require('../../src/services/gitService');
 const { ProxyImportError } = require('../../src/utils/proxyImport');
 
 const app = express();

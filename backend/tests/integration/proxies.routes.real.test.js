@@ -27,7 +27,7 @@ jest.mock('../../src/models', () => ({
 jest.mock('../../src/services/caddyService', () => ({ addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) }));
 jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
-jest.mock('../../src/services/gitService', () => ({ commitConfigChange: jest.fn().mockResolvedValue(null) }));
+jest.mock('../../src/services/gitService', () => ({ gitService: { commitConfigChange: jest.fn().mockResolvedValue(null) } }));
 
 const { Proxy } = require('../../src/models/proxy');
 const { Header } = require('../../src/models/header');

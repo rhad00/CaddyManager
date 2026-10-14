@@ -63,7 +63,7 @@ const runLeaderTasks = async () => {
 
   // Initialize Git service for GitOps and version control
   console.log('Initializing Git service...');
-  const gitService = require('./services/gitService');
+  const { gitService } = require('./services/gitService');
   await gitService.initialize();
   console.log('Git service initialized successfully');
 

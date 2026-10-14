@@ -23,7 +23,7 @@ jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase:
 
 const { GitRepository } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
-const gitService = require('../../src/services/gitService');
+const { gitService } = require('../../src/services/gitService');
 
 describe('gitService.syncFromGit', () => {
   let repo;

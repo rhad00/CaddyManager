@@ -1,5 +1,5 @@
 const express = require('express');
-const gitService = require('../../services/gitService');
+const { gitService } = require('../../services/gitService');
 const { queryString } = require('../../utils/query');
 const { ProxyImportError } = require('../../utils/proxyImport');
 const { GitRepository, ConfigChange } = require('../../models');
@@ -556,7 +556,7 @@ router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
       });
     }
 
-    const diff = await gitService.getDiff(req.params.id, from, to);
+    const diff = await gitService.getDiff(/** @type {string} */ (req.params.id), from, to);
 
     res.status(200).json({
       success: true,

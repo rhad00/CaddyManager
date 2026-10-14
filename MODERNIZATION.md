@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.13 | Phase 3: `gitService` to strict TypeScript | done |
 | 3.12 | Phase 3: `dockerDiscoveryService` to strict TypeScript | done |
 | 3.11 | Phase 3: `backupService` to strict TypeScript | done |
 | 3.10 | Phase 3: `certificateService` to strict TypeScript | done |
@@ -1781,9 +1782,31 @@ callers `api/discovery/routes.js`, `src/index.js` and the two discovery tests up
   suite has one case fewer (605 tests); the other files still cover that method.
 - Verification: typecheck (loose and strict), build and the full suite pass.
 
+### 3.13 gitService
+
+`gitService.ts`: class and instance exported by name (`{ gitService }`), plus `GitRollbackError`
+(still reachable as `gitService.GitRollbackError`, which the route's `instanceof` uses). Callers
+`api/git/routes.js`, `api/proxies/routes.js`, `src/index.js` and five tests updated; the
+`jest.mock` factories in `importRoutes.errors` and `proxies.routes.real` now return
+`{ gitService: {...} }`.
+
+- Types: `SyncResult`, `RollbackResult`, `AuthRepo` (what `authEnv`/`gitFor` read of a
+  repository) and `ProxySnapshot` for the commit message. `commitConfigChange` takes a
+  `ConfigChangeType`. The token-bearing environment is still built only by `authEnv`.
+- The lazy `require('./caddyService')` calls share one `getCaddyService()` helper until
+  caddyService is converted; `User` and `sequelize` are imported at the top instead of being
+  required inside methods.
+- Behaviour: an empty repository (no `log.latest`) now fails with a clear message instead of a
+  `TypeError`; `getDiff` for an unknown repository throws "Git repository not found" instead of
+  a `TypeError` (still a 500 in the route). `substr` became `slice`.
+- `services.callers.test.js` generates a case per call site, so the two `caddyService` calls that
+  now go through the helper leave it two cases smaller (603 tests).
+- Verification: typecheck (loose and strict), build, full suite, PostgreSQL suites and a
+  `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

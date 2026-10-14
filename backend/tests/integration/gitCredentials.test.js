@@ -19,7 +19,7 @@ jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase:
 const bcrypt = require('bcrypt');
 const { simpleGit } = require('simple-git');
 const { sequelize, Proxy, GitRepository } = require('../../src/models');
-const gitService = require('../../src/services/gitService');
+const { gitService } = require('../../src/services/gitService');
 
 const REMOTE = path.join(TMP, 'remote.git');
 const TOKEN = 'glpat-SECRET-TOKEN-1234';
