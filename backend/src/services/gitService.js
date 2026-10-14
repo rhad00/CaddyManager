@@ -1,4 +1,4 @@
-const simpleGit = require('simple-git');
+const { simpleGit } = require('simple-git');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -20,6 +20,13 @@ const GIT_ENV_ALLOWLIST = [
   'PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'SYSTEMROOT',
   'SSL_CERT_FILE', 'SSL_CERT_DIR', 'GIT_SSL_CAINFO',
   'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+];
+
+// simple-git 4 removes every GIT_* variable from the child's environment, and refuses a
+// call that supplies one, unless it is named here: exactly the ones authEnv() builds
+const GIT_ALLOWED_ENVIRONMENT = [
+  'GIT_TERMINAL_PROMPT', 'GIT_SSL_CAINFO',
+  'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0',
 ];
 
 // Username for token auth over HTTPS, per provider (the token is the password)
@@ -184,7 +191,10 @@ class GitService {
    * value a base64 header we build, so that one switch is enabled.
    */
   gitFor(gitRepo, dir) {
-    const options = { unsafe: { allowUnsafeConfigEnvCount: Boolean(gitRepo.access_token) } };
+    const options = {
+      allowEnvironment: GIT_ALLOWED_ENVIRONMENT,
+      unsafe: { allowUnsafeConfigEnvCount: Boolean(gitRepo.access_token) },
+    };
     return (dir ? simpleGit(dir, options) : simpleGit(options)).env(this.authEnv(gitRepo));
   }
 

@@ -2,7 +2,7 @@
  * GitOps sync must push the synced proxies to Caddy (MODERNIZATION.md 0.18): it used to
  * call a non-existent caddyService.updateCaddyConfig(), so nothing reached Caddy.
  */
-jest.mock('simple-git', () => jest.fn(() => ({ log: jest.fn().mockResolvedValue({ latest: { hash: 'abc1234' } }) })));
+jest.mock('simple-git', () => ({ simpleGit: jest.fn(() => ({ log: jest.fn().mockResolvedValue({ latest: { hash: 'abc1234' } }) })) }));
 jest.mock('fs', () => ({
   promises: {
     readFile: jest.fn().mockResolvedValue(JSON.stringify([{ name: 'from-git', domains: ['git.example.com'], upstream_url: 'http://app:80' }])),

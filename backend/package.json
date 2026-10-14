@@ -44,7 +44,7 @@
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "sequelize": "^6.37.8",
-    "simple-git": "^3.36.0",
+    "simple-git": "^4.0.2",
     "speakeasy": "^2.0.0",
     "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.3.0",

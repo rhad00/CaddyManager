@@ -55,7 +55,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | done |
-| 0.28 | Major upgrades: `dockerode` 5 and `nodemailer` 10 (done), `sqlite3` 6, `simple-git` 4 | in progress |
+| 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10 and `simple-git` 4 (done), `sqlite3` 6 | in progress |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
 ## Changes
@@ -1107,6 +1107,39 @@ Release notes read before each upgrade; each package is verified on its own.
 - Verification: a real SMTP server (Mailpit in Docker) received both the password reset
   mail and an alert email sent through the real `emailService` and
   `alertService.sendToChannel`; backend 60 suites passed, 1 skipped; 498 tests passed.
+
+#### 0.28c simple-git 3.36.0 → 4.0.2 (security fix)
+
+`npm audit --omit=dev` reported **critical** advisories for `simple-git` and
+`@simple-git/argv-parser`: command execution through unblocked Git configuration
+includes and trailer configuration, and the `VISUAL` editor variable missing from the
+unsafe-editor check. They are fixed only in 4.0.1/4.0.2, so this upgrade is a security
+fix, not a convenience. It also took priority over the other three.
+
+- Upstream breaking changes (4.0.0): the default export is gone (`const { simpleGit } =
+  require('simple-git')`); abbreviated long options (`--conf=…`) throw; **every
+  `GIT_*` variable is removed from the child's environment, and a call that supplies one
+  explicitly throws, unless it is named in the new `allowEnvironment` option**;
+  deprecated `silent()`, `clearQueue()` and `gitP` are removed.
+- Changes here:
+  - `gitService`: named import; `allowEnvironment` lists exactly the five variables
+    `authEnv()` builds (`GIT_TERMINAL_PROMPT`, `GIT_SSL_CAINFO`, `GIT_CONFIG_COUNT`,
+    `GIT_CONFIG_KEY_0`, `GIT_CONFIG_VALUE_0`). `allowUnsafeConfigEnvCount` is kept, still
+    only when a token is set.
+  - Tests that required `simple-git` (`gitCredentials`, `gitRollback`) or mocked it
+    (`gitService.sync`) use the named export.
+  - All option arrays in the service already used full option names.
+- Gain beyond the advisories: a plain `simpleGit(path)` (no explicit environment, used
+  for local operations) no longer passes a stray `GIT_*` variable of the backend
+  process to git.
+- Verification:
+  - Against a local HTTP server the real `gitService.testConnection` made git send
+    `Authorization: Basic oauth2:<token>` for a GitLab repository and no header for a
+    repository without a token.
+  - An ambient `GIT_CONFIG_COUNT/KEY_0/VALUE_0` set to `core.sshCommand` in the backend
+    process did not reach git (the command it would have run did not run).
+  - Backend 60 suites passed, 1 skipped; 498 tests passed. `npm audit --omit=dev` no
+    longer lists `simple-git` or `@simple-git/argv-parser`.
 
 ## Where this session stopped
 

@@ -17,7 +17,7 @@ process.env.GIT_REPO_DIR = path.join(TMP, 'work');
 jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn(), getCaddyConfig: jest.fn(async () => ({})) }));
 
 const bcrypt = require('bcrypt');
-const simpleGit = require('simple-git');
+const { simpleGit } = require('simple-git');
 const { sequelize, Proxy, GitRepository } = require('../../src/models');
 const gitService = require('../../src/services/gitService');
 
