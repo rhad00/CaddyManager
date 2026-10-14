@@ -154,6 +154,8 @@ const validateHealthChecksConfig = (healthChecks) => {
   return { valid: true };
 };
 
+const HEADER_SECRET_PLACEHOLDER = /\{\s*(env|file)\s*[.\\]/i;
+
 const validateHeadersConfig = (headers) => {
   if (!headers || !Array.isArray(headers)) {
     return { valid: true };
@@ -169,8 +171,22 @@ const validateHeadersConfig = (headers) => {
       return { valid: false, message: `Header name too long: ${header.header_name}` };
     }
 
+    if (header.header_value !== undefined && typeof header.header_value !== 'string') {
+      return { valid: false, message: 'Header value must be text' };
+    }
+
     if (header.header_value && header.header_value.length > 8192) {
       return { valid: false, message: 'Header value too long (max 8192 characters)' };
+    }
+
+    if (header.header_value && /[\r\n]/.test(header.header_value)) {
+      return { valid: false, message: 'Header value cannot contain line breaks' };
+    }
+
+    // Caddy expands {placeholders} in header values; the ones below read its environment
+    // (CF_API_TOKEN, ...) or files, which a header would hand to every visitor
+    if (header.header_value && HEADER_SECRET_PLACEHOLDER.test(header.header_value)) {
+      return { valid: false, message: 'Header values cannot use the {env.*} or {file.*} placeholders' };
     }
   }
 
@@ -235,4 +251,5 @@ module.exports = {
   isValidDomain,
   validateUpstreamUrl,
   validateProxyInput,
+  validateHeadersConfig,
 };

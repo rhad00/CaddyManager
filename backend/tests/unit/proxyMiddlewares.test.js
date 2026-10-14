@@ -11,7 +11,7 @@ jest.mock('../../src/models', () => ({
 
 const { Header, Middleware } = require('../../src/models');
 const { validateMiddlewares, middlewareHandlers } = require('../../src/utils/proxyMiddlewares');
-const { validateProxyInput } = require('../../src/utils/proxyValidation');
+const { validateProxyInput, validateHeadersConfig } = require('../../src/utils/proxyValidation');
 const caddyService = require('../../src/services/caddyService');
 
 const rateLimit = (configuration, extra = {}) => ({ middleware_type: 'rate_limit', configuration, enabled: true, order: 0, ...extra });
@@ -39,6 +39,14 @@ describe('validateMiddlewares', () => {
     ['a redirect source without a leading slash', [redirect({ from: 'old', to: '/new' })], /from/],
     ['a redirect target that is neither a path nor an http(s) URL', [redirect({ from: '/', to: 'javascript:alert(1)' })], /to/],
     ['a redirect target with a line break', [redirect({ from: '/', to: '/a\r\nSet-Cookie: x=1' })], /to/],
+    // Caddy expands {placeholders} in a response header: {env.X} and {file.X} would put
+    // Caddy's environment (CF_API_TOKEN) or files in the Location of one unauthenticated GET
+    ['a Caddy placeholder in the target', [redirect({ from: '/', to: '/x/{env.CF_API_TOKEN}' })], /to/],
+    ['a request placeholder in the target', [redirect({ from: '/', to: 'https://example.com/{http.request.uri.query.u}' })], /to/],
+    ['a placeholder in the source', [redirect({ from: '/{env.HOME}', to: '/x' })], /from/],
+    ['a scheme-relative target', [redirect({ from: '/', to: '//evil.example' })], /to/],
+    ['a backslash target', [redirect({ from: '/', to: '/\\evil.example' })], /to/],
+    ['a control character in the target', [redirect({ from: '/', to: '/a\u0000b' })], /to/],
     ['a redirect with an odd status code', [redirect({ from: '/', to: '/x', code: 200 })], /code/],
     ['a list that is not an array', 'rate_limit', /array/],
     ['an entry without configuration', [{ middleware_type: 'redirect' }], /configuration/],
@@ -51,6 +59,27 @@ describe('validateMiddlewares', () => {
   test('is part of the proxy input validation', () => {
     const body = { name: 'app', domains: ['app.example.com'], upstream_url: 'http://app:80', middlewares: [rateLimit({ rate: 0 })] };
     expect(validateProxyInput(body).valid).toBe(false);
+  });
+});
+
+describe('validateHeadersConfig', () => {
+  const header = (header_value, extra = {}) => ({ header_type: 'response', header_name: 'X-Test', header_value, ...extra });
+
+  test.each([
+    ['a request placeholder, which templates use', '{http.request.host}'],
+    ['a plain value', 'max-age=31536000'],
+  ])('accepts %s', (_label, value) => {
+    expect(validateHeadersConfig([header(value)])).toEqual({ valid: true });
+  });
+
+  test.each([
+    ['the environment of Caddy', '{env.CF_API_TOKEN}'],
+    ['a file read by Caddy', '{file./etc/passwd}'],
+    ['the same with spaces or other case', 'x {ENV.SECRET}'],
+    ['a value that is not text', 42],
+    ['a line break', 'a\r\nSet-Cookie: x=1'],
+  ])('rejects %s', (_label, value) => {
+    expect(validateHeadersConfig([header(value)]).valid).toBe(false);
   });
 });
 

@@ -985,7 +985,7 @@ class CaddyService {
             middleware_type: middleware.middleware_type,
             configuration: middleware.configuration,
             order: middleware.order || 0,
-            enabled: true
+            enabled: middleware.enabled !== false
           }, { transaction });
         }
       });

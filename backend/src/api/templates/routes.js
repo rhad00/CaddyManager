@@ -5,6 +5,19 @@ const caddyService = require('../../services/caddyService');
 const Proxy = require('../../models/proxy');
 const { logAction } = require('../../services/auditService');
 const { validateMiddlewares } = require('../../utils/proxyMiddlewares');
+const { validateHeadersConfig } = require('../../utils/proxyValidation');
+
+// Headers and middlewares of a template end up on proxies and in Caddy's configuration
+const validateTemplateContent = ({ headers, middleware }) => {
+  if (headers !== undefined && headers !== null && !Array.isArray(headers)) {
+    return { valid: false, message: 'headers must be an array' };
+  }
+  if (middleware !== undefined && middleware !== null && !Array.isArray(middleware)) {
+    return { valid: false, message: 'middleware must be an array' };
+  }
+  const headersCheck = validateHeadersConfig(headers);
+  return headersCheck.valid ? validateMiddlewares(middleware) : headersCheck;
+};
 const router = express.Router();
 
 /**
@@ -162,9 +175,9 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
       });
     }
     
-    const middlewareCheck = validateMiddlewares(middleware);
-    if (!middlewareCheck.valid) {
-      return res.status(400).json({ success: false, message: middlewareCheck.message });
+    const contentCheck = validateTemplateContent({ headers, middleware });
+    if (!contentCheck.valid) {
+      return res.status(400).json({ success: false, message: contentCheck.message });
     }
 
     // Create template
@@ -247,9 +260,9 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
       });
     }
     
-    const middlewareCheck = validateMiddlewares(req.body.middleware);
-    if (!middlewareCheck.valid) {
-      return res.status(400).json({ success: false, message: middlewareCheck.message });
+    const contentCheck = validateTemplateContent(req.body);
+    if (!contentCheck.valid) {
+      return res.status(400).json({ success: false, message: contentCheck.message });
     }
 
     // Update template fields

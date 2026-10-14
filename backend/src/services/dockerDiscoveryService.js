@@ -440,7 +440,7 @@ class DockerDiscoveryService {
         middleware_type: m.middleware_type,
         configuration: m.configuration,
         order: m.order || 0,
-        enabled: true
+        enabled: m.enabled !== false
       })));
     }
     logger.info(`[DockerDiscovery] Applied template '${templateName}' to ${containerName}`);

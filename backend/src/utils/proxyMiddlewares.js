@@ -13,10 +13,14 @@ const DEFAULT_RATE_UNIT = 'second';
 const REDIRECT_CODES = [301, 302, 303, 307, 308];
 const DEFAULT_REDIRECT_CODE = 302;
 const MAX_TEXT_LENGTH = 2048;
-// A path, or an absolute http(s) URL; no whitespace or control characters (the value
-// goes into a Location header)
-const REDIRECT_FROM = /^\/\S*$/;
-const REDIRECT_TO = /^(\/\S*|https?:\/\/\S+)$/;
+// A path, or an absolute http(s) URL. Never whitespace, control characters, backslashes
+// or braces: the target goes into a Location header, and Caddy expands {placeholders}
+// in response headers ({env.X}, {file.X}, {http.request...}), which would leak Caddy's
+// environment or let a request choose the target. A path may not start with "//" or
+// "/\" either: browsers read those as another site.
+const FORBIDDEN = '\\x00-\\x20\\x7f{}\\\\';
+const REDIRECT_FROM = new RegExp(`^/[^${FORBIDDEN}]*$`);
+const REDIRECT_TO = new RegExp(`^(/(?![/\\\\])[^${FORBIDDEN}]*|https?://[^${FORBIDDEN}]+)$`);
 
 const invalid = (message) => ({ valid: false, message });
 

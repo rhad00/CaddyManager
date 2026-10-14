@@ -1233,6 +1233,42 @@ Kubernetes is planned. Building it needs a client library and RBAC design: its o
 and the README lists cloud storage as planned. Nothing claims otherwise. Restoring a backup
 that is on the server works.
 
+#### 0.29b Security review follow-up
+
+A security review of 0.29 found one real problem, confirmed on a real Caddy before fixing:
+Caddy expands `{placeholders}` in response header values. A redirect with
+`to: "/x/{env.HOME}"` answered `Location: /x//root`. In production Caddy's environment
+holds `CF_API_TOKEN` and `{file.*}` reads files, so a backend admin (proxy or template)
+could expose them to any visitor with one unauthenticated GET, and
+`{http.request.uri.query.u}` let a request choose the redirect target.
+
+- Redirect `from`/`to`: braces, backslashes, whitespace and control characters are
+  refused; a path may not start with `//` or `/\` (browsers read both as another site).
+- Header values (proxies and templates): `{env.*}` and `{file.*}` are refused, as are
+  line breaks and non-text values. Other placeholders such as `{http.request.host}`
+  stay: the shipped templates use them.
+- Templates: `headers` and `middleware` must be arrays and are validated on create and
+  update (before, `headers` was stored unchecked).
+- A middleware stored as disabled stays disabled when a template is applied or a
+  discovery template label copies it.
+- Tests: 36 (was 30) in `proxyMiddlewares`; the real-Caddy check is unchanged for valid
+  input (302 with Location, 429 on the fourth request).
+
+Left open, with the reasoning:
+
+- The rate limit key is `{http.request.remote.host}`, the TCP peer. It cannot be spoofed
+  with `X-Forwarded-For`, but behind Cloudflare, another proxy or the Docker bridge all
+  clients share one key, and the proxy's IP filtering has the same blind spot. The proper
+  fix is `trusted_proxies` on the Caddy server and `{http.request.client_ip}`; that is a
+  deployment setting (which proxies to trust) and applies to the existing rate limit and
+  IP filter as well, so it is a separate item.
+- Header values already stored with an `{env.*}`/`{file.*}` placeholder (the check is on
+  write) keep working until they are saved again. A backup restore of templates writes
+  `headers` without this check; the builder does not run it either.
+- A template apply whose Caddy update fails after the database commit leaves the new
+  middlewares in the database with Caddy on the old route (same shape as the proxy
+  create/update compensation of 0.15, not yet applied to templates).
+
 ## Where this session stopped
 
 Done: 0.1–0.29. Next up, in order:
