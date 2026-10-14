@@ -60,6 +60,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1a | Phase 1 finding: audit entries lost the resource id | done |
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
+| 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
 | 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
 
 ## Changes
@@ -1374,6 +1375,22 @@ puts that in place and proves it with one real module (`utils/query`, now `query
     `node` user, has no dev tooling and no `src/`, only `dist/`.
 - Not done: the Docker image build is only exercised in CI from now on, not the
   production compose file.
+
+### 2.1b Review follow-up: keep the `.js` tests in production's language mode
+
+A review of 2.1 found one medium issue: `babel.config.js` applied `preset-env` to every
+file, and Babel treats files as ES modules by default, so under Jest the existing
+`.js` files gained `"use strict"` and a top-level `this` of `undefined`, while production
+(tsc output of plain scripts) has neither. Nothing failed, but tests and production
+differed in language mode. The presets are now an `overrides` entry for `/\.ts$/`; the
+`.js` files go through `babel-jest`'s own preset only (`jest.mock` hoisting).
+64 suites / 557 tests still pass.
+
+Acknowledged, not changed (all low): `npm start` needs `tsc` (dev dependencies) and
+empties `dist/` first; the nodemon `--exec` chain could leave the old server running on
+a signal race; the image has source maps but no `src/`, so stack traces show unopenable
+paths; CI builds the image but does not start it; the dev compose bind mount can hit
+uid mismatches on Linux.
 
 ### 2.2 Pure helpers in strict TypeScript
 
