@@ -1,8 +1,16 @@
-const express = require('express');
-const { AuditLog, User } = require('../../models');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const { Op } = require('sequelize');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { sequelize, AuditLog, User } from '../../models';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { Op } from 'sequelize';
+import { queryString } from '../../utils/query';
+
+export const router = express.Router();
+
+/** The createdAt condition for an optional start and end date */
+const dateRange = (startDate?: string, endDate?: string): Record<symbol, Date> => ({
+  ...(startDate ? { [Op.gte]: new Date(startDate) } : {}),
+  ...(endDate ? { [Op.lte]: new Date(endDate) } : {}),
+});
 
 /**
  * @swagger
@@ -50,21 +58,16 @@ const router = express.Router();
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
-    const {
-      page = 1,
-      limit = 50,
-      action,
-      resource,
-      userId,
-      status,
-      startDate,
-      endDate,
-    } = req.query;
+    // A repeated or nested query parameter (?action=a&action=b, ?action[x]=1) is not a filter value
+    const [action, resource, userId, status, startDate, endDate] =
+      ['action', 'resource', 'userId', 'status', 'startDate', 'endDate'].map((name) => queryString(req.query[name]));
+    const limit = queryString(req.query.limit);
+    const page = Math.max(1, parseInt(queryString(req.query.page) ?? '', 10) || 1);
 
     // Build filter conditions
-    const where = {};
+    const where: Record<string, unknown> = {};
 
     if (action) {
       where.action = action;
@@ -75,7 +78,7 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
     }
 
     if (userId) {
-      where.userId = userId;
+      where.user_id = userId;
     }
 
     if (status) {
@@ -83,18 +86,12 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
     }
 
     if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) {
-        where.createdAt[Op.gte] = new Date(startDate);
-      }
-      if (endDate) {
-        where.createdAt[Op.lte] = new Date(endDate);
-      }
+      where.createdAt = dateRange(startDate, endDate);
     }
 
     // Calculate pagination (cap limit at 500 to prevent excessive data fetches)
-    const safeLimit = Math.min(Math.max(1, parseInt(limit) || 50), 500);
-    const offset = (parseInt(page) - 1) * safeLimit;
+    const safeLimit = Math.min(Math.max(1, parseInt(limit ?? '', 10) || 50), 500);
+    const offset = (page - 1) * safeLimit;
 
     // Fetch logs with user information
     const { count, rows: logs } = await AuditLog.findAndCountAll({
@@ -116,7 +113,7 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
       logs,
       pagination: {
         total: count,
-        page: parseInt(page),
+        page,
         limit: safeLimit,
         totalPages: Math.ceil(count / safeLimit),
       },
@@ -150,7 +147,7 @@ router.get('/logs', [authMiddleware, roleMiddleware('admin')], async (req, res) 
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const log = await AuditLog.findByPk(req.params.id, {
       include: [
@@ -202,19 +199,14 @@ router.get('/logs/:id', [authMiddleware, roleMiddleware('admin')], async (req, r
  *       200:
  *         description: Statistics grouped by action, resource, and status
  */
-router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
-    const { startDate, endDate } = req.query;
+    const startDate = queryString(req.query.startDate);
+    const endDate = queryString(req.query.endDate);
 
-    const where = {};
+    const where: Record<string, unknown> = {};
     if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) {
-        where.createdAt[Op.gte] = new Date(startDate);
-      }
-      if (endDate) {
-        where.createdAt[Op.lte] = new Date(endDate);
-      }
+      where.createdAt = dateRange(startDate, endDate);
     }
 
     // Get total count
@@ -225,7 +217,7 @@ router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res)
       where,
       attributes: [
         'action',
-        [AuditLog.sequelize.fn('COUNT', AuditLog.sequelize.col('id')), 'count'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
       ],
       group: ['action'],
       raw: true,
@@ -236,7 +228,7 @@ router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res)
       where,
       attributes: [
         'resource',
-        [AuditLog.sequelize.fn('COUNT', AuditLog.sequelize.col('id')), 'count'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
       ],
       group: ['resource'],
       raw: true,
@@ -247,7 +239,7 @@ router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res)
       where,
       attributes: [
         'status',
-        [AuditLog.sequelize.fn('COUNT', AuditLog.sequelize.col('id')), 'count'],
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
       ],
       group: ['status'],
       raw: true,
@@ -284,10 +276,10 @@ router.get('/stats', [authMiddleware, roleMiddleware('admin')], async (req, res)
  *       200:
  *         description: Array of distinct action strings
  */
-router.get('/actions', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/actions', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const actions = await AuditLog.findAll({
-      attributes: [[AuditLog.sequelize.fn('DISTINCT', AuditLog.sequelize.col('action')), 'action']],
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('action')), 'action']],
       raw: true,
     });
 
@@ -317,10 +309,10 @@ router.get('/actions', [authMiddleware, roleMiddleware('admin')], async (req, re
  *       200:
  *         description: Array of distinct resource strings
  */
-router.get('/resources', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/resources', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const resources = await AuditLog.findAll({
-      attributes: [[AuditLog.sequelize.fn('DISTINCT', AuditLog.sequelize.col('resource')), 'resource']],
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('resource')), 'resource']],
       raw: true,
     });
 
@@ -336,5 +328,3 @@ router.get('/resources', [authMiddleware, roleMiddleware('admin')], async (req, 
     });
   }
 });
-
-module.exports = router;
