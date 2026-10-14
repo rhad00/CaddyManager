@@ -1,12 +1,12 @@
-const express = require('express');
-const crypto = require('crypto');
-const { User } = require('../../models');
-const { logAction } = require('../../services/auditService');
-const { sendPasswordResetEmail } = require('../../services/emailService');
-const { body, validationResult } = require('express-validator');
-const { passwordResetLimiter } = require('../../middleware/rateLimiter');
+import express, { type Request, type Response } from 'express';
+import crypto from 'crypto';
+import { body, validationResult } from 'express-validator';
+import { User } from '../../models';
+import { logAction } from '../../services/auditService';
+import { sendPasswordResetEmail } from '../../services/emailService';
+import { passwordResetLimiter } from '../../middleware/rateLimiter';
 
-const router = express.Router();
+export const router = express.Router();
 
 /**
  * @route POST /api/auth/password-reset/request
@@ -19,7 +19,7 @@ router.post(
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   ],
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -89,7 +89,7 @@ router.post(
   [
     body('token').notEmpty().withMessage('Reset token is required'),
   ],
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -115,7 +115,7 @@ router.post(
         });
       }
 
-      if (new Date() > new Date(user.reset_token_expires)) {
+      if (new Date() > new Date(user.reset_token_expires ?? 0)) {
         // Clear expired token
         user.reset_token = null;
         user.reset_token_expires = null;
@@ -161,7 +161,7 @@ router.post(
       .matches(/[^a-zA-Z0-9]/)
       .withMessage('Password must contain at least one special character'),
   ],
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -187,7 +187,7 @@ router.post(
         });
       }
 
-      if (new Date() > new Date(user.reset_token_expires)) {
+      if (new Date() > new Date(user.reset_token_expires ?? 0)) {
         // Clear expired token
         user.reset_token = null;
         user.reset_token_expires = null;
@@ -227,5 +227,3 @@ router.post(
     }
   }
 );
-
-module.exports = router;

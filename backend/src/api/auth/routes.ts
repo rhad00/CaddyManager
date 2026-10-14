@@ -1,19 +1,19 @@
-const express = require('express');
-const { authenticateUser } = require('../../services/authService');
-const { authMiddleware, noApiKeyArea } = require('../../middleware/auth');
-const { logAction } = require('../../services/auditService');
-const passwordResetRoutes = require('./passwordReset');
-const twoFactorRoutes = require('./twoFactor');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { authenticateUser } from '../../services/authService';
+import { authMiddleware, noApiKeyArea } from '../../middleware/auth';
+import { logAction } from '../../services/auditService';
+import { router as passwordResetRoutes } from './passwordReset';
+import { router as twoFactorRoutes } from './twoFactor';
+import { loginLimiter } from '../../middleware/rateLimiter';
+import { loginValidation } from '../../middleware/validation';
+
+export const router = express.Router();
 
 /**
  * @route POST /api/auth/login
  * @desc Authenticate user and get token
  * @access Public
  */
-const { loginLimiter } = require('../../middleware/rateLimiter');
-const { loginValidation } = require('../../middleware/validation');
-
 /**
  * @route POST /api/auth/login
  * @desc Authenticate user and get token
@@ -60,7 +60,7 @@ const { loginValidation } = require('../../middleware/validation');
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/login', loginLimiter, loginValidation, async (req, res) => {
+router.post('/login', loginLimiter, loginValidation, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -75,7 +75,7 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
     // Authenticate user
     const result = await authenticateUser(email, password);
 
-    if (!result.success) {
+    if (result.success === false) {
       await logAction({
         action: 'LOGIN_FAILED',
         resource: 'auth',
@@ -90,7 +90,7 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
     }
 
     // If 2FA is required, return a challenge ticket (no full token yet)
-    if (result.require_2fa) {
+    if ('totp_session' in result) {
       return res.status(200).json({ success: true, require_2fa: true, totp_session: result.totp_session });
     }
 
@@ -133,7 +133,7 @@ router.post('/login', loginLimiter, loginValidation, async (req, res) => {
  * @desc Logout user (client-side only, invalidate token on client)
  * @access Public
  */
-router.post('/logout', (req, res) => {
+router.post('/logout', (_req, res) => {
   // Clear the httpOnly auth cookie
   res.clearCookie('auth_token', {
     httpOnly: true,
@@ -165,5 +165,3 @@ router.use('/password-reset', passwordResetRoutes);
 
 // 2FA routes
 router.use('/2fa', noApiKeyArea, twoFactorRoutes);
-
-module.exports = router;

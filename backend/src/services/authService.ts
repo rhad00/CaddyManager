@@ -24,14 +24,10 @@ export type TokenUser = Pick<User, 'id' | 'email' | 'role'>;
  * Outcome of a login: a failure (`message`), a 2FA challenge (`require_2fa` and
  * `totp_session`) or a signed-in user with a `token`.
  */
-export interface AuthResult {
-  success: boolean;
-  message?: string;
-  require_2fa?: boolean;
-  totp_session?: string;
-  user?: { id: string; email: string; role: string; lastLogin: Date | null };
-  token?: string;
-}
+export type AuthResult =
+  | { success: false; message: string }
+  | { success: true; require_2fa: true; totp_session: string }
+  | { success: true; require_2fa?: undefined; user: { id: string; email: string; role: string; lastLogin: Date | null }; token: string };
 
 /**
  * Generate a JWT token for a user

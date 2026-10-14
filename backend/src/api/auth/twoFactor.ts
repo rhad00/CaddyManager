@@ -1,21 +1,21 @@
-const express = require('express');
-const speakeasy = require('speakeasy');
-const qrcode = require('qrcode');
-const crypto = require('crypto');
-const { authMiddleware } = require('../../middleware/auth');
-const { User } = require('../../models');
-const { logAction } = require('../../services/auditService');
-const { verifyTotpSession, generateToken } = require('../../services/authService');
-const { twoFaLimiter } = require('../../middleware/rateLimiter');
+import express from 'express';
+import speakeasy from 'speakeasy';
+import qrcode from 'qrcode';
+import crypto from 'crypto';
+import { authMiddleware } from '../../middleware/auth';
+import { User } from '../../models';
+import { logAction } from '../../services/auditService';
+import { verifyTotpSession, generateToken } from '../../services/authService';
+import { twoFaLimiter } from '../../middleware/rateLimiter';
 
-const router = express.Router();
+export const router = express.Router();
 
 const APP_NAME = process.env.APP_NAME || 'CaddyManager';
 
 /**
  * Generate 10 single-use backup codes.
  */
-function generateBackupCodes() {
+function generateBackupCodes(): string[] {
   return Array.from({ length: 10 }, () => crypto.randomBytes(4).toString('hex'));
 }
 
@@ -26,7 +26,7 @@ function generateBackupCodes() {
  */
 router.post('/setup', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id);
+    const user = await User.findByPk(req.user!.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     if (user.totp_enabled) {
       return res.status(400).json({ success: false, message: '2FA is already enabled. Disable it first.' });
@@ -39,7 +39,7 @@ router.post('/setup', authMiddleware, async (req, res) => {
     user.totp_enabled = false;
     await user.save();
 
-    const otpauthUrl = secretObj.otpauth_url;
+    const otpauthUrl = secretObj.otpauth_url as string;
     const qrDataUrl = await qrcode.toDataURL(otpauthUrl);
 
     res.json({ success: true, secret, qr: qrDataUrl });
@@ -59,7 +59,7 @@ router.post('/verify', authMiddleware, async (req, res) => {
     const { code } = req.body;
     if (!code) return res.status(400).json({ success: false, message: 'TOTP code required' });
 
-    const user = await User.findByPk(req.user.id);
+    const user = await User.findByPk(req.user!.id);
     if (!user || !user.totp_secret) {
       return res.status(400).json({ success: false, message: 'No 2FA setup in progress. Call /setup first.' });
     }
@@ -67,7 +67,7 @@ router.post('/verify', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, message: '2FA already enabled' });
     }
 
-    const isValid = speakeasy.totp.verify({ token: String(code).trim(), secret: user.totp_secret, encoding: 'base32', window: 1 });
+    const isValid = speakeasy.totp.verify({ token: String(code).trim(), secret: user.totp_secret as string, encoding: 'base32', window: 1 });
     if (!isValid) return res.status(400).json({ success: false, message: 'Invalid or expired TOTP code' });
 
     const backupCodes = generateBackupCodes();
@@ -93,12 +93,12 @@ router.post('/disable', authMiddleware, async (req, res) => {
     const { code } = req.body;
     if (!code) return res.status(400).json({ success: false, message: 'TOTP code required to disable 2FA' });
 
-    const user = await User.findByPk(req.user.id);
+    const user = await User.findByPk(req.user!.id);
     if (!user || !user.totp_enabled) {
       return res.status(400).json({ success: false, message: '2FA is not enabled' });
     }
 
-    const isValid = speakeasy.totp.verify({ token: String(code).trim(), secret: user.totp_secret, encoding: 'base32', window: 1 });
+    const isValid = speakeasy.totp.verify({ token: String(code).trim(), secret: user.totp_secret as string, encoding: 'base32', window: 1 });
     if (!isValid) return res.status(400).json({ success: false, message: 'Invalid TOTP code' });
 
     user.totp_enabled = false;
@@ -121,10 +121,10 @@ router.post('/disable', authMiddleware, async (req, res) => {
  */
 router.get('/status', authMiddleware, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, { attributes: ['id', 'totp_enabled'] });
+    const user = await User.findByPk(req.user!.id, { attributes: ['id', 'totp_enabled'] });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     res.json({ success: true, enabled: user.totp_enabled });
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false, message: 'Failed to get 2FA status' });
   }
 });
@@ -152,7 +152,7 @@ router.post('/challenge', twoFaLimiter, async (req, res) => {
     }
 
     const trimmedCode = String(code).trim();
-    const isValidTotp = speakeasy.totp.verify({ token: trimmedCode, secret: user.totp_secret, encoding: 'base32', window: 1 });
+    const isValidTotp = speakeasy.totp.verify({ token: trimmedCode, secret: user.totp_secret as string, encoding: 'base32', window: 1 });
 
     // Also allow backup codes
     let isValidBackup = false;
@@ -196,5 +196,3 @@ router.post('/challenge', twoFaLimiter, async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error during 2FA' });
   }
 });
-
-module.exports = router;
