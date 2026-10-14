@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.16 | Phase 4: `app` to TypeScript | done |
 | 4.15 | Phase 4: `api/index` to TypeScript, static route imports | done |
 | 4.14 | Phase 4: `git` routes to TypeScript | done |
 | 4.13 | Phase 4: `certificates` routes to TypeScript | done |
@@ -1991,9 +1992,19 @@ Verification: typecheck (loose and strict), build, full suite (646 tests, three 
 
 Verification: typecheck (loose and strict), build, full suite (646 tests, `apiKeyAuth.test.js` exercises the mounts), a `dist/` boot.
 
+### 4.16 the Express app
+
+`app.ts` exports `app` and `startServer` by name (it already did); the tests that read `{ app }` need no change.
+
+- `import 'dotenv/config'` is the first import, so the environment is loaded before the modules below it read it (the old file called `dotenv.config()` first for the same reason). The `require`s that sat in the middle of the file (`rateLimiter`, `cookie-parser`, `csrf-csrf`, the lazy `config/database` in the shutdown handler) are ordinary imports at the top now.
+- The error handlers take a typed `HttpError` (`Error` plus `code` and `status`); `sanitizeRequestUrl` and the CSRF token handler are typed; the shutdown handler uses `errorMessage`.
+- Behaviour is unchanged: same middleware order, same CSRF setup, same routes.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), a `dist/` boot (health, ready and the API docs answer).
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.15 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.16 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

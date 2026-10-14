@@ -1,16 +1,18 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet').default;
-const morgan = require('morgan');
-const { testConnection } = require('./config/database');
-
-// Import routes
-const { buildApiRouter } = require('./api');
-const { setupSwagger } = require('./config/swagger');
+import 'dotenv/config'; // first: the modules below read the environment when they load
+import express, { type NextFunction, type Request, type Response } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+import { doubleCsrf } from 'csrf-csrf';
+import { sequelize, testConnection } from './config/database';
+import { buildApiRouter } from './api';
+import { setupSwagger } from './config/swagger';
+import { apiLimiter, csrfTokenLimiter } from './middleware/rateLimiter';
+import { errorMessage } from './utils/errorMessage';
 
 // Create Express app
-const app = express();
+export const app = express();
 
 // Trust proxy - required when behind NGINX/reverse proxy
 // This allows Express to trust X-Forwarded-* headers from the proxy
@@ -32,7 +34,7 @@ app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with size limit
 
 const SENSITIVE_QUERY_PARAMS = ['token', 'password', 'secret', 'api_key', 'key', 'code', 'reset_token'];
 
-const sanitizeRequestUrl = (url) => {
+const sanitizeRequestUrl = (url: string | undefined): string | undefined => {
   if (!url || !url.includes('?')) {
     return url;
   }
@@ -48,17 +50,13 @@ const sanitizeRequestUrl = (url) => {
   return `${pathname}?${params.toString()}`;
 };
 
-morgan.token('safe-url', (req) => sanitizeRequestUrl(/** @type {import('express').Request} */ (req).originalUrl || req.url));
+morgan.token('safe-url', (req) => sanitizeRequestUrl((req as Request).originalUrl || req.url));
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]')); // Request logging
 
 // Rate limiting
-const { apiLimiter, csrfTokenLimiter } = require('./middleware/rateLimiter');
 app.use('/api', apiLimiter); // Apply to all API routes (covers /api and /api/v1)
 
 // CSRF Protection (double-submit cookie pattern)
-const cookieParser = require('cookie-parser');
-const { doubleCsrf } = require('csrf-csrf');
-
 app.use(cookieParser());
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -91,7 +89,7 @@ setupSwagger(app);
 app.use('/api', doubleCsrfProtection);
 
 // Endpoint to get CSRF token (dedicated rate limiter on top of the global apiLimiter)
-const csrfTokenHandler = (req, res) => {
+const csrfTokenHandler = (req: Request, res: Response): void => {
   const csrfToken = generateCsrfToken(req, res);
   res.json({ csrfToken });
 };
@@ -99,7 +97,9 @@ app.get('/api/csrf-token', csrfTokenLimiter, csrfTokenHandler);
 app.get('/api/v1/csrf-token', csrfTokenLimiter, csrfTokenHandler);
 
 // Error handler for CSRF
-app.use((err, req, res, next) => {
+type HttpError = Error & { code?: string; status?: number };
+
+app.use((err: HttpError, _req: Request, res: Response, next: NextFunction) => {
   if (err.code !== 'EBADCSRFTOKEN' && err.message !== 'invalid csrf token' && err.message !== 'misconfigured csrf') return next(err);
   res.status(403).json({
     error: {
@@ -110,12 +110,12 @@ app.use((err, req, res, next) => {
 });
 
 // Basic route for health check (liveness)
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Readiness probe — verifies database connectivity
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbReady = await testConnection();
     if (dbReady) {
@@ -135,7 +135,7 @@ app.use('/api/v1', apiRouter);
 app.use('/api', apiRouter); // backward compatible
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: HttpError, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     error: {
@@ -148,7 +148,7 @@ app.use((err, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || 3000;
 
-const startServer = async () => {
+export const startServer = async (): Promise<void> => {
   try {
     // Test database connection
     const dbConnected = await testConnection();
@@ -173,18 +173,17 @@ const startServer = async () => {
     // Handle SIGTERM (Docker/Kubernetes stop) and SIGINT (Ctrl-C).
     // This lets in-flight requests finish and closes the DB pool cleanly,
     // preventing config corruption on forced process termination.
-    const gracefulShutdown = (signal) => {
+    const gracefulShutdown = (signal: string): void => {
       console.log(`[Shutdown] ${signal} received — draining connections…`);
 
       // Stop accepting new requests; wait for existing ones to finish.
       server.close(async () => {
         console.log('[Shutdown] HTTP server closed');
         try {
-          const { sequelize: db } = require('./config/database');
-          await db.close();
+          await sequelize.close();
           console.log('[Shutdown] Database connection closed');
         } catch (err) {
-          console.error('[Shutdown] Error closing database:', err.message);
+          console.error('[Shutdown] Error closing database:', errorMessage(err));
         }
         console.log('[Shutdown] Exiting cleanly');
         process.exit(0);
@@ -204,9 +203,6 @@ const startServer = async () => {
     process.exit(1);
   }
 };
-
-// Export app and startServer for use by other modules and tests
-module.exports = { app, startServer };
 
 // Start server if this file is run directly
 if (require.main === module) {
