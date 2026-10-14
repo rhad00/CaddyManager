@@ -4,7 +4,7 @@
  */
 jest.mock('../../src/models', () => ({ Certificate: {}, Proxy: {}, User: {} }));
 
-const certificateService = require('../../src/services/certificateService');
+const { certificateService } = require('../../src/services/certificateService');
 
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => {

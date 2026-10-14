@@ -1,7 +1,7 @@
 let certificateService;
 try {
   // eslint-disable-next-line global-require
-  certificateService = require('../../src/services/certificateService');
+  ({ certificateService } = require('../../src/services/certificateService'));
 } catch (e) {
   certificateService = null;
 }

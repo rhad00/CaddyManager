@@ -72,7 +72,7 @@ const runLeaderTasks = async () => {
   startAlertScheduler(15); // check every 15 minutes
 
   // Keep the certificate list and expiry dates current
-  require('./services/certificateService').scheduleCertificateSync(6);
+  require('./services/certificateService').certificateService.scheduleCertificateSync(6);
 
   // TODO: Initialize Kubernetes discovery service if enabled
   // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {

@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.10 | Phase 3: `certificateService` to strict TypeScript | done |
 | 3.9 | Phase 3: `metricsService` to strict TypeScript, with real tests | done |
 | 3.8 | Phase 3: `templateService` and `migrationService` (first class-instance services, named exports) | done |
 | 3.7 | Phase 3: `alertService` and `authService` to strict TypeScript (all function-style services done) | done |
@@ -1732,9 +1733,24 @@ already resolves an instance exported under the service's own name.
 - Verification: typecheck (loose and strict), build, full suite (68 suites, 605 tests) and a
   `dist/` boot pass.
 
+### 3.10 certificateService
+
+`certificateService.ts`: class and instance exported by name (`{ certificateService }`);
+callers `api/certificates/routes.js`, `src/index.js` (the scheduler start) and three tests
+updated. It still `require`s `caddyService`, which is converted last.
+
+- Typed parameters and results (`SyncSummary`, Certificate and CertificateAuthority instances,
+  `TlsStatus` for the probe results). The observed-certificate map is built only from rows
+  that have a `caddy_cert_id` (the `LIKE 'observed:%'` query already guarantees it).
+- `toCertificateResponse` (utils/certificates) has overloads (nullish in, nullish out; an
+  object in, a record without `private_key_pem` out), so route handlers can pass Certificate
+  instances.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
+  PostgreSQL suites, Caddy contract test (22/22) and a `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

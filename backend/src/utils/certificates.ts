@@ -103,17 +103,18 @@ export function resolveCertificateDomains(
   return list;
 }
 
-type CertificateLike = { toJSON?: () => Record<string, unknown> } & Record<string, unknown>;
-
 /**
  * API shape of a Certificate: never includes the private key.
  * @param certificate - Sequelize instance or plain object
  */
-export function toCertificateResponse<T extends CertificateLike | null | undefined>(
-  certificate: T,
-): T extends null | undefined ? T : Record<string, unknown> {
-  if (!certificate) return certificate as never;
-  const data = typeof certificate.toJSON === 'function' ? certificate.toJSON() : { ...certificate };
+export function toCertificateResponse(certificate: null | undefined): null | undefined;
+export function toCertificateResponse(certificate: object): Record<string, unknown>;
+export function toCertificateResponse(certificate: object | null | undefined): Record<string, unknown> | null | undefined {
+  if (certificate === null || certificate === undefined) return certificate as null | undefined;
+  const withJson = certificate as { toJSON?: () => Record<string, unknown> };
+  const data: Record<string, unknown> = typeof withJson.toJSON === 'function'
+    ? withJson.toJSON()
+    : { ...(certificate as Record<string, unknown>) };
   const { private_key_pem: _omitted, ...rest } = data;
-  return rest as never;
+  return rest;
 }

@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const { Certificate, CertificateAuthority } = require('../../models');
-const certificateService = require('../../services/certificateService');
+const { certificateService } = require('../../services/certificateService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const { certificateUploadLimiter } = require('../../middleware/rateLimiter');
 const { logAction } = require('../../services/auditService');
