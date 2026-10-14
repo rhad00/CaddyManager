@@ -52,7 +52,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.23a | Git: backend image has no `git` binary or CA certificates | done |
 | 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | done |
 | 0.24 | Discovery: labels, names, events, template crash, unused labels | done |
-| 0.25 | Cluster mode: schedulers run in every instance | pending |
+| 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
 | 0.27 | README references missing files | pending |
 | 0.28 | Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5 | pending |
@@ -930,14 +930,48 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     `handleDockerEvent`, reached `createOrUpdateProxy` with its domain and upstream
     `http://<name>:8080`.
 
+### 0.25 Cluster mode: one leader runs the background work
+
+- Problem: `CLUSTER_MODE=true` forked N workers that all ran `index.js` in full. Each
+  one ran the migrations, the backup, metrics, alert and certificate schedulers, Docker
+  discovery (so every container event was handled N times) and the Git init with
+  auto-sync. Alerts and notifications were sent N times. Without `GIT_SECRET_KEY`
+  (development only) each worker also had its own random key and could not decrypt
+  the Git tokens another worker had stored.
+- Fix:
+  - `utils/clusterRole.js`: `isLeader()` is true for a single process and, in cluster
+    mode, only for the worker started with `CLUSTER_ROLE=leader`.
+  - `index.js`: the one-time and background work moved into `runLeaderTasks()`, which
+    only the leader runs. Other workers validate the environment and serve requests.
+    After `startServer()` the process sends `{ type: 'ready' }` to the primary.
+  - `clusterSupervisor.js` (the primary): forks the leader alone, forks the followers
+    when the leader reports ready (so they never meet an unmigrated database),
+    replaces a dead follower with a follower and a dead leader with a new leader (after
+    1 s, so a failing leader does not spin), and stops respawning on SIGTERM/SIGINT.
+    `cluster.js` forwards the signal to the workers.
+  - Outside production the primary creates one `GIT_SECRET_KEY` for all workers when
+    none is set. Production still refuses to start without it.
+- Not fixed (documented in `cluster.js`):
+  - The Caddy config mutex is per process. Writes made through different workers at the
+    same moment are not serialized, so route indices can race. A fix needs a lock
+    shared across processes (database or file). Until then `CLUSTER_WORKERS=1`, or one
+    instance behind a load balancer, is the safe setting for heavy writers.
+  - A Git repository created or edited through a follower starts its auto-sync timer in
+    that follower (`startAutoSync`); only the leader starts timers at boot.
+- Tests: new `clusterSupervisor` unit (9) with a fake cluster: roles, start order,
+  follower and leader replacement, no second follower start, retry of a leader that
+  dies before it is ready.
+- Verification: the real `node src/cluster.js` with 3 workers, a file SQLite database
+  and a real Caddy 2.10.2: one "Database synchronized", two request-only workers,
+  three listening servers, `/health` 200, clean exit on SIGTERM with no respawn.
+
 ## Where this session stopped
 
-Done: 0.1–0.24. Next up, in order:
+Done: 0.1–0.25. Next up, in order:
 
-1. 0.25 Cluster mode: schedulers run in every instance.
-2. 0.26 CI gaps: tests not run, no coverage threshold, no Postgres or Playwright job.
-3. 0.27 README references missing files.
-4. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
-5. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
+1. 0.26 CI gaps: tests not run, no coverage threshold, no Postgres or Playwright job.
+2. 0.27 README references missing files.
+3. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
+4. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
    `custom_ssl_cert_id`, proxy middlewares.
-6. TypeScript phases 1–5.
+5. TypeScript phases 1–5.
