@@ -1,6 +1,6 @@
 const express = require('express');
 const { rateLimit } = require('express-rate-limit');
-const dockerDiscoveryService = require('../../services/dockerDiscoveryService');
+const { dockerDiscoveryService } = require('../../services/dockerDiscoveryService');
 const { DiscoveredService, Proxy } = require('../../models');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();

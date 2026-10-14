@@ -12,7 +12,7 @@ jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase:
 
 const { DiscoveredService, Proxy } = require('../../src/models');
 const caddyService = require('../../src/services/caddyService');
-const discovery = require('../../src/services/dockerDiscoveryService');
+const { dockerDiscoveryService: discovery } = require('../../src/services/dockerDiscoveryService');
 
 const container = (labels = {}) => ({
   Id: 'abcdef1234567890',

@@ -1,12 +1,60 @@
-const Docker = require('dockerode');
-const { DiscoveredService, Proxy, Template, Header, Middleware } = require('../models');
-const { Op } = require('sequelize');
-const winston = require('winston');
-const { SSL_TYPES, isValidDomain } = require('../utils/proxyValidation');
-const {
-  labelsOf, containerNameOf, validateFeatureLabels, labelFeatures, featureUpdates, REVIEWED_FIELDS,
-} =require('../utils/discoveryLabels');
-const securityHeadersService = require('./securityHeadersService');
+import type { Readable } from 'stream';
+import Docker from 'dockerode';
+import { Op, type CreationAttributes } from 'sequelize';
+import winston from 'winston';
+import { DiscoveredService, Proxy, Template, Header, Middleware } from '../models';
+import { SSL_TYPES, isValidDomain } from '../utils/proxyValidation';
+import {
+  labelsOf,
+  containerNameOf,
+  validateFeatureLabels,
+  labelFeatures,
+  featureUpdates,
+  REVIEWED_FIELDS,
+  type DockerContainer,
+  type LabelConfig,
+  type LabelFeatures,
+} from '../utils/discoveryLabels';
+import * as securityHeadersService from './securityHeadersService';
+
+// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
+// and requires this service back
+const getCaddyService = (): typeof import('./caddyService') => require('./caddyService');
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** A container as `docker inspect` returns it: the label helpers' view plus what is read here */
+export interface InspectedContainer extends DockerContainer {
+  State?: { Running?: boolean };
+  NetworkSettings?: { Networks?: Record<string, { NetworkID?: string; IPAddress?: string }> };
+}
+
+/** The labels as parseContainerLabels reads them */
+export interface ParsedLabelConfig extends LabelConfig {
+  domain?: string;
+  port: string;
+  ssl_type: string;
+  template?: string;
+  path_prefix: string;
+  security_headers: boolean;
+  compression: boolean;
+}
+
+/** A Docker event (current API: Action and Actor.ID; status and id are the legacy fields) */
+export interface DockerEvent {
+  Action?: string;
+  status?: string;
+  Actor?: { ID?: string };
+  id?: string;
+}
+
+export interface DockerDiscoveryStatus {
+  initialized: boolean;
+  watching: boolean;
+  label_prefix: string;
+  poll_interval: number;
+  auto_remove_stopped: boolean;
+}
 
 // Create logger for this service
 const logger = winston.createLogger({
@@ -22,32 +70,37 @@ const logger = winston.createLogger({
   ]
 });
 
-class DockerDiscoveryService {
+export class DockerDiscoveryService {
+  docker: Docker | null = null;
+  initialized = false;
+  pollInterval: number;
+  labelPrefix: string;
+  autoRemoveStopped: boolean;
+  eventStream: NodeJS.ReadableStream | null = null;
+
   constructor() {
-    this.docker = null;
-    this.initialized = false;
-    this.pollInterval = parseInt(process.env.DOCKER_POLL_INTERVAL) || 30000; // 30s default
+    this.pollInterval = parseInt(process.env.DOCKER_POLL_INTERVAL ?? '', 10) || 30000; // 30s default
     this.labelPrefix = process.env.DOCKER_LABEL_PREFIX || 'caddymanager';
     this.autoRemoveStopped = process.env.AUTO_REMOVE_STOPPED === 'true';
-    this.eventStream = null;
   }
 
   /**
    * Initialize Docker client
    */
-  async initialize() {
+  async initialize(): Promise<boolean> {
     try {
       // Try to connect to Docker socket
-      this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
+      const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+      this.docker = docker;
 
       // Test connection
-      await this.docker.ping();
+      await docker.ping();
       this.initialized = true;
 
       logger.info('[DockerDiscovery] Successfully connected to Docker daemon');
       return true;
     } catch (error) {
-      logger.error('[DockerDiscovery] Failed to connect to Docker daemon:', error.message);
+      logger.error('[DockerDiscovery] Failed to connect to Docker daemon:', errorMessage(error));
       logger.info('[DockerDiscovery] Docker discovery will be disabled. Make sure Docker socket is mounted.');
       this.initialized = false;
       return false;
@@ -68,7 +121,7 @@ class DockerDiscoveryService {
    * - caddymanager.security_headers=true
    * - caddymanager.compression=false
    */
-  parseContainerLabels(container) {
+  parseContainerLabels(container: InspectedContainer | null | undefined): ParsedLabelConfig | null {
     const labels = labelsOf(container);
 
     // Check if auto-discovery is enabled
@@ -76,7 +129,7 @@ class DockerDiscoveryService {
       return null;
     }
 
-    const config = {
+    const config: ParsedLabelConfig = {
       domain: labels[`${this.labelPrefix}.domain`],
       port: labels[`${this.labelPrefix}.port`] || '80',
       ssl_type: labels[`${this.labelPrefix}.ssl`] || 'acme',
@@ -95,11 +148,11 @@ class DockerDiscoveryService {
   /**
    * Check label values against the rules the proxies API applies. The upstream host comes
    * from Docker (container name or network IP), so the private-address rule does not apply.
-   * @param {Object} config - result of parseContainerLabels
-   * @returns {string|null} the problem, or null when the labels are usable
+   * @param config - result of parseContainerLabels
+   * @returns the problem, or null when the labels are usable
    */
-  validateLabelConfig(config) {
-    if (!isValidDomain(config.domain)) {
+  validateLabelConfig(config: ParsedLabelConfig): string | null {
+    if (!config.domain || !isValidDomain(config.domain)) {
       return `invalid domain label "${config.domain}"`;
     }
     const port = Number(config.port);
@@ -115,7 +168,7 @@ class DockerDiscoveryService {
   /**
    * Get upstream URL for a container
    */
-  getContainerUpstream(container, port) {
+  getContainerUpstream(container: InspectedContainer, port: string): string | null {
     const networks = Object.values(container.NetworkSettings?.Networks || {});
     if (networks.length === 0) {
       logger.warn('[DockerDiscovery] Container has no networks attached');
@@ -143,8 +196,9 @@ class DockerDiscoveryService {
   /**
    * Start watching Docker events
    */
-  async startWatching() {
-    if (!this.initialized) {
+  async startWatching(): Promise<void> {
+    const docker = this.docker;
+    if (!this.initialized || !docker) {
       logger.warn('[DockerDiscovery] Cannot start watching: Docker not initialized');
       return;
     }
@@ -156,23 +210,24 @@ class DockerDiscoveryService {
 
     try {
       // Watch for container events
-      this.eventStream = await this.docker.getEvents({
+      const eventStream = await docker.getEvents({
         filters: {
           type: ['container'],
           event: ['start', 'stop', 'die', 'destroy']
         }
       });
+      this.eventStream = eventStream;
 
-      this.eventStream.on('data', async (chunk) => {
+      eventStream.on('data', async (chunk: Buffer) => {
         try {
-          const event = JSON.parse(chunk.toString());
+          const event = JSON.parse(chunk.toString()) as DockerEvent;
           await this.handleDockerEvent(event);
         } catch (error) {
           logger.error('[DockerDiscovery] Error handling event:', error);
         }
       });
 
-      this.eventStream.on('error', (error) => {
+      eventStream.on('error', (error: Error) => {
         logger.error('[DockerDiscovery] Event stream error:', error);
         // Try to reconnect after 5 seconds
         setTimeout(() => this.startWatching(), 5000);
@@ -190,9 +245,9 @@ class DockerDiscoveryService {
   /**
    * Stop watching Docker events
    */
-  stopWatching() {
+  stopWatching(): void {
     if (this.eventStream) {
-      /** @type {import('stream').Readable} */ (this.eventStream).destroy();
+      (this.eventStream as Readable).destroy();
       this.eventStream = null;
       logger.info('[DockerDiscovery] Docker watch stopped');
     }
@@ -201,22 +256,24 @@ class DockerDiscoveryService {
   /**
    * Scan existing containers on startup
    */
-  async scanExistingContainers() {
+  async scanExistingContainers(): Promise<void> {
+    const docker = this.docker;
+    if (!docker) return;
     try {
-      const containers = await this.docker.listContainers();
+      const containers = await docker.listContainers();
 
       logger.info(`[DockerDiscovery] Scanning ${containers.length} running containers...`);
 
       for (const containerInfo of containers) {
         try {
-          const container = await this.docker.getContainer(containerInfo.Id).inspect();
+          const container = await docker.getContainer(containerInfo.Id).inspect();
           const config = this.parseContainerLabels(container);
 
           if (config) {
             await this.createOrUpdateProxy(container, config);
           }
         } catch (error) {
-          logger.error(`[DockerDiscovery] Error scanning container ${containerInfo.Id}:`, error.message);
+          logger.error(`[DockerDiscovery] Error scanning container ${containerInfo.Id}:`, errorMessage(error));
         }
       }
 
@@ -229,7 +286,7 @@ class DockerDiscoveryService {
   /**
    * Handle Docker events (start, stop, die, destroy)
    */
-  async handleDockerEvent(event) {
+  async handleDockerEvent(event: DockerEvent): Promise<void> {
     // Current Docker APIs send Action and Actor.ID; status and id are the legacy fields
     const action = event.Action || event.status;
     const id = event.Actor?.ID || event.id;
@@ -243,6 +300,7 @@ class DockerDiscoveryService {
 
     if (action === 'start') {
       try {
+        if (!this.docker) throw new Error('Docker not initialized');
         const container = await this.docker.getContainer(id).inspect();
         const config = this.parseContainerLabels(container);
 
@@ -250,9 +308,9 @@ class DockerDiscoveryService {
           await this.createOrUpdateProxy(container, config);
         }
       } catch (error) {
-        logger.error(`[DockerDiscovery] Error handling start event for ${shortId}:`, error.message);
+        logger.error(`[DockerDiscovery] Error handling start event for ${shortId}:`, errorMessage(error));
       }
-    } else if (['stop', 'die', 'destroy'].includes(action)) {
+    } else if (action && ['stop', 'die', 'destroy'].includes(action)) {
       await this.handleContainerStop(id);
     }
   }
@@ -260,8 +318,8 @@ class DockerDiscoveryService {
   /**
    * Create or update proxy for a discovered container
    */
-  async createOrUpdateProxy(container, config) {
-    const containerId = container.Id;
+  async createOrUpdateProxy(container: InspectedContainer, config: ParsedLabelConfig): Promise<void> {
+    const containerId = container.Id as string;
     const containerName = containerNameOf(container);
     const running = Boolean(container.State?.Running);
 
@@ -312,7 +370,7 @@ class DockerDiscoveryService {
           domain: config.domain,
           upstream_url: upstream,
           ssl_type: config.ssl_type,
-          template_name: config.template,
+          template_name: config.template ?? null,
           labels: labelsOf(container),
           auto_managed: true,
           status: running ? 'active' : 'stopped'
@@ -325,16 +383,16 @@ class DockerDiscoveryService {
         await this.createDisabledProxy(discovered, containerName, config, upstream, features);
       }
     } catch (error) {
-      logger.error(`[DockerDiscovery] Error creating proxy for ${containerName}:`, error.message);
+      logger.error(`[DockerDiscovery] Error creating proxy for ${containerName}:`, errorMessage(error));
     }
   }
 
   /**
    * The proxy fields the labels produced at the last scan, from the stored labels.
    */
-  storedFeatures(discovered) {
-    const previousConfig = this.parseContainerLabels({ Config: { Labels: discovered.labels || {} } });
-    return labelFeatures(previousConfig || {}, discovered.upstream_url);
+  storedFeatures(discovered: DiscoveredService): LabelFeatures {
+    const previousConfig = this.parseContainerLabels({ Config: { Labels: (discovered.labels || {}) as Record<string, string> } });
+    return labelFeatures(previousConfig || {}, discovered.upstream_url as string);
   }
 
   /**
@@ -343,7 +401,14 @@ class DockerDiscoveryService {
    * controls: such a change sends it back to admin review. Labels that did not change
    * touch nothing, and a value an admin set by hand is kept (see featureUpdates).
    */
-  async updateLinkedProxy(proxyId, containerName, config, upstream, features, previousFeatures) {
+  async updateLinkedProxy(
+    proxyId: string,
+    containerName: string,
+    config: ParsedLabelConfig,
+    upstream: string,
+    features: LabelFeatures,
+    previousFeatures: LabelFeatures
+  ): Promise<void> {
     const proxy = await Proxy.findByPk(proxyId);
     if (!proxy) return;
 
@@ -364,7 +429,7 @@ class DockerDiscoveryService {
       logger.warn(`[DockerDiscovery] Labels of ${containerName} changed ${reviewed.join(', ')}; proxy disabled pending admin review`);
     }
 
-    proxy.domains = [config.domain];
+    proxy.domains = [config.domain as string];
     proxy.upstream_url = upstream;
     Object.assign(proxy, updates);
     await proxy.save();
@@ -375,8 +440,7 @@ class DockerDiscoveryService {
         : securityHeadersService.removeSecurityHeaders(proxy.id, Header));
     }
 
-    const caddyService = require('./caddyService'); // required here: circular dependency
-    await caddyService.rebuildConfigFromDatabase();
+    await getCaddyService().rebuildConfigFromDatabase();
     logger.info(`[DockerDiscovery] Updated proxy for ${containerName}`);
   }
 
@@ -384,15 +448,21 @@ class DockerDiscoveryService {
    * New proxies are always created DISABLED so an admin can review and enable them;
    * Caddy is not touched until then.
    */
-  async createDisabledProxy(discovered, containerName, config, upstream, features) {
+  async createDisabledProxy(
+    discovered: DiscoveredService,
+    containerName: string,
+    config: ParsedLabelConfig,
+    upstream: string,
+    features: LabelFeatures
+  ): Promise<void> {
     const proxy = await Proxy.create({
       name: `Auto: ${containerName}`,
-      domains: [config.domain],
+      domains: [config.domain as string],
       upstream_url: upstream,
       ssl_type: config.ssl_type,
       ...features,
       status: 'disabled'
-    });
+    } as CreationAttributes<Proxy>);
 
     // Link first, so a failure below cannot leave an orphan that the next scan duplicates
     discovered.proxy_id = proxy.id;
@@ -406,7 +476,7 @@ class DockerDiscoveryService {
         await this.applyTemplate(proxy.id, config.template, containerName);
       }
     } catch (error) {
-      logger.error(`[DockerDiscovery] Proxy for ${containerName} created without all of its headers or template:`, error.message);
+      logger.error(`[DockerDiscovery] Proxy for ${containerName} created without all of its headers or template:`, errorMessage(error));
     }
 
     logger.info(`[DockerDiscovery] Discovered ${containerName} → ${config.domain} (proxy created DISABLED, pending admin review)`);
@@ -415,7 +485,7 @@ class DockerDiscoveryService {
   /**
    * Copy a template's headers and middlewares onto a proxy.
    */
-  async applyTemplate(proxyId, templateName, containerName) {
+  async applyTemplate(proxyId: string, templateName: string, containerName: string): Promise<void> {
     const template = await Template.findOne({ where: { name: templateName } });
     if (!template) {
       logger.warn(`[DockerDiscovery] Template '${templateName}' not found`);
@@ -430,7 +500,7 @@ class DockerDiscoveryService {
         header_name: h.header_name,
         header_value: h.header_value,
         enabled: true
-      })));
+      } as CreationAttributes<Header>)));
     }
 
     const middlewares = Array.isArray(template.middleware) ? template.middleware : [];
@@ -441,7 +511,7 @@ class DockerDiscoveryService {
         configuration: m.configuration,
         order: m.order || 0,
         enabled: m.enabled !== false
-      })));
+      } as CreationAttributes<Middleware>)));
     }
     logger.info(`[DockerDiscovery] Applied template '${templateName}' to ${containerName}`);
   }
@@ -449,7 +519,7 @@ class DockerDiscoveryService {
   /**
    * Handle container stop/removal
    */
-  async handleContainerStop(containerId) {
+  async handleContainerStop(containerId: string): Promise<void> {
     try {
       const discovered = await DiscoveredService.findOne({
         where: { source_type: 'docker', source_id: containerId }
@@ -459,15 +529,14 @@ class DockerDiscoveryService {
         discovered.status = 'stopped';
         await discovered.save();
 
-        logger.info(`[DockerDiscovery] Container ${containerId.substr(0, 12)} stopped`);
+        logger.info(`[DockerDiscovery] Container ${containerId.slice(0, 12)} stopped`);
 
         // Optionally remove proxy (based on config)
         if (this.autoRemoveStopped && discovered.proxy_id) {
-          const caddyService = require('./caddyService');
           const proxy = await Proxy.findByPk(discovered.proxy_id);
           if (proxy) {
             await proxy.destroy();
-            await caddyService.rebuildConfigFromDatabase();
+            await getCaddyService().rebuildConfigFromDatabase();
             logger.info(`[DockerDiscovery] Removed proxy for stopped container`);
           }
 
@@ -476,7 +545,7 @@ class DockerDiscoveryService {
         }
       }
     } catch (error) {
-      logger.error('[DockerDiscovery] Error handling container stop:', error.message);
+      logger.error('[DockerDiscovery] Error handling container stop:', errorMessage(error));
     }
   }
 
@@ -485,7 +554,7 @@ class DockerDiscoveryService {
    * a start event, so age alone says nothing about a long-running container: ask Docker
    * which containers still run, and only remove the services whose container is gone.
    */
-  async reconcileServices() {
+  async reconcileServices(): Promise<void> {
     try {
       logger.debug('[DockerDiscovery] Running reconciliation...');
 
@@ -500,8 +569,9 @@ class DockerDiscoveryService {
       if (staleServices.length === 0) return;
 
       // If Docker cannot be listed, remove nothing: an outage is not a missing container
+      if (!this.docker) throw new Error('Docker not initialized');
       const runningIds = new Set((await this.docker.listContainers()).map((c) => c.Id));
-      const missing = [];
+      const missing: DiscoveredService[] = [];
 
       for (const service of staleServices) {
         if (runningIds.has(service.source_id)) {
@@ -524,8 +594,7 @@ class DockerDiscoveryService {
       }
 
       if (missing.length > 0) {
-        const caddyService = require('./caddyService');
-        await caddyService.rebuildConfigFromDatabase();
+        await getCaddyService().rebuildConfigFromDatabase();
         logger.info(`[DockerDiscovery] Reconciled ${missing.length} stale services`);
       }
     } catch (error) {
@@ -536,8 +605,8 @@ class DockerDiscoveryService {
   /**
    * Manually sync a container by ID
    */
-  async syncContainer(containerId) {
-    if (!this.initialized) {
+  async syncContainer(containerId: string): Promise<{ success: boolean; message: string }> {
+    if (!this.initialized || !this.docker) {
       throw new Error('Docker not initialized');
     }
 
@@ -560,7 +629,7 @@ class DockerDiscoveryService {
   /**
    * Get status of Docker discovery service
    */
-  getStatus() {
+  getStatus(): DockerDiscoveryStatus {
     return {
       initialized: this.initialized,
       watching: this.eventStream !== null,
@@ -571,4 +640,4 @@ class DockerDiscoveryService {
   }
 }
 
-module.exports = new DockerDiscoveryService();
+export const dockerDiscoveryService = new DockerDiscoveryService();

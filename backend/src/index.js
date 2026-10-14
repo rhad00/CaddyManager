@@ -49,7 +49,7 @@ const runLeaderTasks = async () => {
   // Initialize Docker discovery service if enabled
   if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {
     console.log('Docker discovery enabled, initializing...');
-    const dockerDiscoveryService = require('./services/dockerDiscoveryService');
+    const { dockerDiscoveryService } = require('./services/dockerDiscoveryService');
     const dockerInitialized = await dockerDiscoveryService.initialize();
     if (dockerInitialized) {
       await dockerDiscoveryService.startWatching();

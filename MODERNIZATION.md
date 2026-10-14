@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.12 | Phase 3: `dockerDiscoveryService` to strict TypeScript | done |
 | 3.11 | Phase 3: `backupService` to strict TypeScript | done |
 | 3.10 | Phase 3: `certificateService` to strict TypeScript | done |
 | 3.9 | Phase 3: `metricsService` to strict TypeScript, with real tests | done |
@@ -1763,9 +1764,26 @@ updated. It still `require`s `caddyService`, which is converted last.
 - Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
   PostgreSQL suites (the backup restore integration tests included) and a `dist/` boot pass.
 
+### 3.12 dockerDiscoveryService
+
+`dockerDiscoveryService.ts`: class and instance exported by name (`{ dockerDiscoveryService }`);
+callers `api/discovery/routes.js`, `src/index.js` and the two discovery tests updated.
+
+- Types: `InspectedContainer` (the label helpers' `DockerContainer` plus `State` and
+  `NetworkSettings`), `ParsedLabelConfig`, `DockerEvent`, `DockerDiscoveryStatus`. The event
+  stream is held in a local so the handlers do not depend on `this.docker` staying set.
+- The three lazy `require('./caddyService')` calls (circular dependency) share one
+  `getCaddyService()` helper until caddyService is converted.
+- `securityHeadersService` is function-style, so it is imported as a namespace (the inspect
+  test's mock is unchanged). `substr` became `slice`. No other behaviour change.
+- `services.callers.test.js` generates one case per distinct call site; the three
+  `caddyService.rebuildConfigFromDatabase(` calls in this file now go through the helper, so the
+  suite has one case fewer (605 tests); the other files still cover that method.
+- Verification: typecheck (loose and strict), build and the full suite pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

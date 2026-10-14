@@ -16,7 +16,7 @@ jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHea
 
 const { DiscoveredService, Proxy, Template, Header, Middleware } = require('../../src/models');
 const securityHeadersService = require('../../src/services/securityHeadersService');
-const discovery = require('../../src/services/dockerDiscoveryService');
+const { dockerDiscoveryService: discovery } = require('../../src/services/dockerDiscoveryService');
 
 // Shape of `docker inspect` (trimmed), as returned by Docker API 1.55
 const inspected = (labels = {}) => ({
