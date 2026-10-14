@@ -104,7 +104,7 @@ async function prepareImportedProxies(proxies, { existingBasicAuth = new Map() }
   });
   if (errors.length > 0) throw new ProxyImportError(errors);
 
-  return results.map((result) => result.value);
+  return results.map((result) => /** @type {PromiseFulfilledResult<any>} */ (result).value);
 }
 
 module.exports = { prepareImportedProxies, ProxyImportError };

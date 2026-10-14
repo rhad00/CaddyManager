@@ -49,6 +49,7 @@ This directory contains the CI/CD workflows for CaddyManager.
    - Lints frontend code
    - Runs frontend tests
    - Builds frontend
+   - Type-checks the backend (`npm run typecheck`, `tsc` with `checkJs`)
    - Runs all backend tests once with coverage (`npm run test:ci`); the build fails
      when coverage drops below the thresholds in `backend/jest.ci.config.js`
    - Builds the Caddy image and runs the Caddy config contract tests

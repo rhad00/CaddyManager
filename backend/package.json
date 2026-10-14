@@ -12,6 +12,7 @@
     "test:integration": "jest --config jest.integration.config.js",
     "test:smoke": "jest tests/integration/allFeatures.smoke.test.js tests/integration/routeModules.smoke.test.js",
     "test:regression": "jest tests/integration/keys.routes.regression.test.js tests/integration/proxies.routes.real.test.js tests/unit/cloudflarePolicy.test.js",
+    "typecheck": "tsc -p tsconfig.json",
     "test:ci": "jest --config jest.ci.config.js --forceExit",
     "test:coverage": "jest --coverage --coverageReporters=text-summary --coverageReporters=json-summary",
     "test:watch": "jest --watch",
@@ -52,9 +53,21 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/dockerode": "^4.0.2",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.19.2",
+    "@types/supertest": "^7.2.1",
     "jest": "^30.5.2",
     "nodemon": "^3.1.14",
-    "supertest": "^7.3.1"
+    "supertest": "^7.3.1",
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=24"

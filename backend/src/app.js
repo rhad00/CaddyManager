@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
+const helmet = require('helmet').default;
 const morgan = require('morgan');
 const { testConnection } = require('./config/database');
 
@@ -48,7 +48,7 @@ const sanitizeRequestUrl = (url) => {
   return `${pathname}?${params.toString()}`;
 };
 
-morgan.token('safe-url', (req) => sanitizeRequestUrl(req.originalUrl || req.url));
+morgan.token('safe-url', (req) => sanitizeRequestUrl(/** @type {import('express').Request} */ (req).originalUrl || req.url));
 app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]')); // Request logging
 
 // Rate limiting
@@ -81,7 +81,7 @@ const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
     sameSite: isProduction ? 'strict' : 'lax',
     path: '/',
   },
-  getTokenFromRequest: (req) => req.headers['x-csrf-token'] || req.headers['csrf-token'],
+  getCsrfTokenFromRequest: (req) => String(req.headers['x-csrf-token'] || req.headers['csrf-token'] || ''),
 });
 
 // Mount Swagger UI (must be before CSRF middleware, no auth required)

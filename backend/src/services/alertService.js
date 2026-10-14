@@ -122,7 +122,7 @@ async function checkCondition(rule, proxy, ctx) {
       const threshold = rule.threshold ?? 14; // days
       for (const r of tlsStatus?.results || []) {
         if (!r.ok || !r.validTo) continue;
-        const expiresIn = (new Date(r.validTo) - Date.now()) / (1000 * 60 * 60 * 24);
+        const expiresIn = (new Date(r.validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
         if (expiresIn < threshold) {
           return { domain: r.domain, expiresIn: expiresIn.toFixed(1), validTo: r.validTo };
         }

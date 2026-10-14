@@ -1,5 +1,6 @@
 const express = require('express');
 const gitService = require('../../services/gitService');
+const { queryString } = require('../../utils/query');
 const { ProxyImportError } = require('../../utils/proxyImport');
 const { GitRepository, ConfigChange } = require('../../models');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
@@ -482,12 +483,14 @@ router.post('/repositories/:id/test', [
  */
 router.get('/history', authMiddleware, async (req, res) => {
   try {
-    const { resource_type, resource_id, limit } = req.query;
+    const resource_type = queryString(req.query.resource_type);
+    const resource_id = queryString(req.query.resource_id);
+    const { limit } = req.query;
 
     const history = await gitService.getCommitHistory(
       resource_type,
       resource_id,
-      parseInt(limit) || 50
+      parseInt(String(limit)) || 50
     );
 
     res.status(200).json({
@@ -536,7 +539,8 @@ const SHA_REGEX = /^[0-9a-f]{7,40}$/i;
 
 router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const from = queryString(req.query.from);
+    const to = queryString(req.query.to);
 
     if (!from) {
       return res.status(400).json({

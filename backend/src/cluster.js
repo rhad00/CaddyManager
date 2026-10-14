@@ -13,7 +13,7 @@
  * init; see clusterSupervisor.js. Caddy configuration writes are serialized per process
  * only, so concurrent writes through different workers are not coordinated.
  */
-const cluster = require('node:cluster');
+const cluster = /** @type {import('node:cluster').Cluster} */ (/** @type {unknown} */ (require('node:cluster')));
 const os = require('node:os');
 const { superviseCluster } = require('./clusterSupervisor');
 

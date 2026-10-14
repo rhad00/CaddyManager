@@ -28,7 +28,7 @@ const generateToken = (user) => {
       role: user.role 
     },
     EFFECTIVE_JWT_SECRET,
-    { expiresIn: JWT_EXPIRATION }
+    { expiresIn: /** @type {import('jsonwebtoken').SignOptions['expiresIn']} */ (JWT_EXPIRATION) }
   );
 };
 
@@ -44,7 +44,7 @@ const generateTotpSession = (userId) => {
  */
 const verifyTotpSession = (token) => {
   try {
-    const payload = jwt.verify(token, EFFECTIVE_JWT_SECRET);
+    const payload = /** @type {import('jsonwebtoken').JwtPayload} */ (jwt.verify(token, EFFECTIVE_JWT_SECRET));
     if (payload.purpose !== 'totp_challenge') return null;
     return payload.sub;
   } catch {
@@ -70,7 +70,7 @@ const verifyToken = (token) => {
  * Authenticate a user with email and password
  * @param {String} email - User email
  * @param {String} password - User password
- * @returns {Object} Object containing user and token if authentication successful
+ * @returns {Promise<Object>} Object containing user and token if authentication successful
  */
 const authenticateUser = async (email, password) => {
   try {

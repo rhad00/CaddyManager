@@ -69,6 +69,8 @@ async function readLastLines(filePath, maxLines) {
 
 /**
  * Filter log entries based on query parameters.
+ * @param {Object[]} entries
+ * @param {{ status?: *, method?: *, host?: *, ip?: *, search?: *, from?: *, to?: * }} filters
  */
 function filterEntries(entries, { status, method, host, ip, search, from, to }) {
   return entries.filter((e) => {
@@ -94,7 +96,8 @@ function filterEntries(entries, { status, method, host, ip, search, from, to }) 
 
 /**
  * Get log entries with optional filters.
- * @param {object} opts - Filter options: status, method, host, ip, search, from, to, limit
+ * @param {{ status?: *, method?: *, host?: *, ip?: *, search?: *, from?: *, to?: *, limit?: * }} [opts]
+ *   Filter options
  */
 async function getLogs(opts = {}) {
   const limit = Math.min(parseInt(opts.limit) || 500, 2000);
@@ -106,8 +109,8 @@ async function getLogs(opts = {}) {
 /**
  * Stream new log lines to an HTTP response via Server-Sent Events.
  * Watches the log file for changes and forwards new lines.
- * @param {object} req - Express request
- * @param {object} res - Express response
+ * @param {import('express').Request} req - Express request
+ * @param {import('express').Response} res - Express response
  */
 function streamLogs(req, res) {
   res.setHeader('Content-Type', 'text/event-stream');

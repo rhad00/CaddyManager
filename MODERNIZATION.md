@@ -58,6 +58,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10, `simple-git` 4 done; `sqlite3` 6 declined (0.28d) | done |
 | 0.29 | Declared but unimplemented: middlewares implemented; `custom_ssl_cert_id` removed; Kubernetes discovery and backup upload stay planned, stated honestly | done |
 | 1.1a | Phase 1 finding: audit entries lost the resource id | done |
+| 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 
 ## Changes
 
@@ -1284,8 +1285,50 @@ therefore lacked the id of the affected object.
   now lists `resourceId`, `status` and the optional parameters.
 - Tests: new `auditService.logAction` (5). Entries written before this fix have no id.
 
+### 1.1b Type checking with tsc (checkJs)
+
+- Setup (`backend/tsconfig.json`, `npm run typecheck`):
+  - TypeScript **7.0.2**. It removed `moduleResolution: node10`; the config uses
+    `module`/`moduleResolution: nodenext`, which reads these `.js` files as CommonJS
+    (`package.json` has no `"type": "module"`).
+  - `allowJs` + `checkJs`, `noEmit`, `strict: false` for now, `types: [node, jest]`;
+    covers `src/**/*.js` and `src/**/*.d.ts`. Tests are not type-checked yet.
+  - Dev dependencies: `typescript`, `@types/node` 24 (the runtime is Node 24, not the
+    newest 26), `@types/express` 5, `@types/jest` 30, and the types of `cors`,
+    `cookie-parser`, `morgan`, `jsonwebtoken`, `supertest`, `bcrypt`, `dockerode`,
+    `js-yaml`. Libraries that ship types (sequelize, axios, nodemailer, winston, helmet,
+    express-rate-limit, simple-git, csrf-csrf) need nothing.
+  - `src/types/express.d.ts` declares what the auth middleware puts on the request
+    (`req.user`, `apiKeyMinScope`, `apiKeyForbidden`).
+  - CI: a "Type-check the backend" step before the tests; the workflows README is updated.
+- First run: 103 errors in 27 files; now 0. Most were typing noise, fixed with JSDoc and
+  narrow casts (no behavior change): `object` parameters in `basicAuth` and
+  `logService` got real shapes, JWT payloads, GCM cipher types, DNS lookup callbacks,
+  the `node:cluster` module, Date arithmetic through `getTime()`, `parseInt(String(…))`
+  for query parameters, `{ rateLimit }` and `require('helmet').default` for the two
+  packages whose typings call them differently (both forms work at runtime).
+- Real findings (besides 1.1a):
+  - **CSRF header option ignored.** `csrf-csrf` 4 renamed `getTokenFromRequest` to
+    `getCsrfTokenFromRequest`; with the old name the library silently used its default
+    (`x-csrf-token` only), so the `csrf-token` fallback header never worked. The
+    frontend uses `x-csrf-token`, so nothing broke. Fixed with the new name; the
+    fallback now works. New integration test `csrfHeader` (4).
+  - **Query parameters that are not strings.** `?from=a&from=b` or `?a[b]=1` reach routes
+    as arrays or objects. New `utils/query.js` `queryString()` (first plain string)
+    for the repository diff and history routes, and `String()` before `parseInt` in the
+    list routes. Test `query` (6).
+  - `gitService.GitRollbackError` was attached after `module.exports = new GitService()`;
+    it is now a getter on the class (same use: `instanceof gitService.GitRollbackError`).
+- Verification: `npm run typecheck` exits 0; a probe file with `/** @type {number} */
+  const x = 'a'` makes it exit 1 (removed again); backend 64 suites passed, 1 skipped;
+  557 tests passed.
+- Next (Phase 2): turn `strict` on file by file, then convert `utils`, `config` and
+  `middleware` to TypeScript. Jest needs a transformer for `.ts` first; the TypeScript 7
+  compiler does not offer the API that `ts-jest` uses, so the choice (an SWC or esbuild
+  transformer, or Node's built-in type stripping) is the first step of that phase.
+
 ## Where this session stopped
 
-Done: 0.1–0.29. Next up, in order:
+Done: 0.1–0.29 and Phase 1. Next up, in order:
 
-1. TypeScript phases 1–5 (see the plan at the top).
+1. TypeScript phases 2–5 (see the plan at the top).

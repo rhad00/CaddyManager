@@ -68,14 +68,18 @@ function checkOutboundUrl(raw) {
 
 /** dns.lookup-compatible resolver that refuses restricted addresses. */
 function guardedLookup(hostname, options, callback) {
-  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+  /** @type {import('dns').LookupOptions} */
+  const lookupOptions = { ...options, all: true };
+  dns.lookup(hostname, lookupOptions, (err, addresses) => {
+    /** @type {import('dns').LookupAddress[]} */
+    const resolved = /** @type {any} */ (addresses);
     if (err) return callback(err);
-    const blocked = addresses.find((a) => isBlockedDestination(a.address));
+    const blocked = resolved.find((a) => isBlockedDestination(a.address));
     if (blocked) {
       return callback(new OutboundUrlError(`${hostname} resolves to a restricted (internal) address`));
     }
-    if (options.all) return callback(null, addresses);
-    return callback(null, addresses[0].address, addresses[0].family);
+    if (options.all) return callback(null, resolved);
+    return callback(null, resolved[0].address, resolved[0].family);
   });
 }
 

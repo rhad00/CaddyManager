@@ -342,7 +342,7 @@ class CertificateService {
     }
 
     const previousDays = Math.round(
-      (new Date(certificate.valid_to) - new Date(certificate.valid_from)) / (24 * 60 * 60 * 1000)
+      (new Date(certificate.valid_to).getTime() - new Date(certificate.valid_from).getTime()) / (24 * 60 * 60 * 1000)
     );
     const { domainList, days } = this.validateSelfSignedInput(
       certificate.domains,

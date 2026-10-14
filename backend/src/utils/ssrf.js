@@ -16,6 +16,7 @@ const BLOCKED_NAMES = new Set([
   'metadata.internal',
 ]);
 
+/** @type {Array<[string, number]>} */
 const BLOCKED_IPV4_SUBNETS = [
   ['0.0.0.0', 8],        // "this" network
   ['10.0.0.0', 8],       // private
@@ -31,6 +32,7 @@ const BLOCKED_IPV4_SUBNETS = [
   ['240.0.0.0', 4],      // reserved + broadcast
 ];
 
+/** @type {Array<[string, number]>} */
 const BLOCKED_IPV6_SUBNETS = [
   ['::', 96],            // unspecified, loopback and deprecated IPv4-compatible (::a.b.c.d)
   ['64:ff9b::', 96],     // NAT64 well-known prefix embeds IPv4 addresses

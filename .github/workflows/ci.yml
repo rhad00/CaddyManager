@@ -59,6 +59,12 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      # checkJs over backend/src (backend/tsconfig.json): types come from JSDoc and the
+      # @types packages, and the build fails on a type error
+      - name: Type-check the backend
+        working-directory: backend
+        run: npm run typecheck
+
       # Unit and integration tests in one run, so the coverage threshold
       # (backend/jest.ci.config.js) applies to the whole suite
       - name: Run backend tests with coverage

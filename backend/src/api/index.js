@@ -9,6 +9,7 @@
 const express = require('express');
 const { adminScopeArea } = require('../middleware/auth');
 
+/** @type {Array<[string, string, ...import('express').RequestHandler[]]>} */
 const ROUTES = [
   ['/auth', './auth/routes'],
   ['/proxies', './proxies/routes'],

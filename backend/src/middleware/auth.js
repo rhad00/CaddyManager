@@ -129,7 +129,7 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, EFFECTIVE_JWT_SECRET);
+    const decoded = /** @type {import('jsonwebtoken').JwtPayload} */ (jwt.verify(token, EFFECTIVE_JWT_SECRET));
     // Reject TOTP challenge tokens from being used as full auth
     if (decoded.purpose === 'totp_challenge') {
       return res.status(401).json({ success: false, message: 'Invalid token' });

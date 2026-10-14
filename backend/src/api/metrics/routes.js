@@ -197,7 +197,7 @@ router.get('/tls', authMiddleware, async (req, res) => {
  */
 router.get('/historical', authMiddleware, async (req, res) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
+    const limit = req.query.limit ? parseInt(String(req.query.limit)) : 10;
     const historicalMetrics = await metricsService.getHistoricalMetrics(limit);
     
     res.status(200).json({

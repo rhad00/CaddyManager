@@ -64,6 +64,11 @@ const logger = winston.createLogger({
 });
 
 class GitService {
+  /** The error class of rollbacks, so route code can tell them apart: `instanceof gitService.GitRollbackError` */
+  get GitRollbackError() {
+    return GitRollbackError;
+  }
+
   constructor() {
     this.repoDir = process.env.GIT_REPO_DIR || path.join(__dirname, '../../git-repos');
     this.algorithm = 'aes-256-gcm';
@@ -115,7 +120,7 @@ class GitService {
   encrypt(text) {
     try {
       const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipheriv(this.algorithm, this.secretKey, iv);
+      const cipher = /** @type {import('crypto').CipherGCM} */ (crypto.createCipheriv(this.algorithm, this.secretKey, iv));
       let encrypted = cipher.update(text, 'utf8', 'hex');
       encrypted += cipher.final('hex');
       const authTag = cipher.getAuthTag();
@@ -140,7 +145,7 @@ class GitService {
       const authTag = Buffer.from(parts[1], 'hex');
       const encryptedText = parts[2];
 
-      const decipher = crypto.createDecipheriv(this.algorithm, this.secretKey, iv);
+      const decipher = /** @type {import('crypto').DecipherGCM} */ (crypto.createDecipheriv(this.algorithm, this.secretKey, iv));
       decipher.setAuthTag(authTag);
       let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
@@ -654,4 +659,3 @@ class GitService {
 }
 
 module.exports = new GitService();
-module.exports.GitRollbackError = GitRollbackError;

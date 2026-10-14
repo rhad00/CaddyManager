@@ -192,7 +192,7 @@ class DockerDiscoveryService {
    */
   stopWatching() {
     if (this.eventStream) {
-      this.eventStream.destroy();
+      /** @type {import('stream').Readable} */ (this.eventStream).destroy();
       this.eventStream = null;
       logger.info('[DockerDiscovery] Docker watch stopped');
     }

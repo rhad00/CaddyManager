@@ -1,5 +1,5 @@
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');
 const backupService = require('../../services/backupService');
 const { ProxyImportError } = require('../../utils/proxyImport');
 const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');

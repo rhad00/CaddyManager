@@ -4,6 +4,14 @@
  * Stored shape (Proxy.basic_auth): { enabled, username, hashed_password }.
  * The plaintext password only exists in the incoming request; it is bcrypt-hashed
  * before it reaches the database and never returned by the API.
+ *
+ * @typedef {Object} BasicAuth
+ * @property {boolean} [enabled]
+ * @property {string} [username]
+ * @property {string} [hashed_password] bcrypt hash, the only form that is stored now
+ * @property {string} [password] the incoming plaintext, or the plaintext of records written
+ *   before hashing was introduced
+ * @property {boolean} [has_password] added by redactBasicAuth
  */
 // bcrypt (native) is loaded only when hashing: caddyService needs just toCaddyAuthHandler,
 // and its unit tests mock `fs`, which breaks native module resolution
@@ -19,9 +27,9 @@ const USERNAME_PATTERN = /^[\x21-\x39\x3B-\x7E]{1,64}$/;
 
 /**
  * Turn the basic_auth object from a create/update request into what we store.
- * @param {object|undefined} input - req.body.basic_auth
- * @param {object|null} existing - the proxy's current basic_auth, if any
- * @returns {Promise<object|undefined>} value to store, or undefined to leave unchanged
+ * @param {BasicAuth|undefined} input - req.body.basic_auth
+ * @param {BasicAuth|null|undefined} existing - the proxy's current basic_auth, if any
+ * @returns {Promise<BasicAuth|undefined>} value to store, or undefined to leave unchanged
  * @throws {Error} with a user-facing message on invalid input
  */
 async function prepareBasicAuth(input, existing) {
@@ -64,8 +72,8 @@ async function prepareBasicAuth(input, existing) {
 
 /**
  * Shape returned by the API: never exposes the hash (or a legacy plaintext password).
- * @param {object|null} basicAuth
- * @returns {object|null}
+ * @param {BasicAuth|null|undefined} basicAuth
+ * @returns {BasicAuth|null|undefined}
  */
 function redactBasicAuth(basicAuth) {
   if (!basicAuth) return basicAuth;
@@ -77,7 +85,7 @@ function redactBasicAuth(basicAuth) {
 /**
  * Caddy JSON handler for a proxy's basic auth.
  * `basic_auth` is only a Caddyfile directive; JSON uses `authentication` + `http_basic`.
- * @param {object|null} basicAuth
+ * @param {BasicAuth|null|undefined} basicAuth
  * @returns {object|null} handler, or null when basic auth is disabled
  */
 function toCaddyAuthHandler(basicAuth) {

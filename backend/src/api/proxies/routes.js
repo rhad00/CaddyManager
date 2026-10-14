@@ -100,8 +100,8 @@ router.get('/', authMiddleware, async (req, res) => {
 
     // If pagination params provided, use paginated query
     if (page || limit) {
-      const pageNum = Math.max(1, parseInt(page) || 1);
-      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+      const pageNum = Math.max(1, parseInt(String(page)) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(String(limit)) || 25));
       const offset = (pageNum - 1) * limitNum;
 
       const { count, rows: proxies } = await Proxy.findAndCountAll({
