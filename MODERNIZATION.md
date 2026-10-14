@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.9 | Phase 4: `alerts` routes to TypeScript | done |
 | 4.8 | Phase 4: `audit` routes to TypeScript; the `userId` filter fixed | done |
 | 4.7 | Phase 4: `users` routes to TypeScript | done |
 | 4.6 | Phase 4: `keys` routes to TypeScript, `currentUser` helper | done |
@@ -1916,9 +1917,18 @@ Verification: typecheck (loose and strict), build, full suite, PostgreSQL suites
 
 Verification: typecheck (loose and strict), build, full suite (622 tests), PostgreSQL suites (19 suites, 163 tests).
 
+### 4.9 alert routes
+
+`api/alerts/routes.ts` exports `router`; `alertChannels.validation.test.js` reads `{ router }`.
+
+- `keepRedacted` (the "***" placeholders the UI sends back for stored secrets) is typed with a small `ChannelFields` interface. Its behaviour, including the rule that header secrets are only kept while the destination stays the same, is unchanged.
+- The channel and rule bodies keep their existing checks (`channelProblem`, per-field messages), so there is no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (622 tests).
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.8 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.9 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

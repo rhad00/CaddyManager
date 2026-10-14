@@ -20,7 +20,7 @@ const { NotificationChannel } = require('../../src/models/notificationChannel');
 
 const app = express();
 app.use(express.json());
-app.use('/api/alerts', require('../../src/api/alerts/routes'));
+app.use('/api/alerts', require('../../src/api/alerts/routes').router);
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });

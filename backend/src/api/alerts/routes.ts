@@ -1,20 +1,28 @@
-const express = require('express');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const { AlertRule } = require('../../models/alertRule');
-const { NotificationChannel } = require('../../models/notificationChannel');
-const { runAlertChecks, sendToChannel } = require('../../services/alertService');
-const { channelProblem, redactChannel } = require('../../utils/notificationChannels');
+import express, { type Request, type Response } from 'express';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { AlertRule } from '../../models/alertRule';
+import { NotificationChannel } from '../../models/notificationChannel';
+import { runAlertChecks, sendToChannel } from '../../services/alertService';
+import { channelProblem, redactChannel } from '../../utils/notificationChannels';
 
 const REDACTED = '***';
+
+/** The channel config fields the redaction logic reads */
+interface ChannelFields {
+  url?: unknown;
+  webhook_url?: unknown;
+  headers?: Record<string, unknown>;
+  [field: string]: unknown;
+}
 
 /**
  * Replace "***" placeholders (from the redacted list) with the stored values. Stored
  * secrets are only kept while the destination stays the same: a new URL or channel
  * type must come with its header values, or they could be sent somewhere new.
- * @returns {{config?: Object, problem?: string}}
+ * @returns the merged config, or the problem that stops the merge
  */
-function keepRedacted(incoming, stored, sameType) {
-  const merged = { ...incoming };
+function keepRedacted(incoming: ChannelFields, stored: ChannelFields, sameType: boolean): { config?: ChannelFields; problem?: string } {
+  const merged: ChannelFields = { ...incoming };
   for (const key of ['url', 'webhook_url']) {
     if (merged[key] === REDACTED) merged[key] = stored[key];
   }
@@ -31,7 +39,7 @@ function keepRedacted(incoming, stored, sameType) {
   return { config: merged };
 }
 
-const router = express.Router();
+export const router = express.Router();
 const adminOnly = [authMiddleware, roleMiddleware('admin')];
 
 /**
@@ -58,7 +66,7 @@ const adminOnly = [authMiddleware, roleMiddleware('admin')];
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/channels', authMiddleware, async (req, res) => {
+router.get('/channels', authMiddleware, async (req: Request, res: Response) => {
   try {
     const channels = await NotificationChannel.findAll({ order: [['createdAt', 'DESC']] });
     // URLs often embed tokens and headers carry credentials
@@ -98,7 +106,7 @@ router.get('/channels', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/channels', adminOnly, async (req, res) => {
+router.post('/channels', adminOnly, async (req: Request, res: Response) => {
   try {
     const { name, type, config, enabled } = req.body;
     if (!name || !type || !config) {
@@ -147,14 +155,16 @@ router.post('/channels', adminOnly, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/channels/:id', adminOnly, async (req, res) => {
+router.put('/channels/:id', adminOnly, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
     if (!channel) return res.status(404).json({ success: false, message: 'Channel not found' });
     const { name, type, config, enabled } = req.body;
     // The UI edits from the redacted list: "***" means "keep the stored value"
     const nextType = type ?? channel.type;
-    const kept = config ? keepRedacted(config, channel.config || {}, nextType === channel.type) : { config: channel.config };
+    const kept: { config?: ChannelFields; problem?: string } = config
+      ? keepRedacted(config, (channel.config || {}) as ChannelFields, nextType === channel.type)
+      : { config: channel.config as ChannelFields };
     if (kept.problem) {
       return res.status(400).json({ success: false, message: kept.problem });
     }
@@ -190,7 +200,7 @@ router.put('/channels/:id', adminOnly, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/channels/:id', adminOnly, async (req, res) => {
+router.delete('/channels/:id', adminOnly, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
     if (!channel) return res.status(404).json({ success: false, message: 'Channel not found' });
@@ -221,7 +231,7 @@ router.delete('/channels/:id', adminOnly, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/channels/:id/test', adminOnly, async (req, res) => {
+router.post('/channels/:id/test', adminOnly, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const channel = await NotificationChannel.findByPk(req.params.id);
     if (!channel) return res.status(404).json({ success: false, message: 'Channel not found' });
@@ -250,7 +260,7 @@ router.post('/channels/:id/test', adminOnly, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/rules', authMiddleware, async (req, res) => {
+router.get('/rules', authMiddleware, async (req: Request, res: Response) => {
   try {
     const rules = await AlertRule.findAll({ order: [['createdAt', 'DESC']] });
     res.json({ success: true, rules });
@@ -289,7 +299,7 @@ router.get('/rules', authMiddleware, async (req, res) => {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/rules', adminOnly, async (req, res) => {
+router.post('/rules', adminOnly, async (req: Request, res: Response) => {
   try {
     const { name, condition_type, threshold, proxy_id, channel_ids, cooldown_minutes, enabled } = req.body;
     if (!name || !condition_type) {
@@ -345,7 +355,7 @@ router.post('/rules', adminOnly, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/rules/:id', adminOnly, async (req, res) => {
+router.put('/rules/:id', adminOnly, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const rule = await AlertRule.findByPk(req.params.id);
     if (!rule) return res.status(404).json({ success: false, message: 'Alert rule not found' });
@@ -377,7 +387,7 @@ router.put('/rules/:id', adminOnly, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/rules/:id', adminOnly, async (req, res) => {
+router.delete('/rules/:id', adminOnly, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const rule = await AlertRule.findByPk(req.params.id);
     if (!rule) return res.status(404).json({ success: false, message: 'Alert rule not found' });
@@ -403,7 +413,7 @@ router.delete('/rules/:id', adminOnly, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/run', adminOnly, async (req, res) => {
+router.post('/run', adminOnly, async (req: Request, res: Response) => {
   try {
     await runAlertChecks();
     res.json({ success: true, message: 'Alert checks completed' });
@@ -412,5 +422,3 @@ router.post('/run', adminOnly, async (req, res) => {
     res.status(500).json({ success: false, message: 'Alert check failed' });
   }
 });
-
-module.exports = router;
