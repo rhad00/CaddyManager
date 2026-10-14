@@ -93,6 +93,17 @@ jobs:
           CADDY_REQUIRED_MODULES: http.handlers.rate_limit,dns.providers.cloudflare
         run: npm run test:contract
 
+      # Real Caddy in front of test origins (S3/SigV4, every template, headers, balancing, auth...).
+      # Uses --network host, which the Linux runner supports.
+      - name: Run end-to-end proxy tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+          CADDY_IMAGE: caddymanager-caddy:ci
+          CADDY_E2E_REQUIRED: 'true'
+        run: npm run test:e2e
+
       - name: Upload backend coverage
         if: always()
         uses: actions/upload-artifact@v4

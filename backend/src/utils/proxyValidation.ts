@@ -11,7 +11,7 @@ export type { ValidationResult };
 
 export const PROXY_ALLOWED_FIELDS = [
   'name', 'domains', 'upstream_url', 'ssl_type',
-  'compression_enabled', 'cache_settings', 'http_versions', 'status',
+  'compression_enabled', 'skip_tls_verify', 'cache_settings', 'http_versions', 'status',
   'security_headers_enabled', 'rate_limit', 'ip_filtering', 'basic_auth',
   'path_routing', 'load_balancing', 'health_checks',
 ];

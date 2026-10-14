@@ -54,6 +54,13 @@ function createOrigin({ name = 'origin', tls = null } = {}) {
 
   const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
 
+  // closeAllConnections() does not reach upgraded (WebSocket) sockets, which would hold stop() open
+  const sockets = new Set();
+  server.on(tls ? 'secureConnection' : 'connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+
   // WebSocket: a hand-rolled handshake that echoes the first frame, enough to see the upgrade headers
   server.on('upgrade', (req, socket) => {
     upgrades.push({ url: req.url, headers: req.headers, rawHeaders: req.rawHeaders });
@@ -76,7 +83,10 @@ function createOrigin({ name = 'origin', tls = null } = {}) {
     get lastRequest() { return requests[requests.length - 1]; },
     set respond(fn) { state.respond = fn; },
     start: () => new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port))),
-    stop: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }),
+    stop: () => new Promise((resolve) => {
+      server.close(() => resolve());
+      sockets.forEach((socket) => socket.destroy());
+    }),
     reset: () => { requests.length = 0; upgrades.length = 0; state.respond = null; },
   };
 }

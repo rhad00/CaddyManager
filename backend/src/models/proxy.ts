@@ -58,6 +58,8 @@ export class Proxy extends Model<InferAttributes<Proxy>, InferCreationAttributes
   declare ssl_type: CreationOptional<SslType>;
   declare custom_ssl_cert_id: CreationOptional<string | null>;
   declare compression_enabled: CreationOptional<boolean>;
+  /** Trust a self-signed certificate on an HTTPS upstream */
+  declare skip_tls_verify: CreationOptional<boolean>;
   declare cache_settings: CreationOptional<Record<string, unknown> | null>;
   /** Array of supported HTTP versions */
   declare http_versions: CreationOptional<string[]>;
@@ -112,6 +114,11 @@ Proxy.init({
   compression_enabled: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
+    allowNull: false
+  },
+  skip_tls_verify: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
     allowNull: false
   },
   cache_settings: {

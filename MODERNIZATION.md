@@ -61,6 +61,9 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| E.3 | E2E: the behaviours suite (balancing, auth, IP filter, HTTPS upstream, WebSocket) and `skip_tls_verify` | done |
+| E.2 | E2E: every default template and the header rules; Grafana auth placeholder and path-route headers fixed | done |
+| E.1 | E2E: real-Caddy suite with a strict SigV4 S3 origin; the Amazon S3 template and compression fixed | done |
 | 4.19 | Phase 4: the services and `proxyValidation` use the shared `errorMessage` | done |
 | 4.18 | Phase 4: `cluster` and `clusterSupervisor` to TypeScript | done |
 | 4.17 | Phase 4: `index` to TypeScript | done |
@@ -2030,6 +2033,62 @@ This step also rewrites "Where this session stopped": Phase 4 is complete, Phase
 
 Verification: typecheck (loose and strict), build, full suite (646 tests).
 
+## End-to-end tests against a real Caddy (E.1 - E.3)
+
+Why: CaddyManager exists because NGINX Proxy Manager could not front a Ceph radosgw S3 endpoint (strict SigV4:
+the signature covers Host and the signed headers, so any rewrite breaks it). The unit tests only looked at the
+JSON sent to Caddy; nothing proved what an origin actually receives. `npm run test:e2e` now starts a real Caddy
+(`CADDY_BIN`, or `CADDY_IMAGE` via docker with `--network host`, or `caddy` on PATH), drives it through the
+real models, `caddyService` and `templateService`, and puts origin servers behind it. Without Caddy the suites
+skip; `CADDY_E2E_REQUIRED=true` (set in CI) makes that an error. They are excluded from the default `npm test`.
+
+Helpers (`backend/tests/e2e/helpers`): an AWS SigV4 signer and strict verifier (checked against the AWS
+documentation vectors in `tests/unit/sigv4.test.js`); an in-memory S3 origin as strict as radosgw (verifies the
+signature from what arrives, Content-MD5, x-amz-acl, payload hash and aws-chunked bodies; path and virtual-hosted
+style, multipart, Range, presigned URLs); an echo origin that records the raw request; a client that sends exactly
+what it is told.
+
+Suites: `s3.sigv4` (29 scenarios x 4 proxy setups x 2 Host styles), `templates` (all 7 default templates),
+`headers` (request/response rules, forwarding headers, security headers, passthrough, compression),
+`behaviors` (round robin, weights, ip_hash, health checks, path routing, basic auth, IP allow/deny, HTTPS
+upstream, 502, WebSocket, bodies up to 3 MiB, rebuild from the database, delete). 294 tests, about 11 s.
+
+### E.1 The S3 problem, found and fixed
+
+A plain proxy passed every SigV4 scenario: Caddy keeps Host and every header untouched. The bundled
+"Amazon S3" template broke all of them against a strict origin:
+
+- `Host: {http.request.host}` drops the port the client signed (`SignatureDoesNotMatch`).
+- `Content-MD5: {http.request.header.Content-MD5}` and the other self-passthrough rules set an empty header when
+  the client did not send it; radosgw answers `InvalidDigest` for an empty Content-MD5.
+- Compression (on by default) gzips signed GETs: the ETag becomes `"<md5>-gzip"` and a gzip HEAD reports the
+  wrong Content-Length, which breaks SDKs that verify them.
+
+Fixes: the template has no header rules (its description says so); `headerRules` never emits `X: {http.request.header.X}`
+for any proxy; the `encode` handler is wrapped in a `subroute` that skips HEAD and S3-signed requests
+(Authorization `AWS4-HMAC-SHA256*` / `AWS *`, presigned query parameters). Migration
+`20261014-repair-amazon-s3-template` empties the stored template and removes the legacy rules from proxies that carry
+the complete legacy set; customised templates and proxies are left alone. Existing routes in Caddy change on the
+next rebuild or proxy change (`initializeConfig` loads the backup file when there is one).
+
+### E.2 Templates and headers
+
+- Grafana: without basic auth the origin received the literal text `{http.auth.user.id}` as the user, and a
+  client-supplied `X-WebAuth-User` passed through, so a client could name its own user at an origin that trusts
+  the header. Rules using `{http.auth.*}` are applied only when basic auth is on; otherwise the header is deleted.
+- Header rules were dropped for path-routed requests (the per-path handlers had no headers). They carry the rules now.
+- Checked and fine: a spoofed X-Forwarded-For / -Proto is replaced; Authelia, Keycloak, Nextcloud, Cloudflare Tunnel
+  and Kibana (root redirect) headers arrive as documented; Set-Cookie, ETag, Content-Range pass through; a HEAD
+  response keeps the true Content-Length with compression on.
+
+### E.3 Behaviours
+
+`skip_tls_verify` was read by the route builder but no column, API field or migration existed, so a self-signed HTTPS
+upstream (Proxmox, Unifi...) could never be trusted. Added the column (migration `20261014-add-skip-tls-verify-to-proxies`),
+the model attribute and the API field. The web UI has no checkbox for it yet.
+
+Verification: typecheck (loose and strict), build, full suite (667 tests), contract tests (22), e2e (294).
+
 ## Where this session stopped
 
 Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
@@ -2052,6 +2111,8 @@ their exact messages, and the login and reset rules depend on `normalizeEmail`, 
 - In cluster mode the Docker status and the Git auto-sync timers run per worker.
 - The Caddy route builder applies only the first 10 `ip_filtering` entries.
 - The Docker `domain` label accepts wildcards; template lookup by name is case-sensitive.
+- The web UI has no checkbox for `skip_tls_verify` (API only).
+- The e2e suites need Docker with host networking (Linux) or a `caddy` binary; macOS Docker Desktop is not supported.
 - Kubernetes discovery and backup upload are planned (the API answers 501 and says so).
 - `docker-compose.prod.yml` does not fail fast on empty secrets.
 - With `DB_SSL=true` PostgreSQL connects with `rejectUnauthorized: false` (pre-existing, documented in 3.5).
