@@ -280,7 +280,7 @@ const DiscoveredServicesManagement = () => {
             Auto-Discovered Services
           </h3>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Services automatically discovered from Docker containers and Kubernetes services.
+            Services automatically discovered from Docker containers (Kubernetes discovery is planned).
           </p>
         </div>
 

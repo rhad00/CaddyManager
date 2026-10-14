@@ -1,5 +1,5 @@
 const Docker = require('dockerode');
-const { DiscoveredService, Proxy, Template, Header } = require('../models');
+const { DiscoveredService, Proxy, Template, Header, Middleware } = require('../models');
 const { Op } = require('sequelize');
 const winston = require('winston');
 const { SSL_TYPES, isValidDomain } = require('../utils/proxyValidation');
@@ -403,19 +403,19 @@ class DockerDiscoveryService {
         await securityHeadersService.applySecurityHeaders(proxy.id, Header);
       }
       if (config.template) {
-        await this.applyTemplateHeaders(proxy.id, config.template, containerName);
+        await this.applyTemplate(proxy.id, config.template, containerName);
       }
     } catch (error) {
-      logger.error(`[DockerDiscovery] Proxy for ${containerName} created without all of its headers:`, error.message);
+      logger.error(`[DockerDiscovery] Proxy for ${containerName} created without all of its headers or template:`, error.message);
     }
 
     logger.info(`[DockerDiscovery] Discovered ${containerName} → ${config.domain} (proxy created DISABLED, pending admin review)`);
   }
 
   /**
-   * Copy a template's headers onto a proxy.
+   * Copy a template's headers and middlewares onto a proxy.
    */
-  async applyTemplateHeaders(proxyId, templateName, containerName) {
+  async applyTemplate(proxyId, templateName, containerName) {
     const template = await Template.findOne({ where: { name: templateName } });
     if (!template) {
       logger.warn(`[DockerDiscovery] Template '${templateName}' not found`);
@@ -429,6 +429,17 @@ class DockerDiscoveryService {
         header_type: h.header_type,
         header_name: h.header_name,
         header_value: h.header_value,
+        enabled: true
+      })));
+    }
+
+    const middlewares = Array.isArray(template.middleware) ? template.middleware : [];
+    if (middlewares.length > 0) {
+      await Middleware.bulkCreate(middlewares.map((m) => ({
+        proxy_id: proxyId,
+        middleware_type: m.middleware_type,
+        configuration: m.configuration,
+        order: m.order || 0,
         enabled: true
       })));
     }

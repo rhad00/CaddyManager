@@ -298,7 +298,10 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
     if (req.body.middlewares && Array.isArray(req.body.middlewares)) {
       for (const middleware of req.body.middlewares) {
         await Middleware.create({
-          ...middleware,
+          middleware_type: middleware.middleware_type,
+          configuration: middleware.configuration,
+          enabled: middleware.enabled,
+          order: middleware.order,
           proxy_id: proxy.id
         }, { transaction });
       }
@@ -470,7 +473,10 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       // Create new middlewares
       for (const middleware of req.body.middlewares) {
         await Middleware.create({
-          ...middleware,
+          middleware_type: middleware.middleware_type,
+          configuration: middleware.configuration,
+          enabled: middleware.enabled,
+          order: middleware.order,
           proxy_id: proxy.id
         }, { transaction });
       }

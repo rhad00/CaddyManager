@@ -6,6 +6,7 @@ const { sequelize, Proxy, Header, Middleware, Certificate } = require('../models
 const { Op } = require('sequelize');
 const { parseUpstream } = require('../utils/upstream');
 const { toCaddyAuthHandler } = require('../utils/basicAuth');
+const { middlewareHandlers } = require('../utils/proxyMiddlewares');
 const { withCustomCertificates, withoutCustomCertificates } = require('../utils/caddyTls');
 require('dotenv').config();
 
@@ -432,7 +433,8 @@ class CaddyService {
     const handlers = [];
 
     // Add rate limiting if enabled
-    if (proxy.rate_limit && proxy.rate_limit.enabled) {
+    const hasRateLimit = Boolean(proxy.rate_limit && proxy.rate_limit.enabled);
+    if (hasRateLimit) {
       handlers.push({
         handler: "rate_limit",
         rate_limits: {
@@ -444,6 +446,11 @@ class CaddyService {
         }
       });
     }
+
+    // Rate limit middlewares go with the rate limit, before any authentication; the other
+    // middlewares (redirects) come after the access controls
+    const middlewares = middlewareHandlers(proxy.middlewares, { hasRateLimit });
+    handlers.push(...middlewares.filter(handler => handler.handler === "rate_limit"));
 
     // Add IP filtering if enabled using Caddy's built-in remote_ip matcher
     if (proxy.ip_filtering && proxy.ip_filtering.enabled && proxy.ip_filtering.ip_list && proxy.ip_filtering.ip_list.length > 0) {
@@ -494,6 +501,7 @@ class CaddyService {
       handlers.push(authHandler);
     }
 
+    handlers.push(...middlewares.filter(handler => handler.handler !== "rate_limit"));
 
     // Add compression if enabled
     if (proxy.compression_enabled) {
@@ -945,10 +953,14 @@ class CaddyService {
       const oldServerConfig = this.ensureHttpServer(oldConfig);
       const oldRoute = oldServerConfig.routes[proxy.caddy_route_index];
 
-      // First apply the template headers to the proxy
+      // First apply the template headers and middlewares to the proxy
       await sequelize.transaction(async (transaction) => {
-        // Remove any existing headers
+        // Remove any existing headers and middlewares
         await Header.destroy({
+          where: { proxy_id: proxy.id },
+          transaction
+        });
+        await Middleware.destroy({
           where: { proxy_id: proxy.id },
           transaction
         });
@@ -965,10 +977,27 @@ class CaddyService {
             }, { transaction })
           ));
         }
+
+        // Add template middlewares
+        for (const middleware of template.middleware || []) {
+          await Middleware.create({
+            proxy_id: proxy.id,
+            middleware_type: middleware.middleware_type,
+            configuration: middleware.configuration,
+            order: middleware.order || 0,
+            enabled: true
+          }, { transaction });
+        }
       });
 
-      // Reload proxy with new headers and update Caddy
-      await proxy.reload({ include: [{ model: Header, as: 'headers' }] });
+      // Reload proxy with its new headers and middlewares and update Caddy (the update
+      // builds the route from this instance, so both must be loaded)
+      await proxy.reload({
+        include: [
+          { model: Header, as: 'headers' },
+          { model: Middleware, as: 'middlewares' }
+        ]
+      });
       return await this.updateProxy(proxy);
     } catch (error) {
       console.error('Failed to apply template to proxy in Caddy configuration:', error);

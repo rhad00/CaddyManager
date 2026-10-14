@@ -4,6 +4,7 @@ const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const caddyService = require('../../services/caddyService');
 const Proxy = require('../../models/proxy');
 const { logAction } = require('../../services/auditService');
+const { validateMiddlewares } = require('../../utils/proxyMiddlewares');
 const router = express.Router();
 
 /**
@@ -161,6 +162,11 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
       });
     }
     
+    const middlewareCheck = validateMiddlewares(middleware);
+    if (!middlewareCheck.valid) {
+      return res.status(400).json({ success: false, message: middlewareCheck.message });
+    }
+
     // Create template
     const template = await Template.create({
       name,
@@ -241,6 +247,11 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
       });
     }
     
+    const middlewareCheck = validateMiddlewares(req.body.middleware);
+    if (!middlewareCheck.valid) {
+      return res.status(400).json({ success: false, message: middlewareCheck.message });
+    }
+
     // Update template fields
     const updatableFields = ['name', 'description', 'headers', 'middleware'];
     

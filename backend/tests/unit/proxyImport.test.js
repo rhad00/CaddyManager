@@ -22,7 +22,7 @@ const exported = (overrides = {}) => ({
   created_by: 'someone-else',
   createdAt: '2026-01-01T00:00:00.000Z',
   headers: [{ id: 'h1', proxy_id: 'old', header_type: 'request', header_name: 'X-App', header_value: 'one', enabled: true }],
-  middlewares: [{ id: 'm1', proxy_id: 'old', middleware_type: 'compression', configuration: {}, enabled: true, order: 1 }],
+  middlewares: [{ id: 'm1', proxy_id: 'old', middleware_type: 'redirect', configuration: { from: '/', to: '/app' }, enabled: true, order: 1 }],
   ...overrides,
 });
 
@@ -41,7 +41,7 @@ describe('prepareImportedProxies', () => {
       basic_auth: { enabled: true, username: 'admin', hashed_password: HASH },
     });
     expect(prepared.headers).toEqual([{ header_type: 'request', header_name: 'X-App', header_value: 'one', enabled: true }]);
-    expect(prepared.middlewares).toEqual([{ middleware_type: 'compression', configuration: {}, enabled: true, order: 1 }]);
+    expect(prepared.middlewares).toEqual([{ middleware_type: 'redirect', configuration: { from: '/', to: '/app' }, enabled: true, order: 1 }]);
   });
 
   test('hashes a plaintext basic auth password written by hand in the repository', async () => {

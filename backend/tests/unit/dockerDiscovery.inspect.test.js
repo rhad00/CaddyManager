@@ -9,11 +9,12 @@ jest.mock('../../src/models', () => ({
   Proxy: { findByPk: jest.fn(), create: jest.fn() },
   Template: { findOne: jest.fn() },
   Header: { create: jest.fn(), bulkCreate: jest.fn() },
+  Middleware: { bulkCreate: jest.fn() },
 }));
 jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn() }));
 jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
 
-const { DiscoveredService, Proxy, Template, Header } = require('../../src/models');
+const { DiscoveredService, Proxy, Template, Header, Middleware } = require('../../src/models');
 const securityHeadersService = require('../../src/services/securityHeadersService');
 const discovery = require('../../src/services/dockerDiscoveryService');
 
@@ -116,6 +117,20 @@ describe('labels map onto proxy features', () => {
     ]);
     expect(discovered.proxy_id).toBe('p-new');
     expect(discovered.save).toHaveBeenCalled();
+  });
+
+  test('a template label copies the template middlewares too', async () => {
+    Template.findOne.mockResolvedValue({
+      headers: [],
+      middleware: [{ middleware_type: 'redirect', configuration: { from: '/', to: '/app' }, order: 2 }],
+    });
+    DiscoveredService.create.mockResolvedValue({ proxy_id: null, save: jest.fn() });
+
+    await handle(inspected({ 'caddymanager.template': 'kibana' }));
+
+    expect(Middleware.bulkCreate).toHaveBeenCalledWith([
+      { proxy_id: 'p-new', middleware_type: 'redirect', configuration: { from: '/', to: '/app' }, order: 2, enabled: true },
+    ]);
   });
 
   test('removing an access-control label from an approved proxy sends it back to review', async () => {

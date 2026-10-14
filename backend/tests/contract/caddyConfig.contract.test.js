@@ -134,6 +134,24 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
     })]));
   });
 
+  // MODERNIZATION.md 0.29: middlewares used to be stored and never sent to Caddy
+  test('rate limit and redirect middlewares, with the proxy rate limit and path routing', () => {
+    const middlewares = [
+      { middleware_type: 'rate_limit', configuration: { rate: 100, unit: 'minute' }, enabled: true, order: 0 },
+      { middleware_type: 'redirect', configuration: { from: '/', to: '/app/kibana' }, enabled: true, order: 1 },
+      { middleware_type: 'redirect', configuration: { from: '/old/*', to: 'https://example.com/new', code: 301 }, enabled: true, order: 2 },
+    ];
+    expectValid(buildConfig([
+      baseProxy({ middlewares }),
+      baseProxy({
+        domains: ['both.example.com'],
+        rate_limit: { enabled: true, requests_per_second: 5 },
+        path_routing: { enabled: true, routes: [{ path: '/api/*', upstream_url: 'http://api:3000' }] },
+        middlewares,
+      }),
+    ]));
+  });
+
   test('path-based routing', () => {
     expectValid(buildConfig([baseProxy({
       path_routing: {

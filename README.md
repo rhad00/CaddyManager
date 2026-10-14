@@ -289,9 +289,16 @@ Example header configurations:
 ### Template Implementation
 Templates simplify service configuration through:
 1. Predefined header sets for common services
-2. Middleware configurations (rate limiting, auth, etc.)
-3. Path-based routing rules
-4. SSL and compression settings
+2. Middlewares, applied to the proxy's Caddy route:
+   - `rate_limit` — `{ "rate": 100, "unit": "second" | "minute" | "hour" }`, per client address;
+     placed before authentication, and ignored when the proxy's own rate limit setting is on
+   - `redirect` — `{ "from": "/", "to": "/app/kibana", "code": 302 }`, answered for that
+     exact path (`from` may use `*`), after the access controls; `code` is 301, 302, 303,
+     307 or 308
+
+IP filtering, basic authentication, path routing and SSL are settings of the proxy itself,
+not of templates or middlewares. Applying a template replaces the proxy's headers and
+middlewares.
 
 Example template usage in code:
 ```javascript

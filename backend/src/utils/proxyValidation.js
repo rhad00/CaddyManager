@@ -4,9 +4,10 @@
  */
 const { parseUpstream, upstreamHostname } = require('./upstream');
 const { isRestrictedHost } = require('./ssrf');
+const { validateMiddlewares } = require('./proxyMiddlewares');
 
 const PROXY_ALLOWED_FIELDS = [
-  'name', 'domains', 'upstream_url', 'ssl_type', 'custom_ssl_cert_id',
+  'name', 'domains', 'upstream_url', 'ssl_type',
   'compression_enabled', 'cache_settings', 'http_versions', 'status',
   'security_headers_enabled', 'rate_limit', 'ip_filtering', 'basic_auth',
   'path_routing', 'load_balancing', 'health_checks'
@@ -198,33 +199,6 @@ const validatePathRoutingConfig = (pathRouting) => {
   return { valid: true };
 };
 
-const validateMiddlewaresConfig = (middlewares) => {
-  if (!middlewares || !Array.isArray(middlewares)) {
-    return { valid: true };
-  }
-
-  for (const mw of middlewares) {
-    if (mw.type === 'rate_limit' && mw.requests_per_second !== undefined) {
-      const rps = Number(mw.requests_per_second);
-      if (!Number.isFinite(rps) || rps <= 0 || rps > 100000) {
-        return { valid: false, message: 'Rate limit requests_per_second must be a positive number (max 100000)' };
-      }
-    }
-
-    if (mw.type === 'ip_filter' && mw.allowed_ips) {
-      const ips = Array.isArray(mw.allowed_ips) ? mw.allowed_ips : [mw.allowed_ips];
-      const ipCidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-      for (const ip of ips) {
-        if (!ipCidrRegex.test(ip)) {
-          return { valid: false, message: `Invalid IP address or CIDR range: ${ip}` };
-        }
-      }
-    }
-  }
-
-  return { valid: true };
-};
-
 /**
  * Validate proxy input (domains and upstream URL)
  * @param {Object} body - Request body
@@ -242,7 +216,7 @@ const validateProxyInput = (body) => {
     () => validateHealthChecksConfig(body.health_checks),
     () => validateHeadersConfig(body.headers),
     () => validatePathRoutingConfig(body.path_routing),
-    () => validateMiddlewaresConfig(body.middlewares),
+    () => validateMiddlewares(body.middlewares),
   ];
 
   for (const runValidator of validators) {

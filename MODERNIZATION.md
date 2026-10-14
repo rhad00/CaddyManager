@@ -56,7 +56,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | done |
 | 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10, `simple-git` 4 done; `sqlite3` 6 declined (0.28d) | done |
-| 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
+| 0.29 | Declared but unimplemented: middlewares implemented; `custom_ssl_cert_id` removed; Kubernetes discovery and backup upload stay planned, stated honestly | done |
 
 ## Changes
 
@@ -963,7 +963,7 @@ Left open (low risk, not label-reachable):
 - The Caddy builder keeps only the first 10 `ip_filtering.ip_list` entries; for a
   UI/API `deny` list longer than that, the rest are silently not blocked. (Labels
   are limited to 10.) The model comment also says `block` where the builder knows
-  `deny`. To fix together with the 0.29 middleware work.
+  `deny`. Still open after 0.29 (the middleware work did not touch it).
 - The `domain` label accepts wildcards and is not checked for a duplicate of an active
   domain; new proxies are DISABLED, so an admin sees both in review.
 - A template is found by exact name (`authelia` does not match `Authelia` on a
@@ -1173,10 +1173,68 @@ fix, not a convenience. It also took priority over the other three.
   README, (3) then take sqlite3 6; or leave SQLite behind when Sequelize 7 (or another
   ORM) arrives in the TypeScript phases.
 
+### 0.29 Declared but not implemented
+
+Each item was checked in the code, the API, the UI and the README, then either built or
+made honest.
+
+#### Proxy middlewares: implemented
+
+- Problem:
+  - Middleware rows were stored, returned by the API and shown in the UI, but the Caddy
+    builder never read them. The shipped "rate limit" and "redirect" templates therefore
+    did nothing.
+  - Applying a template copied its headers only, never its middlewares, and reloaded the
+    proxy without them before the Caddy update.
+  - The validator checked fields (`type`, `requests_per_second`, `allowed_ips`) that
+    middlewares do not have, and the API wrote `...middleware` (any field) to the database.
+- Fix (`utils/proxyMiddlewares.js`):
+  - Two types are supported, the ones that have a defined configuration and a template:
+    `rate_limit` (`{ rate, unit }`, 1–100000 per second/minute/hour, per client address)
+    and `redirect` (`{ from, to, code }`, a path or an http(s) URL without whitespace or
+    control characters, code 301/302/303/307/308). `ip_filter` and `basic_auth` rows are
+    refused with a pointer to the proxy's own `ip_filtering` and `basic_auth` settings.
+  - The builder (`createRouteFromProxy`) turns enabled middlewares, in their order, into
+    Caddy handlers: rate limits next to the proxy's own rate limit (before authentication;
+    ignored when that setting is on, so the two never stack), redirects after the access
+    controls so they cannot bypass them. Stored entries that no longer validate are
+    skipped rather than sent to Caddy, where one bad handler rejects the whole config.
+  - `applyTemplate` replaces the proxy's headers and middlewares and reloads both.
+    Docker discovery's `template` label copies the middlewares too. Template create and
+    update validate `middleware`. The proxy API writes only the four documented fields.
+- Tests: new `proxyMiddlewares` unit (30), a discovery case, a contract case (22 contract
+  tests with Caddy required), the import fixture used a type outside the model's enum and
+  was corrected.
+- Verification on a real Caddy (the project image, with the rate_limit plugin), config
+  from the real builder: `GET /` → 302 with `Location: /app/kibana`; a disabled redirect
+  is not applied; with 3 requests per minute the fourth request gets 429.
+- Compatibility: a proxy that already has `ip_filter`, `basic_auth` or other unsupported
+  middleware rows is refused on its next save with a message naming the type (the UI
+  never created them).
+
+#### custom_ssl_cert_id: removed from the API
+
+Uploaded custom certificates are loaded into Caddy globally and Caddy picks one by the
+requested host name, so a per-proxy certificate id had no effect, and nothing in the UI,
+the tests or the docs used it. It is no longer accepted (`PROXY_ALLOWED_FIELDS`), so the
+API does not pretend to select a certificate. The column stays in the model to avoid a
+schema change; drop it with the next schema migration.
+
+#### Kubernetes discovery: stays planned
+
+`ENABLE_K8S_DISCOVERY` is documented as not implemented in the README, the roadmap lists
+it as planned, and the API answers 501 for a Kubernetes sync. Only the discovery page
+claimed it ("Docker containers and Kubernetes services"); the sentence now says
+Kubernetes is planned. Building it needs a client library and RBAC design: its own item.
+
+#### Backup upload: stays planned
+
+`POST /backups/upload` answers 501 "not implemented", documented as such in the API spec,
+and the README lists cloud storage as planned. Nothing claims otherwise. Restoring a backup
+that is on the server works.
+
 ## Where this session stopped
 
-Done: 0.1–0.28. Next up, in order:
+Done: 0.1–0.29. Next up, in order:
 
-1. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
-   `custom_ssl_cert_id`, proxy middlewares.
-2. TypeScript phases 1–5.
+1. TypeScript phases 1–5 (see the plan at the top).
