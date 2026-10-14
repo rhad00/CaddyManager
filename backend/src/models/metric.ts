@@ -45,8 +45,8 @@ Metric.init({
     allowNull: true,
     comment: 'Optional summary of key metrics for quick access'
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, {
   sequelize,
   modelName: 'Metric',

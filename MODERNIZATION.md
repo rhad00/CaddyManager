@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.5b | Review fix: `createdAt` / `updatedAt` stay NOT NULL in the class models, with a guard test | done |
 | 3.5 | Phase 3: `config/database` and `models/index` to strict TypeScript | done |
 | 3.4 | Phase 3: `Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository` models as typed classes (all models done) | done |
 | 3.3 | Phase 3: `AlertRule`, `ApiKey`, `AuditLog`, `Backup`, `Metric`, `NotificationChannel` models as typed classes | done |
@@ -1616,6 +1617,30 @@ real `Sequelize` type, which is what made this wait until every model was a clas
 - Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
   PostgreSQL suites (17 suites, 153 tests), Caddy contract test (22/22) and a `dist/`
   boot pass.
+
+### 3.5b Review fix: createdAt and updatedAt stayed NOT NULL
+
+A schema review of 3.1–3.4 compared the DDL of the old and new models on SQLite and
+PostgreSQL (`sync()` statements and `createTableQuery` per model). Everything was identical
+(table names, columns, types, defaults, enums, references, comments, indexes, column order)
+except one regression that I introduced: every class model listed `createdAt:
+DataTypes.DATE` and `updatedAt: DataTypes.DATE` in `init()` (the typed attribute map
+requires them because the class declares them). Sequelize only makes a timestamp
+`NOT NULL` when it adds the column itself, so a **fresh** database got nullable timestamps
+(`sync()` does not alter existing tables, so deployed databases were never affected).
+
+- Fix: the entries are now `{ type: DataTypes.DATE, allowNull: false }` (`createdAt` only on
+  `AuditLog`, which has `updatedAt: false`). The DDL is identical to the old one again.
+- Guard: `tests/integration/schema.timestamps.test.js` asserts every table's `createdAt` /
+  `updatedAt` is `NOT NULL` and that `AuditLogs` has no `updatedAt`. It uses
+  `describeTable`, so it runs on SQLite and PostgreSQL. It failed (33 nullable columns)
+  before the fix.
+- The other review checks passed: hooks moved from `addHook` to `init({ hooks })` behave
+  the same; `declare` fields do not shadow Sequelize's getters (tsc target ES2023 emits no
+  initialisers for them, Babel has `allowDeclareFields`); the dropped `description` keys
+  never reached the schema; every direct `require` of a model file uses the named export.
+- Verification: typecheck (loose and strict), build, full suite (66 suites, 582 tests),
+  PostgreSQL suites (18 suites, 155 tests) and a `dist/` boot pass.
 
 ## Where this session stopped
 

@@ -96,8 +96,8 @@ DiscoveredService.init({
     type: DataTypes.ENUM('active', 'stopped', 'removed'),
     defaultValue: 'active'
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, {
   sequelize,
   modelName: 'DiscoveredService',

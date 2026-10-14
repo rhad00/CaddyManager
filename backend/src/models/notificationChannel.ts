@@ -56,6 +56,6 @@ NotificationChannel.init({
     defaultValue: true,
     allowNull: false,
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE,
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, { sequelize, modelName: 'NotificationChannel', timestamps: true });

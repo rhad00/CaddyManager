@@ -83,6 +83,6 @@ AlertRule.init({
     type: DataTypes.DATE,
     allowNull: true,
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE,
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, { sequelize, modelName: 'AlertRule', timestamps: true });

@@ -65,8 +65,8 @@ CertificateAuthority.init({
     type: DataTypes.STRING,
     allowNull: true
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, {
   sequelize,
   modelName: 'CertificateAuthority'

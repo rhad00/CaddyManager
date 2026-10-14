@@ -60,8 +60,8 @@ Template.init({
     allowNull: false,
     defaultValue: []
   },
-  createdAt: DataTypes.DATE,
-  updatedAt: DataTypes.DATE
+  createdAt: { type: DataTypes.DATE, allowNull: false },
+  updatedAt: { type: DataTypes.DATE, allowNull: false }
 }, {
   sequelize,
   modelName: 'Template',

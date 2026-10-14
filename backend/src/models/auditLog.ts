@@ -58,7 +58,7 @@ AuditLog.init({
         type: DataTypes.STRING, // 'success', 'failure'
         defaultValue: 'success'
     },
-    createdAt: DataTypes.DATE
+    createdAt: { type: DataTypes.DATE, allowNull: false }
 }, {
     sequelize,
     modelName: 'AuditLog',
