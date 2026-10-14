@@ -232,8 +232,11 @@ describe('CaddyService', () => {
     // Should have a subroute handler
     expect(route.handle.some(h => h.handler === 'subroute')).toBe(true);
     const sub = route.handle.find(h => h.handler === 'subroute');
-    expect(sub.routes.length).toBe(2);
+    // Two path routes, then a catch-all 404: without it a path that matches no route
+    // would get Caddy's empty 200
+    expect(sub.routes.length).toBe(3);
     expect(sub.routes[0].match[0].path).toEqual(['/api']);
+    expect(sub.routes[2]).toEqual({ handle: [{ handler: 'static_response', status_code: 404 }] });
   });
 
   test('createRouteFromProxy includes an http_basic authentication handler when enabled', () => {

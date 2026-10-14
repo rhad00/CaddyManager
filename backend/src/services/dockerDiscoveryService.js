@@ -4,8 +4,8 @@ const { Op } = require('sequelize');
 const winston = require('winston');
 const { SSL_TYPES, isValidDomain } = require('../utils/proxyValidation');
 const {
-  labelsOf, containerNameOf, validateFeatureLabels, labelFeatures, changedFeatures,
-} = require('../utils/discoveryLabels');
+  labelsOf, containerNameOf, validateFeatureLabels, labelFeatures, featureUpdates, REVIEWED_FIELDS,
+} =require('../utils/discoveryLabels');
 const securityHeadersService = require('./securityHeadersService');
 
 // Create logger for this service
@@ -290,6 +290,7 @@ class DockerDiscoveryService {
       });
 
       if (discovered) {
+        const previousFeatures = this.storedFeatures(discovered);
         discovered.last_seen = new Date();
         discovered.status = running ? 'active' : 'stopped';
         discovered.domain = config.domain;
@@ -301,7 +302,7 @@ class DockerDiscoveryService {
         logger.info(`[DockerDiscovery] Updated service for ${containerName}`);
 
         if (discovered.proxy_id) {
-          await this.updateLinkedProxy(discovered.proxy_id, containerName, config, upstream, features);
+          await this.updateLinkedProxy(discovered.proxy_id, containerName, config, upstream, features, previousFeatures);
         }
       } else {
         discovered = await DiscoveredService.create({
@@ -329,35 +330,47 @@ class DockerDiscoveryService {
   }
 
   /**
-   * Bring an existing proxy in line with the container labels. Whoever can label
-   * containers must not be able to retarget an approved proxy or change its access
-   * controls: such a change sends it back to admin review.
+   * The proxy fields the labels produced at the last scan, from the stored labels.
    */
-  async updateLinkedProxy(proxyId, containerName, config, upstream, features) {
+  storedFeatures(discovered) {
+    const previousConfig = this.parseContainerLabels({ Config: { Labels: discovered.labels || {} } });
+    return labelFeatures(previousConfig || {}, discovered.upstream_url);
+  }
+
+  /**
+   * Bring an existing proxy in line with CHANGED container labels. Whoever can label
+   * containers must not be able to retarget an approved proxy or change its access
+   * controls: such a change sends it back to admin review. Labels that did not change
+   * touch nothing, and a value an admin set by hand is kept (see featureUpdates).
+   */
+  async updateLinkedProxy(proxyId, containerName, config, upstream, features, previousFeatures) {
     const proxy = await Proxy.findByPk(proxyId);
     if (!proxy) return;
 
-    const currentDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
-    const changed = changedFeatures(proxy, features);
-    if (currentDomains.length !== 1 || currentDomains[0] !== config.domain) changed.push('domains');
-    if (proxy.upstream_url !== upstream) changed.push('upstream_url');
+    const { updates, diverged } = featureUpdates(proxy, previousFeatures, features);
+    if (diverged.length > 0) {
+      logger.info(`[DockerDiscovery] Labels of ${containerName} changed ${diverged.join(', ')}, but an admin changed them on the proxy; keeping the admin's values`);
+    }
 
-    if (changed.length > 0 && proxy.status === 'active') {
+    const currentDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+    const reviewed = Object.keys(updates).filter((field) => REVIEWED_FIELDS.includes(field));
+    if (currentDomains.length !== 1 || currentDomains[0] !== config.domain) reviewed.push('domains');
+    if (proxy.upstream_url !== upstream) reviewed.push('upstream_url');
+
+    if (reviewed.length === 0 && Object.keys(updates).length === 0) return;
+
+    if (reviewed.length > 0 && proxy.status === 'active') {
       proxy.status = 'disabled';
-      logger.warn(`[DockerDiscovery] Labels of ${containerName} changed ${changed.join(', ')}; proxy disabled pending admin review`);
+      logger.warn(`[DockerDiscovery] Labels of ${containerName} changed ${reviewed.join(', ')}; proxy disabled pending admin review`);
     }
 
     proxy.domains = [config.domain];
     proxy.upstream_url = upstream;
-    proxy.compression_enabled = config.compression;
-    proxy.rate_limit = features.rate_limit;
-    proxy.ip_filtering = features.ip_filtering;
-    proxy.path_routing = features.path_routing;
-    proxy.security_headers_enabled = features.security_headers_enabled;
+    Object.assign(proxy, updates);
     await proxy.save();
 
-    if (changed.includes('security_headers_enabled')) {
-      await (features.security_headers_enabled
+    if ('security_headers_enabled' in updates) {
+      await (updates.security_headers_enabled
         ? securityHeadersService.applySecurityHeaders(proxy.id, Header)
         : securityHeadersService.removeSecurityHeaders(proxy.id, Header));
     }
@@ -377,7 +390,6 @@ class DockerDiscoveryService {
       domains: [config.domain],
       upstream_url: upstream,
       ssl_type: config.ssl_type,
-      compression_enabled: config.compression !== false,
       ...features,
       status: 'disabled'
     });
@@ -458,7 +470,9 @@ class DockerDiscoveryService {
   }
 
   /**
-   * Reconcile services (cleanup stale entries)
+   * Reconcile services (cleanup stale entries). last_seen is only refreshed by a scan or
+   * a start event, so age alone says nothing about a long-running container: ask Docker
+   * which containers still run, and only remove the services whose container is gone.
    */
   async reconcileServices() {
     try {
@@ -472,10 +486,22 @@ class DockerDiscoveryService {
           status: 'active'
         }
       });
+      if (staleServices.length === 0) return;
+
+      // If Docker cannot be listed, remove nothing: an outage is not a missing container
+      const runningIds = new Set((await this.docker.listContainers()).map((c) => c.Id));
+      const missing = [];
 
       for (const service of staleServices) {
+        if (runningIds.has(service.source_id)) {
+          service.last_seen = new Date();
+          await service.save();
+          continue;
+        }
+
         service.status = 'removed';
         await service.save();
+        missing.push(service);
 
         if (service.proxy_id && service.auto_managed) {
           const proxy = await Proxy.findByPk(service.proxy_id);
@@ -486,10 +512,10 @@ class DockerDiscoveryService {
         }
       }
 
-      if (staleServices.length > 0) {
+      if (missing.length > 0) {
         const caddyService = require('./caddyService');
         await caddyService.rebuildConfigFromDatabase();
-        logger.info(`[DockerDiscovery] Reconciled ${staleServices.length} stale services`);
+        logger.info(`[DockerDiscovery] Reconciled ${missing.length} stale services`);
       }
     } catch (error) {
       logger.error('[DockerDiscovery] Error reconciling services:', error);

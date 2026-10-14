@@ -930,6 +930,48 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     `handleDockerEvent`, reached `createOrUpdateProxy` with its domain and upstream
     `http://<name>:8080`.
 
+#### 0.24b Review follow-up
+
+A security review of 0.24 found no way for container labels to reach Caddy unvalidated
+or to change an active proxy's access controls without review (labels are immutable
+per container, and a recreated container gets a new Id and a new DISABLED proxy). It
+did find these defects, now fixed:
+
+- **A restart wiped admin settings.** An absent label meant "remove the feature", so a
+  container or backend restart reset the IP filter, rate limit, security headers and
+  compression an admin had set in the UI, and disabled the proxy. Now a rescan changes
+  a field only when the labels changed since the last scan (the previous labels are
+  the stored `DiscoveredService.labels`) and the proxy still holds what they set; a
+  value the admin changed is kept (`featureUpdates`). Unchanged labels touch nothing
+  and do not rebuild Caddy.
+- **`path_prefix` with `security_headers` or `template` did nothing** (the Caddy
+  builder only attaches headers to the default handler). The combination is refused
+  with a warning instead of showing "headers enabled" while none are served.
+- **Path routing answered unmatched paths with an empty 200.** The builder now ends
+  the subroute with a 404 `static_response` (checked with `caddy validate`, 21
+  contract tests).
+- `path_prefix` with `..` or `//` and IPv6 zone IDs (`fe80::1%eth0`) in `ip_filter`
+  are refused: Caddy rejects the zoned form, and one bad entry would break the whole
+  config on rebuild.
+- **`reconcileServices` removed live containers' proxies about 15 minutes after
+  start**, because `last_seen` is only refreshed by a scan or start event. It now
+  asks Docker which containers run, refreshes those, removes only the missing ones,
+  and removes nothing if Docker cannot be listed.
+
+Left open (low risk, not label-reachable):
+
+- The Caddy builder keeps only the first 10 `ip_filtering.ip_list` entries; for a
+  UI/API `deny` list longer than that, the rest are silently not blocked. (Labels
+  are limited to 10.) The model comment also says `block` where the builder knows
+  `deny`. To fix together with the 0.29 middleware work.
+- The `domain` label accepts wildcards and is not checked for a duplicate of an active
+  domain; new proxies are DISABLED, so an admin sees both in review.
+- A template is found by exact name (`authelia` does not match `Authelia` on a
+  case-sensitive database); template rows are copied without header validation; the
+  template's `middleware` is ignored.
+- Discovered services store all container labels; check the API does not expose them
+  before showing them in the UI.
+
 ### 0.25 Cluster mode: one leader runs the background work
 
 - Problem: `CLUSTER_MODE=true` forked N workers that all ran `index.js` in full. Each

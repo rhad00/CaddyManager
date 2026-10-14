@@ -23,7 +23,8 @@ const containerNameOf = (container) => {
 const isIpOrCidr = (entry) => {
   const [address, prefix, extra] = entry.split('/');
   const version = net.isIP(address);
-  if (!version || extra !== undefined) return false;
+  // Node accepts an IPv6 zone ("fe80::1%eth0"); Caddy's remote_ip matcher does not
+  if (!version || extra !== undefined || address.includes('%')) return false;
   if (prefix === undefined) return true;
   const bits = Number(prefix);
   return /^\d{1,3}$/.test(prefix) && bits <= (version === 4 ? 32 : 128);
@@ -53,8 +54,14 @@ const validateFeatureLabels = (config) => {
     const bad = entries.find((entry) => !isIpOrCidr(entry));
     if (bad) return `invalid ip_filter entry "${bad}"`;
   }
-  if (config.path_prefix && !PATH_PREFIX_PATTERN.test(config.path_prefix)) {
-    return `invalid path_prefix label "${config.path_prefix}"`;
+  if (config.path_prefix) {
+    if (!PATH_PREFIX_PATTERN.test(config.path_prefix) || /\.\.|\/\//.test(config.path_prefix)) {
+      return `invalid path_prefix label "${config.path_prefix}"`;
+    }
+    // Path routing replaces the default handler, which is where Caddy gets the headers
+    if (config.security_headers || config.template) {
+      return 'path_prefix cannot be combined with security_headers or template: path routing does not apply headers';
+    }
   }
   return null;
 };
@@ -77,23 +84,47 @@ const labelFeatures = (config, upstream) => {
       ? { enabled: true, routes: [{ path: prefix, upstream_url: upstream }, { path: `${prefix}/*`, upstream_url: upstream }] }
       : null,
     security_headers_enabled: config.security_headers === true,
+    compression_enabled: config.compression !== false,
   };
 };
 
+// Fields where a change can widen access or alter what is served; a label change to
+// one of them sends an approved proxy back to review (compression is not one of them)
+const REVIEWED_FIELDS = ['rate_limit', 'ip_filtering', 'path_routing', 'security_headers_enabled'];
+const BOOLEAN_FIELDS = ['security_headers_enabled', 'compression_enabled'];
+
 // A feature saved as { enabled: false } is the same as no feature
 const effective = (value) => (value && value.enabled ? value : null);
-const sameValue = (a, b) => JSON.stringify(effective(a)) === JSON.stringify(effective(b));
+const sameFeature = (field, a, b) => (BOOLEAN_FIELDS.includes(field)
+  ? Boolean(a) === Boolean(b)
+  : JSON.stringify(effective(a)) === JSON.stringify(effective(b)));
 
-/** Names of the label-controlled fields whose value on the proxy differs from the labels. */
-const changedFeatures = (proxy, features) =>
-  Object.keys(features).filter((field) => field === 'security_headers_enabled'
-    ? Boolean(proxy[field]) !== features[field]
-    : !sameValue(proxy[field], features[field]));
+/**
+ * What a rescan may change on an existing proxy. A field is only touched when the labels
+ * changed since the last scan AND the proxy still holds what the previous labels set;
+ * a value an admin changed by hand is kept, and unchanged labels change nothing (a
+ * restart must not undo the admin's work).
+ * @param {Object} proxy - the stored proxy
+ * @param {Object} previous - labelFeatures of the labels at the last scan
+ * @param {Object} next - labelFeatures of the labels now
+ * @returns {{ updates: Object, diverged: string[] }}
+ */
+const featureUpdates = (proxy, previous, next) => {
+  const updates = {};
+  const diverged = [];
+  Object.keys(next).forEach((field) => {
+    if (sameFeature(field, previous[field], next[field])) return;
+    if (sameFeature(field, proxy[field], previous[field])) updates[field] = next[field];
+    else diverged.push(field);
+  });
+  return { updates, diverged };
+};
 
 module.exports = {
   labelsOf,
   containerNameOf,
   validateFeatureLabels,
   labelFeatures,
-  changedFeatures,
+  featureUpdates,
+  REVIEWED_FIELDS,
 };

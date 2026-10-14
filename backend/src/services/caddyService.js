@@ -513,22 +513,26 @@ class CaddyService {
       // For path-based routing, we'll create a subroute handler
       handlers.push({
         handler: "subroute",
-        routes: proxy.path_routing.routes.map(route => {
-          const upstream = parseUpstream(route.upstream_url);
-          const pathHandler = {
-            handler: "reverse_proxy",
-            upstreams: [{ dial: upstream.dial }]
-          };
-          if (upstream.useTls) {
-            pathHandler.transport = this.buildTlsTransport(proxy);
-          }
-          return {
-            match: [{
-              path: [route.path]
-            }],
-            handle: [pathHandler]
-          };
-        })
+        routes: [
+          ...proxy.path_routing.routes.map(route => {
+            const upstream = parseUpstream(route.upstream_url);
+            const pathHandler = {
+              handler: "reverse_proxy",
+              upstreams: [{ dial: upstream.dial }]
+            };
+            if (upstream.useTls) {
+              pathHandler.transport = this.buildTlsTransport(proxy);
+            }
+            return {
+              match: [{
+                path: [route.path]
+              }],
+              handle: [pathHandler]
+            };
+          }),
+          // Everything outside the configured paths: a 404, not Caddy's empty 200
+          { handle: [{ handler: "static_response", status_code: 404 }] }
+        ]
       });
     } else {
       // Create the default reverse proxy handler

@@ -61,6 +61,7 @@ describe('label changes on an approved proxy', () => {
     domains: ['web.example.com'],
     upstream_url: 'http://web:3000',
     status: 'active',
+    compression_enabled: true, // the model default
     save: jest.fn(),
     ...overrides,
   });
