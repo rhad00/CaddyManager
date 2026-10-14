@@ -1,14 +1,15 @@
-const express = require('express');
-const { Template } = require('../../models/template');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const { caddyService } = require('../../services/caddyService');
-const { Proxy } = require('../../models/proxy');
-const { logAction } = require('../../services/auditService');
-const { validateMiddlewares } = require('../../utils/proxyMiddlewares');
-const { validateHeadersConfig } = require('../../utils/proxyValidation');
+import express, { type Request, type Response } from 'express';
+import { Template } from '../../models/template';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { caddyService } from '../../services/caddyService';
+import { Proxy } from '../../models/proxy';
+import { logAction } from '../../services/auditService';
+import { currentUser } from '../../utils/requestUser';
+import { validateMiddlewares } from '../../utils/proxyMiddlewares';
+import { validateHeadersConfig, type ValidationResult } from '../../utils/proxyValidation';
 
 // Headers and middlewares of a template end up on proxies and in Caddy's configuration
-const validateTemplateContent = ({ headers, middleware }) => {
+const validateTemplateContent = ({ headers, middleware }: { headers?: unknown; middleware?: unknown }): ValidationResult => {
   if (headers !== undefined && headers !== null && !Array.isArray(headers)) {
     return { valid: false, message: 'headers must be an array' };
   }
@@ -18,7 +19,8 @@ const validateTemplateContent = ({ headers, middleware }) => {
   const headersCheck = validateHeadersConfig(headers);
   return headersCheck.valid ? validateMiddlewares(middleware) : headersCheck;
 };
-const router = express.Router();
+
+export const router = express.Router();
 
 /**
  * @swagger
@@ -46,7 +48,7 @@ const router = express.Router();
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { page, limit } = req.query;
 
@@ -108,9 +110,9 @@ router.get('/', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const template = await Template.findByPk(/** @type {string} */ (req.params.id));
+    const template = await Template.findByPk(req.params.id);
     
     if (!template) {
       return res.status(404).json({ 
@@ -163,7 +165,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
  *       400:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const { name, description, headers, middleware } = req.body;
     
@@ -190,7 +192,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
     
     // Log template creation
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'TEMPLATE_CREATED',
       resource: 'template',
       resourceId: template.id,
@@ -249,7 +251,7 @@ router.post('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => 
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const template = await Template.findByPk(req.params.id);
     
@@ -266,11 +268,11 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     }
 
     // Update template fields
-    const updatableFields = ['name', 'description', 'headers', 'middleware'];
+    const updatableFields = ['name', 'description', 'headers', 'middleware'] as const;
     
     updatableFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        template[field] = req.body[field];
+        template.set(field, req.body[field]);
       }
     });
     
@@ -278,7 +280,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
     
     // Log template update
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'TEMPLATE_UPDATED',
       resource: 'template',
       resourceId: template.id,
@@ -322,7 +324,7 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const template = await Template.findByPk(req.params.id);
     
@@ -335,7 +337,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
     
     // Log template deletion
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'TEMPLATE_DELETED',
       resource: 'template',
       resourceId: template.id,
@@ -384,7 +386,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string; proxyId: string }>, res: Response) => {
   try {
     const template = await Template.findByPk(req.params.id);
     
@@ -409,7 +411,7 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     
     // Log template application
     await logAction({
-      userId: req.user.id,
+      userId: currentUser(req).id,
       action: 'TEMPLATE_APPLIED',
       resource: 'template',
       resourceId: template.id,
@@ -434,5 +436,3 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     });
   }
 });
-
-module.exports = router;

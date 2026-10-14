@@ -21,7 +21,7 @@ jest.mock('../../src/models/proxy', () => ({ Proxy: { findByPk: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 
 const { Template } = require('../../src/models/template');
-const templateRouter = require('../../src/api/templates/routes');
+const { router: templateRouter } = require('../../src/api/templates/routes');
 
 describe('Templates routes', () => {
   let app;
