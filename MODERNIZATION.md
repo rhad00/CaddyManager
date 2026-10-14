@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.5 | Phase 4: `metrics` routes to TypeScript | done |
 | 4.4 | Phase 4: `backups` routes to TypeScript | done |
 | 4.3 | Phase 4: `auth` routes (login, password reset, 2FA) to TypeScript | done |
 | 4.2 | Phase 4: `features` and `logs` routes to TypeScript | done |
@@ -1874,9 +1875,15 @@ where a route checks its body by hand. `zod` 4 is a dependency of the backend;
 - No behaviour change (the unused `result` of `deleteBackup` is dropped).
 - Verification: typecheck (loose and strict), build, full suite (612 tests).
 
+### 4.5 metrics routes
+
+`api/metrics/routes.ts` exports `router`. The mechanical part of a route conversion (imports, the named export, `Request`/`Response` annotations, `Request<{ id: string }>` for `:params`) is done by a small script and the typecheck output is fixed by hand. No behaviour change.
+
+Verification: typecheck (loose and strict), build, full suite (612 tests).
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.4 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.5 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.

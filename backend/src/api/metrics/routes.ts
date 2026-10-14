@@ -1,7 +1,8 @@
-const express = require('express');
-const { metricsService } = require('../../services/metricsService');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { metricsService } from '../../services/metricsService';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+
+export const router = express.Router();
 
 /**
  * @swagger
@@ -22,7 +23,7 @@ const router = express.Router();
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const summary = await metricsService.getMetricsSummary();
     
@@ -60,7 +61,7 @@ router.get('/', authMiddleware, async (req, res) => {
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/raw', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/raw', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const rawMetrics = await metricsService.getRawMetrics();
     
@@ -90,7 +91,7 @@ router.get('/raw', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/http', authMiddleware, async (req, res) => {
+router.get('/http', authMiddleware, async (req: Request, res: Response) => {
   try {
     const httpMetrics = await metricsService.getHttpMetrics();
     
@@ -122,7 +123,7 @@ router.get('/http', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/system', authMiddleware, async (req, res) => {
+router.get('/system', authMiddleware, async (req: Request, res: Response) => {
   try {
     const systemMetrics = await metricsService.getSystemMetrics();
     
@@ -154,7 +155,7 @@ router.get('/system', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/tls', authMiddleware, async (req, res) => {
+router.get('/tls', authMiddleware, async (req: Request, res: Response) => {
   try {
     const tlsMetrics = await metricsService.getTlsMetrics();
     
@@ -195,7 +196,7 @@ router.get('/tls', authMiddleware, async (req, res) => {
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/historical', authMiddleware, async (req, res) => {
+router.get('/historical', authMiddleware, async (req: Request, res: Response) => {
   try {
     const limit = req.query.limit ? parseInt(String(req.query.limit)) : 10;
     const historicalMetrics = await metricsService.getHistoricalMetrics(limit);
@@ -230,7 +231,7 @@ router.get('/historical', authMiddleware, async (req, res) => {
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/snapshot', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/snapshot', [authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
     const result = await metricsService.saveMetricsSnapshot();
     
@@ -247,5 +248,3 @@ router.post('/snapshot', [authMiddleware, roleMiddleware('admin')], async (req, 
     });
   }
 });
-
-module.exports = router;
