@@ -1,8 +1,12 @@
 const Docker = require('dockerode');
-const { DiscoveredService, Proxy, Template } = require('../models');
+const { DiscoveredService, Proxy, Template, Header } = require('../models');
 const { Op } = require('sequelize');
 const winston = require('winston');
 const { SSL_TYPES, isValidDomain } = require('../utils/proxyValidation');
+const {
+  labelsOf, containerNameOf, validateFeatureLabels, labelFeatures, changedFeatures,
+} = require('../utils/discoveryLabels');
+const securityHeadersService = require('./securityHeadersService');
 
 // Create logger for this service
 const logger = winston.createLogger({
@@ -58,10 +62,14 @@ class DockerDiscoveryService {
    * - caddymanager.port=3000
    * - caddymanager.ssl=cloudflare|acme|none
    * - caddymanager.template=authelia
-   * - caddymanager.path_prefix=/api
+   * - caddymanager.path_prefix=/api (only this path is proxied)
+   * - caddymanager.rate_limit=50 (requests per second)
+   * - caddymanager.ip_filter=10.0.0.0/8,192.168.1.10 (allow list)
+   * - caddymanager.security_headers=true
+   * - caddymanager.compression=false
    */
   parseContainerLabels(container) {
-    const labels = container.Labels || {};
+    const labels = labelsOf(container);
 
     // Check if auto-discovery is enabled
     if (labels[`${this.labelPrefix}.enable`] !== 'true') {
@@ -77,8 +85,8 @@ class DockerDiscoveryService {
       rate_limit: labels[`${this.labelPrefix}.rate_limit`],
       ip_filter: labels[`${this.labelPrefix}.ip_filter`],
       security_headers: labels[`${this.labelPrefix}.security_headers`] === 'true',
-      compression: labels[`${this.labelPrefix}.compression`] !== 'false', // Enabled by default
-      websocket: labels[`${this.labelPrefix}.websocket`] === 'true'
+      compression: labels[`${this.labelPrefix}.compression`] !== 'false' // Enabled by default
+      // Caddy's reverse_proxy passes WebSocket upgrades through, so there is no websocket label
     };
 
     return config;
@@ -101,7 +109,7 @@ class DockerDiscoveryService {
     if (!SSL_TYPES.includes(config.ssl_type)) {
       return `invalid ssl label "${config.ssl_type}" (expected one of: ${SSL_TYPES.join(', ')})`;
     }
-    return null;
+    return validateFeatureLabels(config);
   }
 
   /**
@@ -114,7 +122,7 @@ class DockerDiscoveryService {
       return null;
     }
 
-    const containerName = container.Names?.[0]?.replace(/^\//, '') || container.Id.substr(0, 12);
+    const containerName = containerNameOf(container);
 
     // Prefer container name over IP (better for Docker networks)
     // Check if we're in the same network
@@ -222,12 +230,18 @@ class DockerDiscoveryService {
    * Handle Docker events (start, stop, die, destroy)
    */
   async handleDockerEvent(event) {
-    const { status, id, Actor } = event;
-    const shortId = id.substr(0, 12);
+    // Current Docker APIs send Action and Actor.ID; status and id are the legacy fields
+    const action = event.Action || event.status;
+    const id = event.Actor?.ID || event.id;
+    if (!id) {
+      logger.debug(`[DockerDiscovery] Ignoring ${action || 'unknown'} event without a container ID`);
+      return;
+    }
+    const shortId = id.slice(0, 12);
 
-    logger.debug(`[DockerDiscovery] Event: ${status} for container ${shortId}`);
+    logger.debug(`[DockerDiscovery] Event: ${action} for container ${shortId}`);
 
-    if (status === 'start') {
+    if (action === 'start') {
       try {
         const container = await this.docker.getContainer(id).inspect();
         const config = this.parseContainerLabels(container);
@@ -238,7 +252,7 @@ class DockerDiscoveryService {
       } catch (error) {
         logger.error(`[DockerDiscovery] Error handling start event for ${shortId}:`, error.message);
       }
-    } else if (['stop', 'die', 'destroy'].includes(status)) {
+    } else if (['stop', 'die', 'destroy'].includes(action)) {
       await this.handleContainerStop(id);
     }
   }
@@ -247,8 +261,9 @@ class DockerDiscoveryService {
    * Create or update proxy for a discovered container
    */
   async createOrUpdateProxy(container, config) {
-    const { Id: containerId, Names, State } = container;
-    const containerName = Names?.[0]?.replace(/^\//, '') || containerId.substr(0, 12);
+    const containerId = container.Id;
+    const containerName = containerNameOf(container);
+    const running = Boolean(container.State?.Running);
 
     if (!config.domain) {
       logger.debug(`[DockerDiscovery] Skipping ${containerName}: no domain specified`);
@@ -266,52 +281,29 @@ class DockerDiscoveryService {
       logger.warn(`[DockerDiscovery] Skipping ${containerName}: no network found`);
       return;
     }
+    const features = labelFeatures(config, upstream);
 
     try {
-      // Import caddyService here to avoid circular dependency
-      const caddyService = require('./caddyService');
-
       // Check if service already discovered
       let discovered = await DiscoveredService.findOne({
         where: { source_type: 'docker', source_id: containerId }
       });
 
       if (discovered) {
-        // Update existing
         discovered.last_seen = new Date();
-        discovered.status = State.Running ? 'active' : 'stopped';
+        discovered.status = running ? 'active' : 'stopped';
         discovered.domain = config.domain;
         discovered.upstream_url = upstream;
         discovered.source_name = containerName;
+        discovered.labels = labelsOf(container);
         await discovered.save();
 
         logger.info(`[DockerDiscovery] Updated service for ${containerName}`);
 
-        // Update proxy if it exists
         if (discovered.proxy_id) {
-          const proxy = await Proxy.findByPk(discovered.proxy_id);
-          if (proxy) {
-            // Whoever can label containers must not be able to retarget an approved
-            // proxy: a new domain or upstream goes back to admin review
-            const currentDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
-            const retargeted = currentDomains.length !== 1 || currentDomains[0] !== config.domain ||
-              proxy.upstream_url !== upstream;
-            if (retargeted && proxy.status === 'active') {
-              proxy.status = 'disabled';
-              logger.warn(`[DockerDiscovery] Labels of ${containerName} changed its domain or upstream; proxy disabled pending admin review`);
-            }
-
-            proxy.domains = [config.domain];
-            proxy.upstream_url = upstream;
-            proxy.compression_enabled = config.compression;
-            proxy.websocket_enabled = config.websocket;
-            await proxy.save();
-            await caddyService.rebuildConfigFromDatabase();
-            logger.info(`[DockerDiscovery] Updated proxy for ${containerName}`);
-          }
+          await this.updateLinkedProxy(discovered.proxy_id, containerName, config, upstream, features);
         }
       } else {
-        // Create new discovered service
         discovered = await DiscoveredService.create({
           source_type: 'docker',
           source_id: containerId,
@@ -320,51 +312,115 @@ class DockerDiscoveryService {
           upstream_url: upstream,
           ssl_type: config.ssl_type,
           template_name: config.template,
-          labels: container.Labels,
+          labels: labelsOf(container),
           auto_managed: true,
-          status: State.Running ? 'active' : 'stopped'
+          status: running ? 'active' : 'stopped'
         });
 
         logger.info(`[DockerDiscovery] Discovered new service: ${containerName}`);
       }
 
-      // Create or update proxy
       if (!discovered.proxy_id) {
-        // New proxies are always created DISABLED so an admin can review
-        // and manually enable them. Caddy config is NOT updated yet.
-        const proxy = await Proxy.create({
-          name: `Auto: ${containerName}`,
-          domains: [config.domain],
-          upstream_url: upstream,
-          ssl_type: config.ssl_type,
-          compression_enabled: config.compression !== false,
-          websocket_enabled: config.websocket === true,
-          status: 'disabled'
-        });
-
-        // Apply template if specified
-        if (config.template) {
-          const template = await Template.findOne({ where: { name: config.template } });
-          if (template) {
-            // Import templateService to apply template
-            const templateService = require('./templateService');
-            await templateService.applyTemplateToProxy(proxy.id, template.id);
-            logger.info(`[DockerDiscovery] Applied template '${config.template}' to ${containerName}`);
-          } else {
-            logger.warn(`[DockerDiscovery] Template '${config.template}' not found`);
-          }
-        }
-
-        discovered.proxy_id = proxy.id;
-        await discovered.save();
-
-        // Proxy is disabled — Caddy config is NOT updated.
-        // An administrator must enable the proxy in the UI to activate it.
-        logger.info(`[DockerDiscovery] Discovered ${containerName} → ${config.domain} (proxy created DISABLED, pending admin review)`);
+        await this.createDisabledProxy(discovered, containerName, config, upstream, features);
       }
     } catch (error) {
       logger.error(`[DockerDiscovery] Error creating proxy for ${containerName}:`, error.message);
     }
+  }
+
+  /**
+   * Bring an existing proxy in line with the container labels. Whoever can label
+   * containers must not be able to retarget an approved proxy or change its access
+   * controls: such a change sends it back to admin review.
+   */
+  async updateLinkedProxy(proxyId, containerName, config, upstream, features) {
+    const proxy = await Proxy.findByPk(proxyId);
+    if (!proxy) return;
+
+    const currentDomains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
+    const changed = changedFeatures(proxy, features);
+    if (currentDomains.length !== 1 || currentDomains[0] !== config.domain) changed.push('domains');
+    if (proxy.upstream_url !== upstream) changed.push('upstream_url');
+
+    if (changed.length > 0 && proxy.status === 'active') {
+      proxy.status = 'disabled';
+      logger.warn(`[DockerDiscovery] Labels of ${containerName} changed ${changed.join(', ')}; proxy disabled pending admin review`);
+    }
+
+    proxy.domains = [config.domain];
+    proxy.upstream_url = upstream;
+    proxy.compression_enabled = config.compression;
+    proxy.rate_limit = features.rate_limit;
+    proxy.ip_filtering = features.ip_filtering;
+    proxy.path_routing = features.path_routing;
+    proxy.security_headers_enabled = features.security_headers_enabled;
+    await proxy.save();
+
+    if (changed.includes('security_headers_enabled')) {
+      await (features.security_headers_enabled
+        ? securityHeadersService.applySecurityHeaders(proxy.id, Header)
+        : securityHeadersService.removeSecurityHeaders(proxy.id, Header));
+    }
+
+    const caddyService = require('./caddyService'); // required here: circular dependency
+    await caddyService.rebuildConfigFromDatabase();
+    logger.info(`[DockerDiscovery] Updated proxy for ${containerName}`);
+  }
+
+  /**
+   * New proxies are always created DISABLED so an admin can review and enable them;
+   * Caddy is not touched until then.
+   */
+  async createDisabledProxy(discovered, containerName, config, upstream, features) {
+    const proxy = await Proxy.create({
+      name: `Auto: ${containerName}`,
+      domains: [config.domain],
+      upstream_url: upstream,
+      ssl_type: config.ssl_type,
+      compression_enabled: config.compression !== false,
+      ...features,
+      status: 'disabled'
+    });
+
+    // Link first, so a failure below cannot leave an orphan that the next scan duplicates
+    discovered.proxy_id = proxy.id;
+    await discovered.save();
+
+    try {
+      if (features.security_headers_enabled) {
+        await securityHeadersService.applySecurityHeaders(proxy.id, Header);
+      }
+      if (config.template) {
+        await this.applyTemplateHeaders(proxy.id, config.template, containerName);
+      }
+    } catch (error) {
+      logger.error(`[DockerDiscovery] Proxy for ${containerName} created without all of its headers:`, error.message);
+    }
+
+    logger.info(`[DockerDiscovery] Discovered ${containerName} → ${config.domain} (proxy created DISABLED, pending admin review)`);
+  }
+
+  /**
+   * Copy a template's headers onto a proxy.
+   */
+  async applyTemplateHeaders(proxyId, templateName, containerName) {
+    const template = await Template.findOne({ where: { name: templateName } });
+    if (!template) {
+      logger.warn(`[DockerDiscovery] Template '${templateName}' not found`);
+      return;
+    }
+
+    const headers = Array.isArray(template.headers) ? template.headers : [];
+    if (headers.length > 0) {
+      await Header.bulkCreate(headers.map((h) => ({
+        proxy_id: proxyId,
+        header_type: h.header_type,
+        header_name: h.header_name,
+        header_value: h.header_value,
+        enabled: true
+      })));
+    }
+    logger.info(`[DockerDiscovery] Applied template '${templateName}' to ${containerName}`);
   }
 
   /**

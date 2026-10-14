@@ -51,7 +51,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.22 | Git: rollback to a commit | done |
 | 0.23a | Git: backend image has no `git` binary or CA certificates | done |
 | 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | done |
-| 0.24 | Discovery: container state, unused labels | pending |
+| 0.24 | Discovery: labels, names, events, template crash, unused labels | done |
 | 0.25 | Cluster mode: schedulers run in every instance | pending |
 | 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
 | 0.27 | README references missing files | pending |
@@ -622,8 +622,9 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     0.29 (middlewares stored but never applied) instead of validating dead data.
   - Verification: backend 323 passed, 21 skipped.
 - Found while here (added to the discovery and Git fix tier):
-  - Discovery reads `container.State.Running`, but the list API returns `State` as a
-    string, so every discovered service is recorded as `stopped`.
+  - Discovery was suspected of misreading `State`. Checked against a real Docker
+    daemon in 0.24: inspect returns `State` as an object, so `State.Running` was
+    right. The real bugs are listed under 0.24.
   - `websocket_enabled` is not a Proxy column, so the label is silently dropped.
   - The Git export commits each proxy's basic-auth bcrypt hash to the repository.
 
@@ -876,18 +877,67 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
     for `oauth2:<token>` on its first request; the logged command and the error
     contain no token.
 
-## Where this session stopped (usage limit)
+### 0.24 Docker discovery
 
-Done: 0.1–0.10 and 0.11a–e. Next up, in order:
+- Problem (found by running discovery against a real Docker daemon, API 1.55):
+  - Labels: `docker inspect` has them under `Config.Labels`, with no top-level
+    `Labels`. `parseContainerLabels` read the top level, so it returned null for
+    every container and discovery never found anything. The `labels` stored on a
+    DiscoveredService were undefined too.
+  - Names: inspect has `Name` (`/web`), not `Names`, so the upstream host and the
+    proxy name fell back to the short container ID.
+  - Events: they carry `Action` and `Actor.ID`; there is no `status` or `id`.
+    `handleDockerEvent` threw on `id.substr`, so start and stop events were never
+    handled.
+  - Template label: `templateService.applyTemplateToProxy` does not exist. The call
+    threw after `Proxy.create` and before the proxy was linked, so every scan created
+    another orphan proxy.
+  - `path_prefix`, `rate_limit`, `ip_filter` and `security_headers` were parsed and
+    ignored; `websocket_enabled` is not a Proxy column.
+  - `State.Running` was correct (see the correction under 0.16).
+- Fix:
+  - New `utils/discoveryLabels.js`: `labelsOf` (Config.Labels, then Labels),
+    `containerNameOf` (Name, then Names[0], then the short ID), label validation and
+    the label → proxy field mapping.
+  - Events are read through `Action`/`Actor.ID`, falling back to `status`/`id`.
+  - A template label copies the template's headers onto the proxy. The proxy is linked
+    to its DiscoveredService before headers are added, so a failure there cannot
+    leave an orphan that the next scan duplicates.
+  - Labels now take effect:
+    - `security_headers=true` → `security_headers_enabled` plus the default headers.
+    - `rate_limit=<n>` → `rate_limit` (whole number, 1–100000 requests per second).
+    - `ip_filter=<ip|cidr,...>` → allow-list `ip_filtering` (1–10 entries, each a
+      valid IP or CIDR).
+    - `path_prefix=/api` → `path_routing` for `/api` and `/api/*` only.
+    - Invalid values skip the container with a warning, as for domain and port.
+  - Labels are untrusted input, so a label change on an `active` proxy that alters
+    the domain, upstream, rate limit, IP filter, path routing or security headers sets
+    it to `disabled` for admin review (before, only domain and upstream did). A
+    removed label removes the feature.
+  - The `websocket` label is dropped: Caddy's reverse_proxy passes WebSocket upgrades
+    through.
+  - `createOrUpdateProxy` is split into `updateLinkedProxy`, `createDisabledProxy`
+    and `applyTemplateHeaders`.
+  - The callers guard now covers every `<name>Service.<method>(` call against
+    `src/services/<name>Service.js` (`services.callers.test.js`, replacing the
+    caddyService-only one). It would have caught `applyTemplateToProxy`.
+- Tests: new `dockerDiscovery.inspect` unit (10) with inspect-shaped and
+  event-shaped fixtures: labels, name, feature mapping, invalid values, template,
+  review on a removed access label, start and stop events.
+- Verification:
+  - Backend 59 suites passed, 1 skipped; 471 tests passed, 21 skipped.
+  - Against the real daemon, a started container's real event, inspected by
+    `handleDockerEvent`, reached `createOrUpdateProxy` with its domain and upstream
+    `http://<name>:8080`.
 
-1. 0.12 `ssl_type` enum lacks `cloudflare` (Postgres migration).
-2. 0.13 Shared access-log volume in docker-compose.
-3. 0.14 Cloudflare policy scope.
-4. 0.15 Proxy create/update DB-before-Caddy ordering.
-5. 0.16 Validate upstreams for GitOps, restore and discovery imports.
-6. Remaining-fix tier from the review: alerts (stubs, stale `tls_status`, schedule
-   `syncCertificates`), API-key scopes and owner status, Git rollback and token in
-   `.git/config`, discovery labels, cluster-mode schedulers, CI test gaps, README
-   cleanup, and major upgrades (`simple-git` 4, `sqlite3` 6, `nodemailer` 10,
-   `dockerode` 5).
-7. TypeScript phases 1–5.
+## Where this session stopped
+
+Done: 0.1–0.24. Next up, in order:
+
+1. 0.25 Cluster mode: schedulers run in every instance.
+2. 0.26 CI gaps: tests not run, no coverage threshold, no Postgres or Playwright job.
+3. 0.27 README references missing files.
+4. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
+5. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
+   `custom_ssl_cert_id`, proxy middlewares.
+6. TypeScript phases 1–5.
