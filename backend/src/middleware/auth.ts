@@ -64,7 +64,7 @@ const scopeForMethod = (method: string): ApiKeyScope => {
 };
 
 /**
- * Area markers, mounted in front of a router (see src/api/index.js). Express's own routing
+ * Area markers, mounted in front of a router (see src/api/index.ts). Express's own routing
  * decides what is inside an area, so no path parsing can disagree with it.
  * - adminScopeArea: API keys need the admin scope for every method (administration).
  * - noApiKeyArea: API keys are refused whatever their scope (account security).

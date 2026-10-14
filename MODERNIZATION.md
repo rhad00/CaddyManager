@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.15 | Phase 4: `api/index` to TypeScript, static route imports | done |
 | 4.14 | Phase 4: `git` routes to TypeScript | done |
 | 4.13 | Phase 4: `certificates` routes to TypeScript | done |
 | 4.12 | Phase 4: `proxies` routes to TypeScript; `errorMessage` helper | done |
@@ -1984,9 +1985,15 @@ Verification: typecheck (loose and strict), build, full suite (646 tests), Postg
 
 Verification: typecheck (loose and strict), build, full suite (646 tests, three runs in a row), PostgreSQL suites.
 
+### 4.15 the API router
+
+`api/index.ts`: every route module exports `router`, so the transitional `loaded.router ?? loaded` of 4.2 is gone and the routers are imported statically. `ROUTES` is a typed list of `[path, router, ...area markers]`; `buildApiRouter()` mounts them in the same order as before, with `adminScopeArea` in front of the same areas (users, backups, audit, git, alerts, keys).
+
+Verification: typecheck (loose and strict), build, full suite (646 tests, `apiKeyAuth.test.js` exercises the mounts), a `dist/` boot.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.14 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.15 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.
