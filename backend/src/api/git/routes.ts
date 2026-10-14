@@ -1,11 +1,14 @@
-const express = require('express');
-const { gitService } = require('../../services/gitService');
-const { queryString } = require('../../utils/query');
-const { ProxyImportError } = require('../../utils/proxyImport');
-const { GitRepository, ConfigChange } = require('../../models');
-const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const { body, validationResult } = require('express-validator');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { gitService } from '../../services/gitService';
+import { queryString } from '../../utils/query';
+import { currentUser } from '../../utils/requestUser';
+import { errorMessage } from '../../utils/errorMessage';
+import { ProxyImportError } from '../../utils/proxyImport';
+import { GitRepository, ConfigChange } from '../../models';
+import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { body, validationResult } from 'express-validator';
+
+export const router = express.Router();
 
 /**
  * @swagger
@@ -26,7 +29,7 @@ const router = express.Router();
  *       401:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/repositories', authMiddleware, async (req, res) => {
+router.get('/repositories', authMiddleware, async (req: Request, res: Response) => {
   try {
     const repos = await GitRepository.findAll({
       attributes: { exclude: ['access_token', 'ssh_key'] },
@@ -66,7 +69,7 @@ router.get('/repositories', authMiddleware, async (req, res) => {
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/repositories/:id', authMiddleware, async (req, res) => {
+router.get('/repositories/:id', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(/** @type {string} */ (req.params.id), {
       attributes: { exclude: ['access_token', 'ssh_key'] },
@@ -136,7 +139,7 @@ router.post('/repositories', [
   body('provider').isIn(['github', 'gitlab', 'gitea', 'bitbucket']).withMessage('Invalid provider'),
   body('repository_url').isURL().withMessage('Valid repository URL is required'),
   body('access_token').notEmpty().withMessage('Access token is required')
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -203,9 +206,7 @@ router.post('/repositories', [
     }
 
     // Return without sensitive data
-    const repoData = repo.toJSON();
-    delete repoData.access_token;
-    delete repoData.ssh_key;
+    const { access_token: _accessToken, ssh_key: _sshKey, ...repoData } = repo.toJSON();
 
     res.status(201).json({
       success: true,
@@ -258,7 +259,7 @@ router.post('/repositories', [
 router.put('/repositories/:id', [
   authMiddleware,
   roleMiddleware('admin')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(req.params.id);
     if (!repo) {
@@ -296,9 +297,7 @@ router.put('/repositories/:id', [
       gitService.startAutoSync(repo);
     }
 
-    const repoData = repo.toJSON();
-    delete repoData.access_token;
-    delete repoData.ssh_key;
+    const { access_token: _accessToken, ssh_key: _sshKey, ...repoData } = repo.toJSON();
 
     res.status(200).json({
       success: true,
@@ -337,7 +336,7 @@ router.put('/repositories/:id', [
 router.delete('/repositories/:id', [
   authMiddleware,
   roleMiddleware('admin')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(req.params.id);
     if (!repo) {
@@ -385,7 +384,7 @@ router.delete('/repositories/:id', [
 router.post('/repositories/:id/sync', [
   authMiddleware,
   roleMiddleware('admin')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(req.params.id);
     if (!repo) {
@@ -403,7 +402,7 @@ router.post('/repositories/:id/sync', [
     });
   } catch (error) {
     if (error instanceof ProxyImportError) {
-      return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+      return res.status(400).json({ success: false, message: errorMessage(error), errors: error.errors });
     }
     console.error('Sync repository error:', error);
     res.status(500).json({
@@ -436,7 +435,7 @@ router.post('/repositories/:id/sync', [
 router.post('/repositories/:id/test', [
   authMiddleware,
   roleMiddleware('admin')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(req.params.id);
     if (!repo) {
@@ -481,7 +480,7 @@ router.post('/repositories/:id/test', [
  *       200:
  *         description: Array of commit history entries
  */
-router.get('/history', authMiddleware, async (req, res) => {
+router.get('/history', authMiddleware, async (req: Request, res: Response) => {
   try {
     const resource_type = queryString(req.query.resource_type);
     const resource_id = queryString(req.query.resource_id);
@@ -537,7 +536,7 @@ router.get('/history', authMiddleware, async (req, res) => {
  */
 const SHA_REGEX = /^[0-9a-f]{7,40}$/i;
 
-router.get('/repositories/:id/diff', authMiddleware, async (req, res) => {
+router.get('/repositories/:id/diff', authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const from = queryString(req.query.from);
     const to = queryString(req.query.to);
@@ -604,7 +603,7 @@ router.post('/repositories/:id/rollback', [
   authMiddleware,
   roleMiddleware('admin'),
   body('commit_sha').notEmpty().withMessage('Commit SHA is required').matches(/^[0-9a-f]{7,40}$/i).withMessage('Invalid commit SHA format')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -618,17 +617,18 @@ router.post('/repositories/:id/rollback', [
     const { commit_sha } = req.body;
     const result = await gitService.rollbackToCommit(req.params.id, commit_sha);
 
+    // success comes after the spread: the result's own success field is always true
     res.status(200).json({
-      success: true,
       ...result,
-      message: `Rolled back to commit ${commit_sha.substr(0, 7)}`
+      success: true,
+      message: `Rolled back to commit ${commit_sha.slice(0, 7)}`
     });
   } catch (error) {
     if (error instanceof gitService.GitRollbackError) {
-      return res.status(error.statusCode).json({ success: false, message: error.message });
+      return res.status(error.statusCode).json({ success: false, message: errorMessage(error) });
     }
     if (error instanceof ProxyImportError) {
-      return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+      return res.status(400).json({ success: false, message: errorMessage(error), errors: error.errors });
     }
     console.error('Rollback error:', error);
     res.status(500).json({
@@ -661,7 +661,7 @@ router.post('/repositories/:id/rollback', [
 router.post('/repositories/:id/export', [
   authMiddleware,
   roleMiddleware('admin')
-], async (req, res) => {
+], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const repo = await GitRepository.findByPk(req.params.id);
     if (!repo) {
@@ -677,7 +677,7 @@ router.post('/repositories/:id/export', [
       'manual',
       'config',
       null,
-      req.user.id,
+      currentUser(req).id as string,
       null,
       { exported_at: new Date() }
     );
@@ -702,5 +702,3 @@ router.post('/repositories/:id/export', [
     });
   }
 });
-
-module.exports = router;

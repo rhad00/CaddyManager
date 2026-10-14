@@ -27,7 +27,19 @@ app.use('/api/certificates', require('../../src/api/certificates/routes').router
 const UPLOADS = path.join(process.cwd(), 'uploads');
 const uploadedFiles = () => (fs.existsSync(UPLOADS) ? fs.readdirSync(UPLOADS) : []);
 
+// The route answers first and removes the temp files in its `finally`: wait for that
+const waitForUploadCount = async (expected) => {
+  for (let attempt = 0; attempt < 50 && uploadedFiles().length !== expected; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return uploadedFiles().length;
+};
+
+// Files already in uploads/ when the suite starts are not ours; every upload below must leave this many
+let baseline;
+
 beforeAll(async () => {
+  baseline = uploadedFiles().length;
   await sequelize.sync({ force: true });
 });
 
@@ -85,8 +97,6 @@ describe('POST /upload', () => {
   });
 
   test('a file that is not a PEM is rejected and its temp copy removed', async () => {
-    const before = uploadedFiles().length;
-
     const res = await request(app)
       .post('/api/certificates/upload')
       .field('name', 'site')
@@ -95,6 +105,6 @@ describe('POST /upload', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/Invalid PEM format/);
-    expect(uploadedFiles().length).toBe(before);
+    expect(await waitForUploadCount(baseline)).toBe(baseline);
   });
 });

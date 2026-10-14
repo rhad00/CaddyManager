@@ -28,7 +28,7 @@ const { ProxyImportError } = require('../../src/utils/proxyImport');
 const app = express();
 app.use(express.json());
 app.use('/api/backups', require('../../src/api/backups/routes').router);
-app.use('/api/git', require('../../src/api/git/routes'));
+app.use('/api/git', require('../../src/api/git/routes').router);
 
 const refused = () => new ProxyImportError(['#1 "metadata": Upstream URL points to a restricted address']);
 
