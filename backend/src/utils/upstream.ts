@@ -8,23 +8,30 @@
  */
 
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
-const DEFAULT_PORTS = { 'http:': '80', 'https:': '443' };
+const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
 const TLS_PORT = '443';
+
+export interface ParsedUpstream {
+  /** host:port for Caddy's reverse_proxy `dial` */
+  dial: string;
+  useTls: boolean;
+  /** hostname without IPv6 brackets */
+  hostname: string;
+}
 
 /**
  * Parse an upstream into a URL, adding http:// when no scheme is given.
  * Only checks scheme and host, so callers can run host-based (SSRF) checks first.
- * @param {string} input - upstream as entered by the user
- * @returns {URL}
- * @throws {Error} with a user-facing message when the upstream is invalid
+ * @param input - upstream as entered by the user
+ * @throws Error with a user-facing message when the upstream is invalid
  */
-function toUpstreamUrl(input) {
-  if (!input || typeof input !== 'string' || !input.trim()) {
+function toUpstreamUrl(input: unknown): URL {
+  if (typeof input !== 'string' || !input.trim()) {
     throw new Error('Upstream URL is required');
   }
 
   const trimmed = input.trim();
-  let url;
+  let url: URL;
   try {
     url = new URL(SCHEME_PATTERN.test(trimmed) ? trimmed : `http://${trimmed}`);
   } catch {
@@ -40,19 +47,14 @@ function toUpstreamUrl(input) {
   return url;
 }
 
-/**
- * Hostname without IPv6 brackets, for address checks
- * @param {URL} url
- * @returns {string}
- */
-const bareHostname = (url) => url.hostname.replace(/^\[|\]$/g, '');
+/** Hostname without IPv6 brackets, for address checks */
+const bareHostname = (url: URL): string => url.hostname.replace(/^\[|\]$/g, '');
 
 /**
- * @param {string} input - upstream as entered by the user
- * @returns {{ dial: string, useTls: boolean, hostname: string }}
- * @throws {Error} with a user-facing message when the upstream is invalid
+ * @param input - upstream as entered by the user
+ * @throws Error with a user-facing message when the upstream is invalid
  */
-function parseUpstream(input) {
+export function parseUpstream(input: unknown): ParsedUpstream {
   const url = toUpstreamUrl(input);
 
   if (url.username || url.password) {
@@ -73,11 +75,5 @@ function parseUpstream(input) {
   };
 }
 
-/**
- * Hostname of an upstream, validated only as far as scheme and host
- * @param {string} input
- * @returns {string}
- */
-const upstreamHostname = (input) => bareHostname(toUpstreamUrl(input));
-
-module.exports = { parseUpstream, upstreamHostname };
+/** Hostname of an upstream, validated only as far as scheme and host */
+export const upstreamHostname = (input: unknown): string => bareHostname(toUpstreamUrl(input));

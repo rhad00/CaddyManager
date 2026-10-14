@@ -8,7 +8,7 @@
  * Note: this checks the literal host only. A DNS name that resolves to a
  * private address is not caught here.
  */
-const net = require('net');
+import net from 'net';
 
 const BLOCKED_NAMES = new Set([
   'localhost',
@@ -16,8 +16,9 @@ const BLOCKED_NAMES = new Set([
   'metadata.internal',
 ]);
 
-/** @type {Array<[string, number]>} */
-const BLOCKED_IPV4_SUBNETS = [
+type Subnet = [prefix: string, bits: number];
+
+const BLOCKED_IPV4_SUBNETS: Subnet[] = [
   ['0.0.0.0', 8],        // "this" network
   ['10.0.0.0', 8],       // private
   ['100.64.0.0', 10],    // CGNAT
@@ -32,8 +33,7 @@ const BLOCKED_IPV4_SUBNETS = [
   ['240.0.0.0', 4],      // reserved + broadcast
 ];
 
-/** @type {Array<[string, number]>} */
-const BLOCKED_IPV6_SUBNETS = [
+const BLOCKED_IPV6_SUBNETS: Subnet[] = [
   ['::', 96],            // unspecified, loopback and deprecated IPv4-compatible (::a.b.c.d)
   ['64:ff9b::', 96],     // NAT64 well-known prefix embeds IPv4 addresses
   ['fc00::', 7],         // unique local
@@ -45,10 +45,10 @@ for (const [prefix, bits] of BLOCKED_IPV4_SUBNETS) blockList.addSubnet(prefix, b
 for (const [prefix, bits] of BLOCKED_IPV6_SUBNETS) blockList.addSubnet(prefix, bits, 'ipv6');
 
 /**
- * @param {string} host - hostname or IP literal (IPv6 without brackets)
- * @returns {boolean} true when the host must not be used as an upstream
+ * @param host - hostname or IP literal (IPv6 without brackets)
+ * @returns true when the host must not be used as an upstream
  */
-function isRestrictedHost(host) {
+export function isRestrictedHost(host: string): boolean {
   // "localhost." and "localhost" are the same name; so are FQDNs with a trailing dot
   const name = String(host).toLowerCase().replace(/\.+$/, '');
 
@@ -61,5 +61,3 @@ function isRestrictedHost(host) {
   if (family === 6) return blockList.check(name, 'ipv6');
   return false;
 }
-
-module.exports = { isRestrictedHost };

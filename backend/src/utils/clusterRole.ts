@@ -4,9 +4,8 @@
  * single process, or `node src/index.js` with CLUSTER_MODE=true left in a shared .env,
  * still runs the migrations and the schedulers.
  */
-const LEADER_ROLE = 'leader';
-const FOLLOWER_ROLE = 'follower';
+export const LEADER_ROLE = 'leader';
+export const FOLLOWER_ROLE = 'follower';
 
-const isLeader = (env = process.env) => env.CLUSTER_ROLE !== FOLLOWER_ROLE;
-
-module.exports = { LEADER_ROLE, FOLLOWER_ROLE, isLeader };
+export const isLeader = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env.CLUSTER_ROLE !== FOLLOWER_ROLE;

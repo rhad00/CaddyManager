@@ -60,6 +60,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1a | Phase 1 finding: audit entries lost the resource id | done |
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
+| 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
 
 ## Changes
 
@@ -1374,9 +1375,32 @@ puts that in place and proves it with one real module (`utils/query`, now `query
 - Not done: the Docker image build is only exercised in CI from now on, not the
   production compose file.
 
+### 2.2 Pure helpers in strict TypeScript
+
+Six `utils` modules with no framework dependencies are now `.ts` (renamed with `git mv`,
+so history follows): `clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`,
+`certificates`. Their callers still `require` them; `module.exports = {…}` became named
+exports, which compile to the same `exports.x` shape, so no caller or `jest.mock` factory
+changed.
+
+- **Strict mode, per file**: `tsconfig.strict.json` (`strict: true`, `.ts` files only) runs
+  after the loose check inside `npm run typecheck` and in CI. Every converted file is
+  therefore strict from the start; the `.js` files stay on the loose `checkJs` setup until
+  they are converted.
+- Types worth noting: `ParsedUpstream` and `CertificateInfo` are exported interfaces;
+  `CaddyConfig` types only the `apps.tls.certificates.load_pem` path and passes the rest
+  through; `encrypt`/`decrypt` have overloads so `null` stays `null` and a string stays a
+  string; `CertificateError` declares `statusCode` as a field.
+- Behaviour changes: none intended. One deliberate tightening in `decrypt`: the plaintext
+  is now `Buffer.concat([update, final]).toString('utf8')` instead of
+  `update(buf) + final('utf8')`, which could corrupt a multi-byte character split between
+  the two chunks. `Buffer.slice` (deprecated) became `subarray`.
+- Verification: `npm run typecheck` (loose and strict) and `npm run build` exit 0; backend
+  64 suites passed, 1 skipped; 557 tests passed.
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1 and the Phase 2 pipeline (2.1). Next up, in order:
+Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and the first six helpers (2.2). Next up, in order:
 
-1. Phase 2: convert `utils`, `config`, `middleware` to `.ts`, file by file, turning `strict` on for each.
+1. Phase 2: convert the remaining `utils` (`proxyMiddlewares`, `discoveryLabels`, `notificationChannels`, `basicAuth`, `proxyValidation`, `proxyImport`, `outboundRequest`, `upstreamProbe`), then `config` and `middleware`, and a typed Caddy config module.
 2. TypeScript phases 3–5 (see the plan at the top).

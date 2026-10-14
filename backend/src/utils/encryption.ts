@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Field-level encryption helpers using AES-256-GCM.
  *
@@ -15,13 +13,12 @@
  * The "ENC:" prefix lets decrypt() detect whether a field has already been
  * encrypted, making it safe to call idempotently on legacy plain-text rows.
  */
-
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 const ALGO = 'aes-256-gcm';
 const MAGIC = 'CMFV';
 const PREFIX = 'ENC:';
-const IV_LEN = 12;   // 96-bit IV recommended for GCM
+const IV_LEN = 12; // 96-bit IV recommended for GCM
 const TAG_LEN = 16;
 
 /**
@@ -30,7 +27,7 @@ const TAG_LEN = 16;
  *
  * @throws {Error} when the env var is present but malformed.
  */
-function getKey() {
+function getKey(): Buffer | null {
   const hex = process.env.ENCRYPTION_KEY;
   if (!hex) return null;
   const trimmed = hex.trim();
@@ -44,15 +41,13 @@ function getKey() {
  * Encrypt a plain-text string.  Returns the encrypted value as a base64
  * string prefixed with "ENC:".  If ENCRYPTION_KEY is not set returns the
  * original value unchanged (so callers are not broken in dev without the var).
- *
- * @param {string|null|undefined} plaintext
- * @returns {string|null|undefined}
+ * null and undefined pass through; other types are converted with String().
  */
-function encrypt(plaintext) {
-  if (plaintext == null) return plaintext;
-  if (typeof plaintext !== 'string') {
-    plaintext = String(plaintext);
-  }
+export function encrypt(plaintext: null | undefined): typeof plaintext;
+export function encrypt(plaintext: unknown): string;
+export function encrypt(input: unknown): string | null | undefined {
+  if (input == null) return input as null | undefined;
+  const plaintext = typeof input === 'string' ? input : String(input);
   // Already encrypted — do not double-encrypt.
   if (plaintext.startsWith(PREFIX)) return plaintext;
 
@@ -74,11 +69,10 @@ function encrypt(plaintext) {
  * string.  If the value is not prefixed with "ENC:" it is returned as-is
  * (allows transparent reads of legacy plain-text rows).
  *
- * @param {string|null|undefined} value
- * @returns {string|null|undefined}
+ * @throws {Error} when the key is missing, or the value is malformed or tampered with
  */
-function decrypt(value) {
-  if (value == null) return value;
+export function decrypt<T>(value: T): T extends string ? string : T;
+export function decrypt(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   if (!value.startsWith(PREFIX)) return value; // plain text — legacy row
 
@@ -86,16 +80,14 @@ function decrypt(value) {
   if (!key) throw new Error('ENCRYPTION_KEY is required to decrypt stored credentials');
 
   const buf = Buffer.from(value.slice(PREFIX.length), 'base64');
-  const magic = buf.slice(0, 4).toString('ascii');
+  const magic = buf.subarray(0, 4).toString('ascii');
   if (magic !== MAGIC) throw new Error('Encrypted value has an unrecognised format');
 
-  const iv = buf.slice(4, 4 + IV_LEN);
-  const tag = buf.slice(4 + IV_LEN, 4 + IV_LEN + TAG_LEN);
-  const cipherBuf = buf.slice(4 + IV_LEN + TAG_LEN);
+  const iv = buf.subarray(4, 4 + IV_LEN);
+  const tag = buf.subarray(4 + IV_LEN, 4 + IV_LEN + TAG_LEN);
+  const cipherBuf = buf.subarray(4 + IV_LEN + TAG_LEN);
 
   const decipher = crypto.createDecipheriv(ALGO, key, iv);
   decipher.setAuthTag(tag);
-  return decipher.update(cipherBuf) + decipher.final('utf8');
+  return Buffer.concat([decipher.update(cipherBuf), decipher.final()]).toString('utf8');
 }
-
-module.exports = { encrypt, decrypt };

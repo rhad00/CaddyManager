@@ -12,7 +12,7 @@
     "test:integration": "jest --config jest.integration.config.js",
     "test:smoke": "jest tests/integration/allFeatures.smoke.test.js tests/integration/routeModules.smoke.test.js",
     "test:regression": "jest tests/integration/keys.routes.regression.test.js tests/integration/proxies.routes.real.test.js tests/unit/cloudflarePolicy.test.js",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.strict.json",
     "test:ci": "jest --config jest.ci.config.js --forceExit",
     "test:coverage": "jest --coverage --coverageReporters=text-summary --coverageReporters=json-summary",
     "test:watch": "jest --watch",

@@ -2,25 +2,31 @@
  * X.509 helpers for uploaded and generated certificates, using Node's built-in
  * crypto.X509Certificate (no openssl CLI, no temp files).
  */
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 /** Error caused by user-supplied certificate material; maps to HTTP 400. */
-class CertificateError extends Error {
-  constructor(message) {
+export class CertificateError extends Error {
+  statusCode = 400;
+
+  constructor(message: string) {
     super(message);
     this.name = 'CertificateError';
-    this.statusCode = 400;
   }
 }
 
-/**
- * @param {string} certificatePem
- * @returns {{ issuer: string, subject: string, validFrom: Date, validTo: Date,
- *   dnsNames: string[], fingerprint256: string, x509: crypto.X509Certificate }}
- * @throws {CertificateError}
- */
-function parsePemCertificate(certificatePem) {
-  let x509;
+export interface CertificateInfo {
+  issuer: string;
+  subject: string;
+  validFrom: Date;
+  validTo: Date;
+  dnsNames: string[];
+  fingerprint256: string;
+  x509: crypto.X509Certificate;
+}
+
+/** @throws {CertificateError} */
+export function parsePemCertificate(certificatePem: string): CertificateInfo {
+  let x509: crypto.X509Certificate;
   try {
     x509 = new crypto.X509Certificate(certificatePem);
   } catch {
@@ -44,14 +50,10 @@ function parsePemCertificate(certificatePem) {
   };
 }
 
-/**
- * @param {string} certificatePem
- * @param {string} privateKeyPem
- * @throws {CertificateError} when the key is invalid or belongs to another certificate
- */
-function assertKeyMatchesCertificate(certificatePem, privateKeyPem) {
+/** @throws {CertificateError} when the key is invalid or belongs to another certificate */
+export function assertKeyMatchesCertificate(certificatePem: string, privateKeyPem: string): void {
   const { x509 } = parsePemCertificate(certificatePem);
-  let key;
+  let key: crypto.KeyObject;
   try {
     key = crypto.createPrivateKey(privateKeyPem);
   } catch {
@@ -63,7 +65,7 @@ function assertKeyMatchesCertificate(certificatePem, privateKeyPem) {
 }
 
 /** Does a certificate name (possibly a single-label wildcard) cover the domain? */
-function nameCovers(certName, domain) {
+function nameCovers(certName: string, domain: string): boolean {
   if (certName === domain) return true;
   if (!certName.startsWith('*.')) return false;
   const suffix = certName.slice(1); // ".apps.example.com"
@@ -75,12 +77,14 @@ function nameCovers(certName, domain) {
  * Domains a certificate will be used for. Defaults to the certificate's DNS SANs;
  * requested domains must all be covered, otherwise Caddy would never serve the
  * certificate for them.
- * @param {string|string[]|undefined} requested - comma-separated or array
- * @param {{ dnsNames: string[] }} info - from parsePemCertificate
- * @returns {string[]}
+ * @param requested - comma-separated string or array
+ * @param info - from parsePemCertificate
  * @throws {CertificateError}
  */
-function resolveCertificateDomains(requested, info) {
+export function resolveCertificateDomains(
+  requested: string | string[] | undefined,
+  info: Pick<CertificateInfo, 'dnsNames'>,
+): string[] {
   const list = (Array.isArray(requested) ? requested : String(requested || '').split(','))
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
@@ -99,23 +103,17 @@ function resolveCertificateDomains(requested, info) {
   return list;
 }
 
+type CertificateLike = { toJSON?: () => Record<string, unknown> } & Record<string, unknown>;
+
 /**
  * API shape of a Certificate: never includes the private key.
- * @param {Object} certificate - Sequelize instance or plain object
- * @returns {Object}
+ * @param certificate - Sequelize instance or plain object
  */
-function toCertificateResponse(certificate) {
-  if (!certificate) return certificate;
+export function toCertificateResponse<T extends CertificateLike | null | undefined>(
+  certificate: T,
+): T extends null | undefined ? T : Record<string, unknown> {
+  if (!certificate) return certificate as never;
   const data = typeof certificate.toJSON === 'function' ? certificate.toJSON() : { ...certificate };
-  // eslint-disable-next-line no-unused-vars
-  const { private_key_pem, ...rest } = data;
-  return rest;
+  const { private_key_pem: _omitted, ...rest } = data;
+  return rest as never;
 }
-
-module.exports = {
-  CertificateError,
-  parsePemCertificate,
-  assertKeyMatchesCertificate,
-  resolveCertificateDomains,
-  toCertificateResponse,
-};
