@@ -5,8 +5,7 @@ const tls = require('tls');
 const { sequelize, Proxy, Header, Middleware, Certificate } = require('../models');
 const { Op } = require('sequelize');
 const { parseUpstream } = require('../utils/upstream');
-const { toCaddyAuthHandler } = require('../utils/basicAuth');
-const { middlewareHandlers } = require('../utils/proxyMiddlewares');
+const { createRouteFromProxy, shouldUseHTTPSTransport, buildSelectionPolicy, buildTlsTransport } = require('../utils/caddyRoute');
 const { withCustomCertificates, withoutCustomCertificates } = require('../utils/caddyTls');
 require('dotenv').config();
 
@@ -424,273 +423,27 @@ class CaddyService {
   }
 
   /**
-   * Create a route configuration from a proxy
+   * Create a route configuration from a proxy (see utils/caddyRoute)
    * @param {Object} proxy - The proxy object from the database
    * @returns {Object} The route configuration
    */
   createRouteFromProxy(proxy) {
-    // Start with the handlers array
-    const handlers = [];
-
-    // Add rate limiting if enabled
-    const hasRateLimit = Boolean(proxy.rate_limit && proxy.rate_limit.enabled);
-    if (hasRateLimit) {
-      handlers.push({
-        handler: "rate_limit",
-        rate_limits: {
-          default: {
-            key: "{http.request.remote.host}",
-            window: "1s",
-            max_events: proxy.rate_limit.burst || proxy.rate_limit.requests_per_second
-          }
-        }
-      });
-    }
-
-    // Rate limit middlewares go with the rate limit, before any authentication; the other
-    // middlewares (redirects) come after the access controls
-    const middlewares = middlewareHandlers(proxy.middlewares, { hasRateLimit });
-    handlers.push(...middlewares.filter(handler => handler.handler === "rate_limit"));
-
-    // Add IP filtering if enabled using Caddy's built-in remote_ip matcher
-    if (proxy.ip_filtering && proxy.ip_filtering.enabled && proxy.ip_filtering.ip_list && proxy.ip_filtering.ip_list.length > 0) {
-      const ipRanges = proxy.ip_filtering.ip_list.slice(0, 10); // Maximum 10 IPs/ranges
-      
-      if (proxy.ip_filtering.mode === "deny") {
-        // Deny mode: block specified IPs
-        handlers.push({
-          handler: "subroute",
-          routes: [{
-            match: [{
-              remote_ip: {
-                ranges: ipRanges
-              }
-            }],
-            handle: [{
-              handler: "static_response",
-              status_code: 403,
-              body: "Access denied"
-            }]
-          }]
-        });
-      } else {
-        // Allow mode: only allow specified IPs (deny all others)
-        handlers.push({
-          handler: "subroute",
-          routes: [{
-            match: [{
-              not: [{
-                remote_ip: {
-                  ranges: ipRanges
-                }
-              }]
-            }],
-            handle: [{
-              handler: "static_response",
-              status_code: 403,
-              body: "Access denied"
-            }]
-          }]
-        });
-      }
-    }
-
-    // Add basic authentication if enabled
-    const authHandler = toCaddyAuthHandler(proxy.basic_auth);
-    if (authHandler) {
-      handlers.push(authHandler);
-    }
-
-    handlers.push(...middlewares.filter(handler => handler.handler !== "rate_limit"));
-
-    // Add compression if enabled
-    if (proxy.compression_enabled) {
-      handlers.push({
-        handler: "encode",
-        encodings: {
-          gzip: {},
-          zstd: {}
-        }
-      });
-    }
-
-    let reverseProxyHandler;
-
-    // Handle path-based routing or default reverse proxy
-    if (proxy.path_routing && proxy.path_routing.enabled && proxy.path_routing.routes && proxy.path_routing.routes.length > 0) {
-      // For path-based routing, we'll create a subroute handler
-      handlers.push({
-        handler: "subroute",
-        routes: [
-          ...proxy.path_routing.routes.map(route => {
-            const upstream = parseUpstream(route.upstream_url);
-            const pathHandler = {
-              handler: "reverse_proxy",
-              upstreams: [{ dial: upstream.dial }]
-            };
-            if (upstream.useTls) {
-              pathHandler.transport = this.buildTlsTransport(proxy);
-            }
-            return {
-              match: [{
-                path: [route.path]
-              }],
-              handle: [pathHandler]
-            };
-          }),
-          // Everything outside the configured paths: a 404, not Caddy's empty 200
-          { handle: [{ handler: "static_response", status_code: 404 }] }
-        ]
-      });
-    } else {
-      // Create the default reverse proxy handler
-      // Determine upstreams: load balancing multi-upstream takes priority over single url
-      let upstreams;
-      let lbPolicy = null;
-
-      if (proxy.load_balancing && proxy.load_balancing.enabled && proxy.load_balancing.upstreams && proxy.load_balancing.upstreams.length > 0) {
-        upstreams = proxy.load_balancing.upstreams.map(u => ({ dial: parseUpstream(u.url).dial }));
-        lbPolicy = { selection_policy: this.buildSelectionPolicy(proxy.load_balancing) };
-      } else {
-        upstreams = [{ dial: parseUpstream(proxy.upstream_url).dial }];
-      }
-
-      reverseProxyHandler = {
-        handler: "reverse_proxy",
-        upstreams
-      };
-
-      // Add load balancing policy if multiple upstreams
-      if (lbPolicy) {
-        reverseProxyHandler.load_balancing = lbPolicy;
-      }
-
-      // Add active health checks if enabled
-      if (proxy.health_checks && proxy.health_checks.enabled) {
-        // Caddy's active checks use `uri` (`path` is deprecated) and `fails`
-        // (consecutive failures before an upstream is marked down); `max_fails`
-        // only exists on passive checks and makes Caddy reject the config.
-        reverseProxyHandler.health_checks = {
-          active: {
-            uri: proxy.health_checks.path || '/health',
-            interval: proxy.health_checks.interval || '30s',
-            timeout: proxy.health_checks.timeout || '5s',
-            fails: proxy.health_checks.max_fails || 3
-          }
-        };
-      }
-
-      // Process headers
-      if (proxy.headers && proxy.headers.length > 0) {
-        const enabledHeaders = proxy.headers.filter(header => header.enabled);
-        const requestHeaders = {};
-        const responseHeaders = {};
-
-        // Group headers by type
-        for (const header of enabledHeaders) {
-          const headerName = header.header_name;
-          const headerValue = header.header_value;
-
-          if (header.header_type === 'request') {
-            requestHeaders[headerName] = [headerValue];
-          } else if (header.header_type === 'response') {
-            responseHeaders[headerName] = [headerValue];
-          }
-        }
-
-        // Add headers to reverse proxy configuration
-        if (Object.keys(requestHeaders).length > 0 || Object.keys(responseHeaders).length > 0) {
-          reverseProxyHandler.headers = {};
-
-          if (Object.keys(requestHeaders).length > 0) {
-            reverseProxyHandler.headers.request = {
-              set: requestHeaders
-            };
-          }
-
-          if (Object.keys(responseHeaders).length > 0) {
-            reverseProxyHandler.headers.response = {
-              set: responseHeaders
-            };
-          }
-        }
-      }
-
-      // Add transport config if using HTTPS. One transport serves every upstream of the
-      // handler, so a load-balanced pool uses TLS when any of its members does.
-      const upstreamUrls = lbPolicy
-        ? proxy.load_balancing.upstreams.map(u => u.url)
-        : [proxy.upstream_url];
-      if (upstreamUrls.some(u => this.shouldUseHTTPSTransport(u))) {
-        reverseProxyHandler.transport = this.buildTlsTransport(proxy);
-      }
-
-      handlers.push(reverseProxyHandler);
-    }
-
-    // Create the route with all handlers
-    const route = {
-      match: [{
-        host: Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]
-      }],
-      handle: handlers
-    };
-
-    // Make sure the route has a terminal handler (reverse_proxy)
-    if (!route.handle.some(h => h.handler === 'reverse_proxy' || h.handler === 'subroute')) {
-      console.error('Route is missing terminal handler:', route);
-      throw new Error('Invalid route configuration: missing terminal handler');
-    }
-
-    return route;
+    return createRouteFromProxy(proxy);
   }
 
-  /**
-   * Check if the upstream URL should use HTTPS transport configuration
-   * @param {string} upstreamUrl - The upstream URL to check
-   * @returns {boolean} True if HTTPS transport should be used
-   */
+  /** Check if the upstream URL should use HTTPS transport configuration */
   shouldUseHTTPSTransport(upstreamUrl) {
-    return parseUpstream(upstreamUrl).useTls;
+    return shouldUseHTTPSTransport(upstreamUrl);
   }
 
-  /**
-   * Caddy selection policy for a load-balanced pool.
-   * Weights only apply to round robin: Caddy's weighted_round_robin takes a `weights`
-   * array in upstream order. "weighted" is accepted as the documented alias.
-   * @param {Object} loadBalancing - proxy.load_balancing
-   * @returns {Object} selection_policy config
-   */
+  /** Caddy selection policy for a load-balanced pool (see utils/caddyRoute) */
   buildSelectionPolicy(loadBalancing) {
-    const requested = loadBalancing.policy || 'round_robin';
-    const upstreams = loadBalancing.upstreams || [];
-    const hasWeights = upstreams.some(u => u.weight !== undefined && u.weight !== null && u.weight !== '');
-    const roundRobin = ['round_robin', 'weighted', 'weighted_round_robin'].includes(requested);
-
-    if (roundRobin && (hasWeights || requested !== 'round_robin')) {
-      return {
-        policy: 'weighted_round_robin',
-        weights: upstreams.map(u => {
-          const weight = parseInt(u.weight, 10);
-          return Number.isInteger(weight) && weight > 0 ? weight : 1;
-        })
-      };
-    }
-    return { policy: requested };
+    return buildSelectionPolicy(loadBalancing);
   }
 
-  /**
-   * HTTP transport that speaks TLS to the upstream
-   * @param {Object} proxy - The proxy (for skip_tls_verify)
-   * @returns {Object} Caddy reverse_proxy transport config
-   */
+  /** HTTP transport that speaks TLS to the upstream (see utils/caddyRoute) */
   buildTlsTransport(proxy) {
-    return {
-      protocol: "http",
-      tls: {
-        insecure_skip_verify: proxy.skip_tls_verify === true
-      }
-    };
+    return buildTlsTransport(proxy);
   }
 
   /**

@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 2.6 | Phase 2: typed Caddy route module (`utils/caddyRoute.ts`) extracted from `caddyService` | done |
 | 2.5 | Phase 2: `middleware/*` and `config/swagger` to strict TypeScript (`config/database` waits for Phase 3) | done |
 | 2.4 | Phase 2: `proxyValidation`, `proxyImport`, `basicAuth`, `discoveryLabels` to strict TypeScript (all of `utils` is `.ts`) | done |
 | 2.3 | Phase 2: `outboundRequest`, `notificationChannels`, `proxyMiddlewares`, `upstreamProbe` to strict TypeScript | done |
@@ -1484,9 +1485,27 @@ and `@types/swagger-ui-express` were added as dev dependencies.
 - Verification: typecheck (loose and strict), build and the full suite (64 suites,
   557 tests) pass; `dist/` boots against a real Caddy.
 
+### 2.6 Typed Caddy route module
+
+The mapping from a proxy row to its Caddy JSON route moved out of `caddyService` into
+`src/utils/caddyRoute.ts` (strict): `createRouteFromProxy`, `buildSelectionPolicy`,
+`buildTlsTransport`, `shouldUseHTTPSTransport`. They are pure functions of the proxy, so
+they are testable without Caddy or a database.
+
+- `CaddyService` keeps the four methods as one-line delegates, so existing callers and
+  test spies are unchanged.
+- Types: `ProxyRouteInput` (the proxy columns the route reads), `CaddyRoute`,
+  `ReverseProxyHandler`, `SelectionPolicy`, `TlsTransport`.
+- The 220-line method is split into `ipFilterHandler`, `headerRules`,
+  `pathRoutingHandler` and `reverseProxyHandler`. Handler order and key order are the
+  same as before; the existing caddyService tests and the Caddy contract test (22/22
+  against a real Caddy) pass unchanged.
+- New `tests/unit/caddyRoute.test.js` (23 tests) covers the module directly.
+- Verification: typecheck (loose and strict), build, full suite and contract test pass.
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). and the middleware (2.5). Next up, in order:
+Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 2: a typed Caddy config module.
+1. Phase 3: class-based Sequelize models and services (also `config/database`).
 2. TypeScript phases 3–5 (see the plan at the top).
