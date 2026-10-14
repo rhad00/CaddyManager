@@ -7,6 +7,29 @@ const winston = require('winston');
 const { GitRepository, ConfigChange, Proxy, Header, Middleware } = require('../models');
 const { prepareImportedProxies, ProxyImportError } = require('../utils/proxyImport');
 
+/** Proxy as exported to Git: without the basic-auth hash (or a legacy plaintext password). */
+const withoutPasswordHash = (proxy) => {
+  if (!proxy.basic_auth) return proxy;
+  // eslint-disable-next-line no-unused-vars
+  const { hashed_password, password, ...basicAuth } = proxy.basic_auth;
+  return { ...proxy, basic_auth: basicAuth };
+};
+
+// Environment passed to git: locations, locale, TLS trust and proxy settings
+const GIT_ENV_ALLOWLIST = [
+  'PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'SYSTEMROOT',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'GIT_SSL_CAINFO',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+];
+
+// Username for token auth over HTTPS, per provider (the token is the password)
+const TOKEN_USERNAMES = {
+  github: 'x-access-token',
+  gitlab: 'oauth2',
+  gitea: 'oauth2',
+  bitbucket: 'x-token-auth',
+};
+
 // Abbreviated or full commit SHA; anything else must never reach a git command line
 const COMMIT_SHA = /^[0-9a-f]{7,40}$/i;
 
@@ -129,34 +152,40 @@ class GitService {
   }
 
   /**
-   * Add authentication to Git URL
+   * Environment for git commands against this repository. The token travels as an
+   * Authorization header in a per-process git config (GIT_CONFIG_*), so it is never
+   * written to .git/config, never on the command line and never in a logged URL.
+   * Each provider accepts HTTPS basic auth with the token as password; the username
+   * follows its convention (GitLab needs "oauth2", Bitbucket "x-token-auth").
    */
-  addAuthToUrl(gitRepo) {
-    try {
-      const url = new URL(gitRepo.repository_url);
+  authEnv(gitRepo) {
+    // Only what git needs: simple-git refuses environments carrying editor/pager hooks,
+    // and nothing else from the backend's environment should reach the child process
+    const inherited = Object.fromEntries(
+      GIT_ENV_ALLOWLIST.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]])
+    );
+    const env = { ...inherited, GIT_TERMINAL_PROMPT: '0' };
+    if (!gitRepo.access_token) return env;
 
-      if (gitRepo.access_token) {
-        const token = this.decrypt(gitRepo.access_token);
+    const username = TOKEN_USERNAMES[gitRepo.provider] || 'oauth2';
+    const basic = Buffer.from(`${username}:${this.decrypt(gitRepo.access_token)}`).toString('base64');
+    return {
+      ...env,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraHeader',
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+    };
+  }
 
-        // GitHub/GitLab use token as username
-        if (gitRepo.provider === 'github' || gitRepo.provider === 'gitlab') {
-          url.username = token;
-          url.password = 'x-oauth-basic';
-        } else if (gitRepo.provider === 'gitea') {
-          url.username = token;
-          url.password = '';
-        } else {
-          // Bitbucket and others
-          url.username = 'x-token-auth';
-          url.password = token;
-        }
-      }
-
-      return url.toString();
-    } catch (error) {
-      logger.error('[GitService] Error adding auth to URL:', error);
-      throw error;
-    }
+  /**
+   * simple-git instance carrying the repository's credentials. simple-git blocks
+   * GIT_CONFIG_COUNT by default because arbitrary config can run commands
+   * (core.sshCommand, ...); here the only key is the constant http.extraHeader and the
+   * value a base64 header we build, so that one switch is enabled.
+   */
+  gitFor(gitRepo, dir) {
+    const options = { unsafe: { allowUnsafeConfigEnvCount: Boolean(gitRepo.access_token) } };
+    return (dir ? simpleGit(dir, options) : simpleGit(options)).env(this.authEnv(gitRepo));
   }
 
   /**
@@ -164,7 +193,6 @@ class GitService {
    */
   async cloneOrUpdateRepo(gitRepo) {
     const repoPath = this.getRepoPath(gitRepo.id);
-    const git = simpleGit();
 
     try {
       const exists = await fs.access(repoPath).then(() => true).catch(() => false);
@@ -172,14 +200,15 @@ class GitService {
       if (!exists) {
         logger.info(`[GitService] Cloning repository: ${gitRepo.repository_url}`);
 
-        const urlWithAuth = this.addAuthToUrl(gitRepo);
-        await git.clone(urlWithAuth, repoPath, ['--branch', gitRepo.branch]);
+        await this.gitFor(gitRepo).clone(gitRepo.repository_url, repoPath, ['--branch', gitRepo.branch]);
 
         logger.info(`[GitService] Repository cloned to ${repoPath}`);
       } else {
         logger.info(`[GitService] Updating repository: ${gitRepo.name}`);
 
-        const repoGit = simpleGit(repoPath);
+        const repoGit = this.gitFor(gitRepo, repoPath);
+        // Clones made by older versions kept the token inside origin's URL
+        await repoGit.remote(['set-url', 'origin', gitRepo.repository_url]);
         // Back onto the tracked branch first: older rollbacks left clones detached or
         // on a backup-* branch, where a pull updates the wrong ref
         await repoGit.checkout(gitRepo.branch);
@@ -215,7 +244,8 @@ class GitService {
       });
 
       // Convert to plain objects
-      const proxiesData = proxies.map(p => p.toJSON());
+      // Password hashes stay out of the repository (a sync keeps the stored ones)
+      const proxiesData = proxies.map((p) => withoutPasswordHash(p.toJSON()));
 
       // Export as JSON
       const proxiesJson = JSON.stringify(proxiesData, null, 2);
@@ -325,8 +355,7 @@ class GitService {
       await git.add('.');
       await git.commit(commitMessage);
 
-      const urlWithAuth = this.addAuthToUrl(gitRepo);
-      await git.push(urlWithAuth, gitRepo.branch);
+      await this.gitFor(gitRepo, repoPath).push('origin', gitRepo.branch);
 
       // Get commit SHA
       const log = await git.log(['-1']);
@@ -372,8 +401,11 @@ class GitService {
     } catch {
       throw new ProxyImportError(['config/proxies.json is not valid JSON']);
     }
-    // Same validation and field whitelist as the API; refuse the whole import up front
-    const proxies = await prepareImportedProxies(definitions);
+    // Same validation and field whitelist as the API; refuse the whole import up front.
+    // Exports carry no password hashes: keep the ones stored for the same proxy names.
+    const stored = await Proxy.findAll({ attributes: ['name', 'basic_auth'] });
+    const existingBasicAuth = new Map(stored.filter((p) => p.basic_auth).map((p) => [p.name, p.basic_auth]));
+    const proxies = await prepareImportedProxies(definitions, { existingBasicAuth });
 
     const { sequelize } = require('../models');
     const t = await sequelize.transaction();
@@ -544,7 +576,7 @@ class GitService {
     await git.addConfig('user.email', 'noreply@caddymanager.local');
     await git.add('.');
     await git.commit(message);
-    await git.push(this.addAuthToUrl(gitRepo), gitRepo.branch);
+    await this.gitFor(gitRepo, repoPath).push('origin', gitRepo.branch);
     return (await git.revparse(['HEAD'])).trim();
   }
 
@@ -600,11 +632,8 @@ class GitService {
    */
   async testConnection(gitRepo) {
     try {
-      const git = simpleGit();
-      const urlWithAuth = this.addAuthToUrl(gitRepo);
-
       // Try to list remote
-      await git.listRemote([urlWithAuth]);
+      await this.gitFor(gitRepo).listRemote([gitRepo.repository_url]);
 
       return { success: true, message: 'Connection successful' };
     } catch (error) {

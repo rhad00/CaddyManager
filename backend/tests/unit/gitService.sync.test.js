@@ -14,7 +14,7 @@ mockTransaction.commit.mockImplementation(async () => { mockTransaction.finished
 jest.mock('../../src/models', () => ({
   GitRepository: { findByPk: jest.fn() },
   ConfigChange: {},
-  Proxy: { destroy: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'p1' }) },
+  Proxy: { destroy: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'p1' }), findAll: jest.fn().mockResolvedValue([]) },
   Header: { create: jest.fn() },
   Middleware: { create: jest.fn() },
   sequelize: { transaction: jest.fn(async () => mockTransaction) },

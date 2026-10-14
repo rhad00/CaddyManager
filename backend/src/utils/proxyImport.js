@@ -26,22 +26,25 @@ const pick = (source, fields) => Object.fromEntries(
 );
 
 /**
- * Basic auth from an export carries the bcrypt hash; one written by hand may carry a
- * plaintext password, which is hashed like an API request.
+ * Basic auth from a backup carries the bcrypt hash; one written by hand may carry a
+ * plaintext password, which is hashed like an API request. A Git export carries
+ * neither: the hash stored for the proxy of the same name is kept.
+ * @param {Object} input
+ * @param {Object} [existing] - basic_auth currently stored for a proxy of the same name
  */
-async function importBasicAuth(input) {
+async function importBasicAuth(input, existing) {
   if (input === undefined) return input;
   if (input?.hashed_password !== undefined && !BCRYPT_HASH.test(String(input.hashed_password))) {
     throw new Error('basic_auth hashed_password is not a bcrypt hash');
   }
-  return prepareBasicAuth(input, input);
+  return prepareBasicAuth(input, input?.hashed_password ? input : (existing || input));
 }
 
 /**
  * @param {Object} data - one proxy definition
  * @returns {Promise<{fields: Object, headers: Object[], middlewares: Object[]}>}
  */
-async function prepareOne(data) {
+async function prepareOne(data, existingBasicAuth = new Map()) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('entry must be an object');
   }
@@ -56,7 +59,7 @@ async function prepareOne(data) {
   const { basic_auth: basicAuth, ...rest } = pick(data, PROXY_ALLOWED_FIELDS);
   const fields = basicAuth === undefined || basicAuth === null
     ? rest
-    : { ...rest, basic_auth: await importBasicAuth(basicAuth) };
+    : { ...rest, basic_auth: await importBasicAuth(basicAuth, existingBasicAuth.get(data.name)) };
 
   const list = (value) => (Array.isArray(value) ? value : []);
   return {
@@ -70,15 +73,17 @@ async function prepareOne(data) {
  * Validate and sanitise a list of proxy definitions. All entries are checked before
  * anything is returned, so the caller can refuse the whole import up front.
  * @param {Object[]} proxies
+ * @param {{existingBasicAuth?: Map<string, Object>}} [options] - stored basic_auth by
+ *   proxy name, for imports whose password hashes were left out (Git exports)
  * @returns {Promise<Array<{fields: Object, headers: Object[], middlewares: Object[]}>>}
  * @throws {ProxyImportError} listing every invalid entry
  */
-async function prepareImportedProxies(proxies) {
+async function prepareImportedProxies(proxies, { existingBasicAuth = new Map() } = {}) {
   if (!Array.isArray(proxies)) {
     throw new ProxyImportError(['proxies must be a list']);
   }
 
-  const results = await Promise.allSettled(proxies.map(prepareOne));
+  const results = await Promise.allSettled(proxies.map((data) => prepareOne(data, existingBasicAuth)));
   const label = (i) => `#${i + 1} "${proxies[i]?.name ?? 'unnamed'}"`;
   const errors = results.flatMap((result, i) => (result.status === 'rejected'
     ? [`${label(i)}: ${result.reason.message}`]

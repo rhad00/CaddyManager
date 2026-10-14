@@ -50,7 +50,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.21 | Alert webhooks: SSRF | done |
 | 0.22 | Git: rollback to a commit | done |
 | 0.23a | Git: backend image has no `git` binary or CA certificates | done |
-| 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
+| 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | done |
 | 0.24 | Discovery: container state, unused labels | pending |
 | 0.25 | Cluster mode: schedulers run in every instance | pending |
 | 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
@@ -836,6 +836,45 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
 - Verification: in the rebuilt image, `git` and `/etc/ssl/certs/ca-certificates.crt`
   are present, and `gitService.testConnection` succeeds against
   `https://github.com/caddyserver/caddy.git`. Before the change the image had neither.
+
+### 0.23b Git credentials and secrets
+
+- Problem:
+  - Clones used a URL with the access token embedded, so the token was stored in
+    plain text in the clone's `.git/config` (`remote.origin.url`). It also appeared
+    in the git command line and in logged error messages that include the URL.
+    Pushes passed the same URL.
+  - GitLab and GitHub got `<token>:x-oauth-basic`. GitLab rejects that; it expects
+    `oauth2:<token>`.
+  - The Git export (`config/proxies.json`) contained each proxy's basic-auth bcrypt
+    hash, so anyone with read access to the repository could crack the passwords
+    offline.
+- Fix:
+  - The token is sent per command as an `Authorization: Basic` header through git's
+    environment config (`GIT_CONFIG_COUNT`/`KEY`/`VALUE` → `http.extraHeader`). It is
+    not on disk, not on the command line, and not in URLs.
+  - Clones and pushes use the clean repository URL (`push origin <branch>`). Clones
+    made by older versions have `origin` reset to the clean URL on the next update.
+  - Usernames per provider: GitHub `x-access-token`, GitLab and Gitea `oauth2`,
+    Bitbucket `x-token-auth`; the token is the password.
+  - git runs with an allowlisted environment (PATH, HOME, locale, CA and proxy
+    settings) and `GIT_TERMINAL_PROMPT=0`. simple-git's `allowUnsafeConfigEnvCount`
+    is enabled only when a token is set; the only key is the constant
+    `http.extraHeader`.
+  - The Git export drops `hashed_password` (and legacy `password`). A sync keeps the
+    hash stored for the proxy of the same name (`prepareImportedProxies(...,
+    { existingBasicAuth })`). Backups still carry hashes: they are local, optionally
+    encrypted, and a restore needs them.
+- Tests: new `gitCredentials` integration (9) on a real local repository:
+  - the clone's `.git/config` has no token, and a legacy token URL is cleaned on
+    update;
+  - per-provider basic credentials, and none without a token;
+  - the export has no hash, and a sync keeps the stored hash.
+- Verification:
+  - Backend 421 passed, 21 skipped.
+  - Against a local HTTP server, `testConnection` made git send `Authorization: Basic`
+    for `oauth2:<token>` on its first request; the logged command and the error
+    contain no token.
 
 ## Where this session stopped (usage limit)
 
