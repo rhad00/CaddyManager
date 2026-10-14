@@ -1,5 +1,5 @@
 const express = require('express');
-const metricsService = require('../../services/metricsService');
+const { metricsService } = require('../../services/metricsService');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
 const router = express.Router();
 

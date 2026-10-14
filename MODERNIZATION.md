@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.9 | Phase 3: `metricsService` to strict TypeScript, with real tests | done |
 | 3.8 | Phase 3: `templateService` and `migrationService` (first class-instance services, named exports) | done |
 | 3.7 | Phase 3: `alertService` and `authService` to strict TypeScript (all function-style services done) | done |
 | 3.6 | Phase 3: function-style services (`auditService`, `emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`, `trafficStats`, `logService`) to strict TypeScript | done |
@@ -1714,9 +1715,26 @@ already resolves an instance exported under the service's own name.
 - Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
   PostgreSQL suites, and a `dist/` boot that ran all 10 migrations through the new service.
 
+### 3.9 metricsService
+
+`metricsService.ts`: class and instance exported by name (`{ metricsService }`), callers
+`src/index.js`, `api/metrics/routes.js` and `metricsService.test.js` updated.
+
+- Types: `MetricPoint`, `ParsedMetrics`, `MetricsSummary`, `StatusCodeTotals`,
+  `MetricsSnapshotResult`. Error handling reads `error instanceof Error` instead of assuming
+  `.message`.
+- The existing `metricsService.test.js` only checked that the module loads (every assertion is
+  conditional on a function that does not exist). New `tests/unit/metricsService.parse.test.js`
+  (14 tests) covers the Prometheus parser (labels, values with exponents and timestamps,
+  skipped lines), the sums and averages, status-class grouping, the summary, the 10 s cache,
+  the Caddy failure message, the http / tls / system filters, snapshot saving, retention
+  cleanup and the history listing.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 605 tests) and a
+  `dist/` boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`metricsService`, `certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
+1. Phase 3: the class-instance services one at a time, with their callers and mocks (`certificateService`, `backupService`, `dockerDiscoveryService`, `gitService`, `caddyService` last).
 2. TypeScript phases 3–5 (see the plan at the top).
