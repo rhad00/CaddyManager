@@ -48,7 +48,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.19 | API keys: write-scope check and key owner status | done |
 | 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | done |
 | 0.21 | Alert webhooks: SSRF | done |
-| 0.22 | Git: rollback to a commit | pending |
+| 0.22 | Git: rollback to a commit | done |
 | 0.23 | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
 | 0.24 | Discovery: container state, unused labels | pending |
 | 0.25 | Cluster mode: schedulers run in every instance | pending |
@@ -783,6 +783,47 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - Fix: stored header values are only kept while the URL and channel type stay the
     same; otherwise the values must be re-entered (400).
   - Test: +1 in `alertChannels.validation`.
+
+### 0.22 GitOps rollback
+
+- Problem:
+  - `rollbackToCommit` checked out the target commit and then called `syncFromGit`.
+    That pulled the branch again (`git pull origin <branch>`), so the config applied
+    was the branch head, not the target. The rollback did nothing.
+  - Even with the right config applied, the next auto-sync saw branch head ≠
+    `last_commit_sha` and re-applied the head.
+  - Each call left a `backup-<timestamp>` branch and the clone on a detached HEAD.
+  - The SHA was passed to `git checkout` as is: `--output=/tmp/x` reached git as an
+    option (the route validated the format, the service did not). A commit from
+    another branch was accepted.
+  - All failures answered 500.
+- Fix:
+  - Rollback validates the SHA, resolves it to a commit in the tracked branch's
+    history (`rev-parse`, `merge-base`), and reads `config/proxies.json` at that
+    commit with `git show`. Nothing is checked out.
+  - The configuration is applied through `applyProxyDefinitions`, now shared with
+    sync (validation and whitelist from 0.16, transaction, Caddy rebuild).
+  - The rollback is recorded so auto-sync keeps it. With auto-commit, a
+    "Rollback to <sha>" commit with the exported configuration is pushed, so Git and
+    the database agree. Without it, the branch head is marked as seen; the next commit
+    pushed to the branch is applied as usual.
+  - `cloneOrUpdateRepo` checks out the tracked branch before pulling, which repairs
+    clones left detached by the old rollback.
+  - `getDiff` refuses refs that are not SHAs or `HEAD`.
+  - Errors map to 400/404 (`GitRollbackError`), invalid configuration to 400.
+- Regression found and fixed here (from the 0.16 follow-up): refusing
+  `basic_auth: null` on import broke re-importing CaddyManager's own exports. Proxies
+  without basic auth are exported with `null`, which affects backups and Git exports
+  alike. `null` now means "not set". A backup round-trip test with a proxy without
+  basic auth guards it; the earlier round-trip test only used a proxy with basic auth.
+- Tests:
+  - New `gitRollback` integration (5) on a real local Git repository (`file://`
+    remote) and SQLite: rollback applies the target and survives the next sync;
+    auto-commit pushes a matching rollback commit; unknown SHA, off-branch commit and
+    option-like input are refused without changes.
+  - `importRoutes.errors` +1 (rollback 404 mapping).
+  - `proxyImport` and `backupRestore.validation` updated for the null case.
+- Verification: backend 412 passed, 21 skipped.
 
 ## Where this session stopped (usage limit)
 

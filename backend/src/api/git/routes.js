@@ -620,6 +620,12 @@ router.post('/repositories/:id/rollback', [
       message: `Rolled back to commit ${commit_sha.substr(0, 7)}`
     });
   } catch (error) {
+    if (error instanceof gitService.GitRollbackError) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    if (error instanceof ProxyImportError) {
+      return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+    }
     console.error('Rollback error:', error);
     res.status(500).json({
       success: false,

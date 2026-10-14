@@ -11,7 +11,12 @@ jest.mock('../../src/middleware/auth', () => ({
   requireApiKeyPermission: () => (_req, _res, next) => next(),
 }));
 jest.mock('../../src/services/backupService', () => ({ restoreBackup: jest.fn() }));
-jest.mock('../../src/services/gitService', () => ({ syncFromGit: jest.fn() }));
+jest.mock('../../src/services/gitService', () => {
+  class GitRollbackError extends Error {
+    constructor(message, statusCode) { super(message); this.statusCode = statusCode; }
+  }
+  return { syncFromGit: jest.fn(), rollbackToCommit: jest.fn(), GitRollbackError };
+});
 
 const express = require('express');
 const request = require('supertest');
@@ -58,13 +63,21 @@ test('backup restore passes on the Caddy outcome in its message', async () => {
 });
 
 test('Git sync answers 400 with the invalid entries', async () => {
-  const repo = await GitRepository.create({ name: 'gitops', repository_url: 'https://example.com/r.git', provider: 'generic', auth_type: 'none' })
-    .catch(() => null);
+  const repo = await GitRepository.create({ name: 'gitops', repository_url: 'https://example.com/r.git', provider: 'gitea' });
   gitService.syncFromGit.mockRejectedValue(refused());
 
-  const res = await request(app).post(`/api/git/repositories/${repo ? repo.id : 'missing'}/sync`);
+  const res = await request(app).post(`/api/git/repositories/${repo.id}/sync`);
 
-  expect(repo).not.toBeNull();
   expect(res.status).toBe(400);
   expect(res.body.errors).toHaveLength(1);
+});
+
+test('Git rollback answers with the status of the rollback error', async () => {
+  const repo = await GitRepository.create({ name: 'gitops-2', repository_url: 'https://example.com/r2.git', provider: 'gitea' });
+  gitService.rollbackToCommit.mockRejectedValue(new gitService.GitRollbackError('Commit abc1234 not found', 404));
+
+  const res = await request(app).post(`/api/git/repositories/${repo.id}/rollback`).send({ commit_sha: 'abc1234' });
+
+  expect(res.status).toBe(404);
+  expect(res.body.message).toMatch(/not found/);
 });

@@ -72,6 +72,16 @@ test('a backup round-trip keeps every proxy feature and pushes the result to Cad
   expect(caddyService.rebuildConfigFromDatabase).toHaveBeenCalledTimes(1);
 });
 
+test('a proxy without basic auth (exported as null) survives a round-trip', async () => {
+  const { basic_auth: _omitted, ...plain } = fullProxy;
+  await Proxy.create({ ...plain, name: 'plain-app' });
+  const { backup } = await backupService.createBackup(user);
+
+  await backupService.restoreBackup(backup.id, user);
+
+  expect((await Proxy.findAll()).map((p) => p.name)).toEqual(['plain-app']);
+});
+
 test('a backup with a restricted upstream is refused and the current proxies stay', async () => {
   await Proxy.create(fullProxy);
   const backup = await writeBackup([{ ...fullProxy, name: 'metadata', upstream_url: 'http://169.254.169.254' }]);

@@ -5,7 +5,19 @@ const crypto = require('crypto');
 const yaml = require('js-yaml');
 const winston = require('winston');
 const { GitRepository, ConfigChange, Proxy, Header, Middleware } = require('../models');
-const { prepareImportedProxies } = require('../utils/proxyImport');
+const { prepareImportedProxies, ProxyImportError } = require('../utils/proxyImport');
+
+// Abbreviated or full commit SHA; anything else must never reach a git command line
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/i;
+
+class GitRollbackError extends Error {
+  /** @param {string} message @param {number} statusCode */
+  constructor(message, statusCode) {
+    super(message);
+    this.name = 'GitRollbackError';
+    this.statusCode = statusCode;
+  }
+}
 
 // Create logger for this service
 const logger = winston.createLogger({
@@ -168,6 +180,9 @@ class GitService {
         logger.info(`[GitService] Updating repository: ${gitRepo.name}`);
 
         const repoGit = simpleGit(repoPath);
+        // Back onto the tracked branch first: older rollbacks left clones detached or
+        // on a backup-* branch, where a pull updates the wrong ref
+        await repoGit.checkout(gitRepo.branch);
         await repoGit.pull('origin', gitRepo.branch);
 
         logger.info('[GitService] Repository updated');
@@ -345,6 +360,47 @@ class GitService {
   }
 
   /**
+   * Replace all proxies with the definitions of a config/proxies.json document and push
+   * the result to Caddy. Every entry is validated before anything is deleted.
+   * @param {string} proxiesJson
+   * @returns {Promise<number>} number of proxies applied
+   */
+  async applyProxyDefinitions(proxiesJson) {
+    let definitions;
+    try {
+      definitions = JSON.parse(proxiesJson);
+    } catch {
+      throw new ProxyImportError(['config/proxies.json is not valid JSON']);
+    }
+    // Same validation and field whitelist as the API; refuse the whole import up front
+    const proxies = await prepareImportedProxies(definitions);
+
+    const { sequelize } = require('../models');
+    const t = await sequelize.transaction();
+    try {
+      // Replaces all proxies; no merging
+      await Proxy.destroy({ where: {}, transaction: t });
+      for (const { fields, headers, middlewares } of proxies) {
+        const proxy = await Proxy.create(fields, { transaction: t });
+        for (const header of headers) {
+          await Header.create({ ...header, proxy_id: proxy.id }, { transaction: t });
+        }
+        for (const middleware of middlewares) {
+          await Middleware.create({ ...middleware, proxy_id: proxy.id }, { transaction: t });
+        }
+      }
+      await t.commit();
+    } catch (error) {
+      if (!t.finished) await t.rollback();
+      throw error;
+    }
+
+    const caddyService = require('./caddyService');
+    await caddyService.rebuildConfigFromDatabase();
+    return proxies.length;
+  }
+
+  /**
    * Sync from Git (GitOps mode) - pull changes and apply
    */
   async syncFromGit(gitRepoId) {
@@ -366,58 +422,18 @@ class GitService {
         return { synced: false, message: 'No new commits' };
       }
 
-      // Read configuration from files
-      const configDir = path.join(repoPath, 'config');
-      const proxiesPath = path.join(configDir, 'proxies.json');
+      logger.info('[GitService] Applying configuration from Git...');
+      const proxiesData = await fs.readFile(path.join(repoPath, 'config', 'proxies.json'), 'utf8');
+      // On failure (invalid file, Caddy error) last_commit_sha stays put, so the next sync
+      // retries this commit
+      const count = await this.applyProxyDefinitions(proxiesData);
 
-      const proxiesData = await fs.readFile(proxiesPath, 'utf8');
-      // Same validation and field whitelist as the API; refuse the whole sync up front
-      const proxies = await prepareImportedProxies(JSON.parse(proxiesData));
+      gitRepo.last_commit_sha = latestSha;
+      gitRepo.last_sync = new Date();
+      await gitRepo.save();
 
-      // Apply configuration (with transaction)
-      const { sequelize } = require('../models');
-      const t = await sequelize.transaction();
-
-      try {
-        // Note: This is a simple sync that replaces all proxies
-        // In production, you might want smart merging
-
-        logger.info('[GitService] Applying configuration from Git...');
-
-        // Clear existing proxies
-        await Proxy.destroy({ where: {}, transaction: t });
-
-        // Create proxies from Git
-        for (const { fields, headers, middlewares } of proxies) {
-          const proxy = await Proxy.create(fields, { transaction: t });
-
-          for (const header of headers) {
-            await Header.create({ ...header, proxy_id: proxy.id }, { transaction: t });
-          }
-
-          for (const middleware of middlewares) {
-            await Middleware.create({ ...middleware, proxy_id: proxy.id }, { transaction: t });
-          }
-        }
-
-        await t.commit();
-
-        // Push the synced proxies to Caddy. On failure last_commit_sha stays put, so the
-        // next sync retries this commit.
-        const caddyService = require('./caddyService');
-        await caddyService.rebuildConfigFromDatabase();
-
-        gitRepo.last_commit_sha = latestSha;
-        gitRepo.last_sync = new Date();
-        await gitRepo.save();
-
-        logger.info(`[GitService] Synced ${proxies.length} proxies from Git (${latestSha.substr(0, 7)})`);
-        return { synced: true, commit: latestSha, proxies: proxies.length };
-      } catch (error) {
-        // Roll back unless the error happened after the commit
-        if (!t.finished) await t.rollback();
-        throw error;
-      }
+      logger.info(`[GitService] Synced ${count} proxies from Git (${latestSha.substr(0, 7)})`);
+      return { synced: true, commit: latestSha, proxies: count };
     } catch (error) {
       logger.error('[GitService] Error syncing from Git:', error);
       throw error;
@@ -469,6 +485,12 @@ class GitService {
    */
   async getDiff(gitRepoId, fromCommit, toCommit = 'HEAD') {
     try {
+      // Refs reach the git command line: only SHAs or HEAD, never anything option-like
+      for (const ref of [fromCommit, toCommit]) {
+        if (ref !== 'HEAD' && !COMMIT_SHA.test(String(ref))) {
+          throw new GitRollbackError(`Invalid commit reference: ${ref}`, 400);
+        }
+      }
       const gitRepo = await GitRepository.findByPk(gitRepoId);
       const repoPath = this.getRepoPath(gitRepo.id);
       const git = simpleGit(repoPath);
@@ -482,29 +504,91 @@ class GitService {
   }
 
   /**
-   * Rollback to a specific commit
+   * Resolve a (possibly abbreviated) SHA to a commit on the tracked branch.
+   * @throws {GitRollbackError} 404 when unknown or not in the branch history
+   */
+  async resolveBranchCommit(git, sha, branch) {
+    let fullSha = '';
+    try {
+      fullSha = (await git.raw(['rev-parse', '--verify', '--quiet', `${sha}^{commit}`])).trim();
+    } catch {
+      fullSha = '';
+    }
+    if (!fullSha) {
+      throw new GitRollbackError(`Commit ${sha} not found`, 404);
+    }
+
+    // On the branch means: an ancestor of (or equal to) its head
+    let mergeBase = '';
+    try {
+      mergeBase = (await git.raw(['merge-base', fullSha, 'HEAD'])).trim();
+    } catch {
+      mergeBase = '';
+    }
+    if (mergeBase !== fullSha) {
+      throw new GitRollbackError(`Commit ${sha} is not on branch ${branch}`, 404);
+    }
+    return fullSha;
+  }
+
+  /**
+   * Export the current configuration, commit it and push it. Returns the new commit's
+   * SHA, or null when the export matches what is already committed.
+   */
+  async commitExport(gitRepo, git, repoPath, message) {
+    await this.exportConfigToFile(repoPath);
+    const status = await git.status();
+    if (status.files.length === 0) return null;
+
+    await git.addConfig('user.name', 'CaddyManager');
+    await git.addConfig('user.email', 'noreply@caddymanager.local');
+    await git.add('.');
+    await git.commit(message);
+    await git.push(this.addAuthToUrl(gitRepo), gitRepo.branch);
+    return (await git.revparse(['HEAD'])).trim();
+  }
+
+  /**
+   * Roll the proxies back to the configuration of a commit on the tracked branch.
+   *
+   * The file is read with `git show`, without checking anything out. The result is then
+   * recorded so the next auto-sync does not undo it: with auto-commit, a "Rollback to"
+   * commit is pushed (Git and the database agree again); otherwise the branch head is
+   * marked as seen, and the next commit pushed to the branch is applied as usual.
    */
   async rollbackToCommit(gitRepoId, commitSha) {
     try {
+      if (!COMMIT_SHA.test(String(commitSha))) {
+        throw new GitRollbackError('Invalid commit SHA', 400);
+      }
       const gitRepo = await GitRepository.findByPk(gitRepoId);
-      const repoPath = this.getRepoPath(gitRepo.id);
+      if (!gitRepo) {
+        throw new GitRollbackError('Git repository not found', 404);
+      }
+
+      const repoPath = await this.cloneOrUpdateRepo(gitRepo);
       const git = simpleGit(repoPath);
+      const fullSha = await this.resolveBranchCommit(git, commitSha, gitRepo.branch);
 
-      // Create a new branch for safety
-      const backupBranch = `backup-${Date.now()}`;
-      await git.checkoutBranch(backupBranch, gitRepo.branch);
+      let proxiesJson;
+      try {
+        proxiesJson = await git.show([`${fullSha}:config/proxies.json`]);
+      } catch {
+        throw new GitRollbackError(`Commit ${commitSha} has no config/proxies.json`, 404);
+      }
 
-      // Checkout the specific commit (detached HEAD)
-      await git.checkout(commitSha);
+      const count = await this.applyProxyDefinitions(proxiesJson);
 
-      // Apply the configuration from that commit
-      await this.syncFromGit(gitRepoId);
+      const headSha = (await git.revparse(['HEAD'])).trim();
+      const recordedAs = gitRepo.auto_commit
+        ? await this.commitExport(gitRepo, git, repoPath, `Rollback to ${fullSha.slice(0, 7)} (CaddyManager)`)
+        : null;
+      gitRepo.last_commit_sha = recordedAs || headSha;
+      gitRepo.last_sync = new Date();
+      await gitRepo.save();
 
-      // Return to main branch
-      await git.checkout(gitRepo.branch);
-
-      logger.info(`[GitService] Rolled back to commit ${commitSha.substr(0, 7)}`);
-      return { success: true, commit: commitSha, backup_branch: backupBranch };
+      logger.info(`[GitService] Rolled back to commit ${fullSha.slice(0, 7)}`);
+      return { success: true, commit: fullSha, proxies: count, recorded_as: recordedAs };
     } catch (error) {
       logger.error('[GitService] Error rolling back:', error);
       throw error;
@@ -531,3 +615,4 @@ class GitService {
 }
 
 module.exports = new GitService();
+module.exports.GitRollbackError = GitRollbackError;

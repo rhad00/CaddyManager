@@ -52,8 +52,11 @@ async function prepareOne(data) {
   const validation = validateProxyInput(data);
   if (!validation.valid) throw new Error(validation.message);
 
-  const fields = pick(data, PROXY_ALLOWED_FIELDS);
-  if ('basic_auth' in fields) fields.basic_auth = await importBasicAuth(fields.basic_auth);
+  // Exports write basic_auth: null for proxies without it, meaning "not set"
+  const { basic_auth: basicAuth, ...rest } = pick(data, PROXY_ALLOWED_FIELDS);
+  const fields = basicAuth === undefined || basicAuth === null
+    ? rest
+    : { ...rest, basic_auth: await importBasicAuth(basicAuth) };
 
   const list = (value) => (Array.isArray(value) ? value : []);
   return {

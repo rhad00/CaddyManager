@@ -85,8 +85,14 @@ describe('prepareImportedProxies', () => {
     ])).rejects.toThrow(/#2 "second".*shared\.example\.com.*#1/);
   });
 
-  test('rejects basic_auth: null, as the API would', async () => {
-    await expect(prepareImportedProxies([exported({ basic_auth: null })])).rejects.toThrow(/basic_auth must be an object/);
+  // Our own exports write basic_auth: null for proxies without it; they must re-import
+  test('treats basic_auth: null (as exported for proxies without it) as not set', async () => {
+    const [prepared] = await prepareImportedProxies([exported({ basic_auth: null })]);
+    expect(prepared.fields).not.toHaveProperty('basic_auth');
+  });
+
+  test('rejects a basic_auth that is not an object', async () => {
+    await expect(prepareImportedProxies([exported({ basic_auth: 'admin:secret' })])).rejects.toThrow(/basic_auth must be an object/);
   });
 
   test('rejects input that is not a list of objects', async () => {
