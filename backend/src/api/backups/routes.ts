@@ -1,11 +1,14 @@
-const express = require('express');
-const { rateLimit } = require('express-rate-limit');
-const { backupService } = require('../../services/backupService');
-const { ProxyImportError } = require('../../utils/proxyImport');
-const { authMiddleware, roleMiddleware, requireApiKeyPermission } = require('../../middleware/auth');
-const fs = require('fs');
-const path = require('path');
-const router = express.Router();
+import express, { type Request, type Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
+import fs from 'fs';
+import { backupService } from '../../services/backupService';
+import { ProxyImportError } from '../../utils/proxyImport';
+import { authMiddleware, roleMiddleware, requireApiKeyPermission } from '../../middleware/auth';
+
+export const router = express.Router();
+
+/** The signed-in user, as the backup service reads it (authMiddleware has set it) */
+const currentUser = (req: Request): { id: string } => req.user as { id: string };
 
 // Rate-limit mutating backup operations to prevent resource exhaustion.
 // Restore writes to disk and re-loads Caddy config; allow 3 per minute.
@@ -38,7 +41,7 @@ const backupMutationRateLimit = rateLimit({
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/', [authMiddleware, roleMiddleware('admin')], async (_req: Request, res: Response) => {
   try {
     const backups = await backupService.getBackups();
     
@@ -72,9 +75,9 @@ router.get('/', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
  *       403:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin')], async (req: Request, res: Response) => {
   try {
-    const result = await backupService.createBackup(req.user);
+    const result = await backupService.createBackup(currentUser(req));
     
     res.status(201).json({
       success: true,
@@ -114,7 +117,7 @@ router.post('/', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
     const result = await backupService.getBackupFile(req.params.id);
     
@@ -154,9 +157,9 @@ router.get('/:id', [authMiddleware, roleMiddleware('admin')], async (req, res) =
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.post('/:id/restore', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.post('/:id/restore', [backupMutationRateLimit, authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const result = await backupService.restoreBackup(req.params.id, req.user);
+    const result = await backupService.restoreBackup(req.params.id, currentUser(req));
 
     res.status(200).json({
       success: true,
@@ -195,9 +198,9 @@ router.post('/:id/restore', [backupMutationRateLimit, authMiddleware, roleMiddle
  *       404:
  *         $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req, res) => {
+router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
   try {
-    const result = await backupService.deleteBackup(req.params.id);
+    await backupService.deleteBackup(req.params.id);
     
     res.status(200).json({
       success: true,
@@ -225,7 +228,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
  *       501:
  *         description: Not implemented
  */
-router.post('/upload', [authMiddleware, roleMiddleware('admin')], async (req, res) => {
+router.post('/upload', [authMiddleware, roleMiddleware('admin')], async (_req: Request, res: Response) => {
   // This would require a file upload middleware like multer
   // For now, we'll just return a not implemented response
   res.status(501).json({
@@ -233,5 +236,3 @@ router.post('/upload', [authMiddleware, roleMiddleware('admin')], async (req, re
     message: 'Backup upload not implemented yet'
   });
 });
-
-module.exports = router;
