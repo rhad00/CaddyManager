@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.5 | Phase 3: `config/database` and `models/index` to strict TypeScript | done |
 | 3.4 | Phase 3: `Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository` models as typed classes (all models done) | done |
 | 3.3 | Phase 3: `AlertRule`, `ApiKey`, `AuditLog`, `Backup`, `Metric`, `NotificationChannel` models as typed classes | done |
 | 3.2 | Phase 3: `Proxy`, `Header`, `Middleware`, `Template` models as typed classes | done |
@@ -1595,9 +1596,30 @@ columns and defaults are unchanged.
 - Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
   PostgreSQL suites (17 suites, 153 tests) and a `dist/` boot pass.
 
+### 3.5 Database config and the models index
+
+`config/database.ts` and `models/index.ts` are TypeScript (strict). `sequelize` is now a
+real `Sequelize` type, which is what made this wait until every model was a class.
+
+- `models/index.ts` imports the 16 classes, sets up the same associations (same aliases,
+  including both `creator` on `Backup` itself and `backupCreator` here) and re-exports
+  `sequelize` plus the models. `require('../models')` callers and the `jest.mock` factories
+  for the index are unchanged.
+- One behaviour change in `config/database`: `DB_TYPE=postgres` without `DB_URL` or
+  `DATABASE_URL` threw before too, but with Node's `The "url" argument must be of type
+  string. Received undefined`; it now throws `DB_TYPE=postgres requires DB_URL (or
+  DATABASE_URL) to be set` at start-up.
+- `migrationService.getExecutedMigrations`: the raw query's rows are cast to
+  `{ name: string }[]`.
+- Unchanged and still open: with `DB_SSL=true` the connection sets
+  `rejectUnauthorized: false` (see 2.5).
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests), Caddy contract test (22/22) and a `dist/`
+  boot pass.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: `models/index` and `config/database` to TypeScript, then the services one by one.
+1. Phase 3: the services one by one (small ones first; `caddyService`, `gitService`, `dockerDiscoveryService` last).
 2. TypeScript phases 3–5 (see the plan at the top).

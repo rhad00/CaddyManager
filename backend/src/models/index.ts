@@ -1,20 +1,20 @@
-const { sequelize } = require('../config/database');
-const { User } = require('./user');
-const { Proxy } = require('./proxy');
-const { Header } = require('./header');
-const { Middleware } = require('./middleware');
-const { Template } = require('./template');
-const { Backup } = require('./backup');
-const { Certificate } = require('./certificate');
-const { CertificateAuthority } = require('./certificateAuthority');
-const { AuditLog } = require('./auditLog');
-const { Metric } = require('./metric');
-const { DiscoveredService } = require('./discoveredService');
-const { GitRepository } = require('./gitRepository');
-const { ConfigChange } = require('./configChange');
-const { AlertRule } = require('./alertRule');
-const { NotificationChannel } = require('./notificationChannel');
-const { ApiKey } = require('./apiKey');
+import { sequelize } from '../config/database';
+import { User } from './user';
+import { Proxy } from './proxy';
+import { Header } from './header';
+import { Middleware } from './middleware';
+import { Template } from './template';
+import { Backup } from './backup';
+import { Certificate } from './certificate';
+import { CertificateAuthority } from './certificateAuthority';
+import { AuditLog } from './auditLog';
+import { Metric } from './metric';
+import { DiscoveredService } from './discoveredService';
+import { GitRepository } from './gitRepository';
+import { ConfigChange } from './configChange';
+import { AlertRule } from './alertRule';
+import { NotificationChannel } from './notificationChannel';
+import { ApiKey } from './apiKey';
 
 // Define associations after all models are loaded
 const setupAssociations = () => {
@@ -60,7 +60,7 @@ const setupAssociations = () => {
 // Call setupAssociations after models are defined
 setupAssociations();
 
-module.exports = {
+export {
   sequelize,
   User,
   Proxy,

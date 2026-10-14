@@ -32,7 +32,7 @@ class MigrationService {
       const [results] = await sequelize.query(
         'SELECT name FROM "SequelizeMeta" ORDER BY name ASC'
       );
-      return results.map(r => r.name);
+      return /** @type {Array<{ name: string }>} */ (results).map(r => r.name);
     } catch (error) {
       // Table might not exist yet
       return [];
