@@ -22,7 +22,8 @@
     "dev": "nodemon --watch src --ext js,ts,json --exec \"npm run build && node --enable-source-maps dist/index.js\"",
     "start": "npm run build && node --enable-source-maps dist/index.js",
     "start:cluster": "npm run build && CLUSTER_MODE=true node --enable-source-maps dist/cluster.js",
-    "test:contract": "jest --config jest.contract.config.js"
+    "test:contract": "jest --config jest.contract.config.js",
+    "test:e2e": "jest --config jest.e2e.config.js"
   },
   "keywords": [],
   "author": "",
