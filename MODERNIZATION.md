@@ -49,7 +49,8 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | done |
 | 0.21 | Alert webhooks: SSRF | done |
 | 0.22 | Git: rollback to a commit | done |
-| 0.23 | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
+| 0.23a | Git: backend image has no `git` binary or CA certificates | done |
+| 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | pending |
 | 0.24 | Discovery: container state, unused labels | pending |
 | 0.25 | Cluster mode: schedulers run in every instance | pending |
 | 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
@@ -824,6 +825,17 @@ this by mocking axios. The fix is split into 0.11a–e, one commit each. The goa
   - `importRoutes.errors` +1 (rollback 404 mapping).
   - `proxyImport` and `backupRestore.validation` updated for the null case.
 - Verification: backend 412 passed, 21 skipped.
+
+### 0.23a Git in the backend image
+
+- Problem: GitOps uses `simple-git`, which runs the `git` binary. The backend image
+  (`node:24-slim` + `openssl`) had neither `git` nor a CA bundle, so every GitOps call
+  (test connection, sync, export, rollback) failed in Docker. HTTPS clones would also
+  have failed certificate verification.
+- Fix: install `git` and `ca-certificates` in `backend/Dockerfile`.
+- Verification: in the rebuilt image, `git` and `/etc/ssl/certs/ca-certificates.crt`
+  are present, and `gitService.testConnection` succeeds against
+  `https://github.com/caddyserver/caddy.git`. Before the change the image had neither.
 
 ## Where this session stopped (usage limit)
 

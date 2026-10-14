@@ -1,8 +1,9 @@
 FROM node:24-slim
 
-# openssl CLI is used to generate self-signed certificates (certificateService)
+# openssl CLI is used to generate self-signed certificates (certificateService);
+# git + ca-certificates for GitOps (simple-git runs the git binary, over https)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl \
+    && apt-get install -y --no-install-recommends openssl git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
