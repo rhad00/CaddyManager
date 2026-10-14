@@ -55,7 +55,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.25 | Cluster mode: schedulers run in every instance | done |
 | 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | done |
-| 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10 and `simple-git` 4 (done), `sqlite3` 6 | in progress |
+| 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10, `simple-git` 4 done; `sqlite3` 6 declined (0.28d) | done |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
 
 ## Changes
@@ -1141,11 +1141,42 @@ fix, not a convenience. It also took priority over the other three.
   - Backend 60 suites passed, 1 skipped; 498 tests passed. `npm audit --omit=dev` no
     longer lists `simple-git` or `@simple-git/argv-parser`.
 
+#### 0.28d sqlite3 5.1.7 → 6.0.1: tried and declined
+
+- Why it was on the list: `npm audit` ties the `node-gyp` → `tar`/`make-fetch-happen`
+  advisories (one critical, three high) to `sqlite3`, and the only fix npm offers is 6.0.1.
+- What happened: 6.0.1 installs, but its prebuilt binary needs **glibc 2.38**, and fails
+  at load with `GLIBC_2.38 not found` (61 of 61 suites failed to start). Both places we
+  care about are older than that:
+  - the production image `node:24-slim` is Debian 12 (bookworm), glibc 2.36, and has no
+    compiler for the source-build fallback, so the backend would not start;
+  - this development machine (Ubuntu 22.04, glibc 2.35), and any host on Debian 12 or
+    Ubuntu 22.04.
+  GitHub's `ubuntu-latest` (glibc 2.39) would have passed, so CI alone would not have
+  shown the problem.
+- Also: the 6.0.0 release notes mark the repository **unmaintained**. Sequelize 6 can only
+  use this driver (`better-sqlite3` is not supported before Sequelize 7), so there is no
+  swap available now.
+- Decision: stay on 5.1.7 (restored from the lockfile; the suite is green on it).
+- Residual `npm audit --omit=dev` findings, all reviewed:
+  - `sqlite3` → `node-gyp` → `tar`, `make-fetch-happen`, `cacache`,
+    `http-proxy-agent`, `@tootallnate/once` (critical/high/low): build and install
+    tooling that unpacks the module's own prebuilt archive or compiles it. Nothing in
+    the running backend calls it, and the archive comes from the package's release.
+  - `sequelize` → `uuid` (moderate): the advisory is a missing bounds check when a
+    caller passes its own output buffer to `uuid` v3/v5/v6; Sequelize only calls v4
+    without a buffer. The "fix" npm proposes is a downgrade to Sequelize 3.
+  - `npm audit --audit-level=high` (the `audit:check` script) therefore still exits
+    non-zero. CI does not run it.
+- To revisit, in this order: (1) move the image to `node:24-trixie-slim` (glibc 2.41),
+  (2) require glibc ≥ 2.38 or a compiler for non-Docker installs and say so in the
+  README, (3) then take sqlite3 6; or leave SQLite behind when Sequelize 7 (or another
+  ORM) arrives in the TypeScript phases.
+
 ## Where this session stopped
 
-Done: 0.1–0.27. Next up, in order:
+Done: 0.1–0.28. Next up, in order:
 
-1. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
-2. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
+1. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
    `custom_ssl_cert_id`, proxy middlewares.
-3. TypeScript phases 1–5.
+2. TypeScript phases 1–5.
