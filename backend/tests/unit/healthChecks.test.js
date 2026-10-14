@@ -1,4 +1,4 @@
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 const reverseProxyOf = (route) => route.handle.find((h) => h.handler === 'reverse_proxy');
 

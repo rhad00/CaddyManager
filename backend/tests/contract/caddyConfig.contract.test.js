@@ -15,7 +15,7 @@ process.env.SQLITE_PATH = ':memory:';
 // caddy validate provisions the log writer; point it at a writable path
 process.env.CADDY_ACCESS_LOG = path.join(os.tmpdir(), 'caddymanager-contract-access.log');
 
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { createValidator } = require('./caddyValidator');
 const { withCustomCertificates } = require('../../src/utils/caddyTls');
 

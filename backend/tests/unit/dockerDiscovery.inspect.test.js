@@ -11,7 +11,7 @@ jest.mock('../../src/models', () => ({
   Header: { create: jest.fn(), bulkCreate: jest.fn() },
   Middleware: { bulkCreate: jest.fn() },
 }));
-jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { rebuildConfigFromDatabase: jest.fn() } }));
 jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
 
 const { DiscoveredService, Proxy, Template, Header, Middleware } = require('../../src/models');

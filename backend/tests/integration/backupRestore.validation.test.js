@@ -11,11 +11,11 @@ process.env.SQLITE_PATH = ':memory:';
 process.env.BACKUP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cm-backup-'));
 delete process.env.BACKUP_ENCRYPTION_KEY;
 
-jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { rebuildConfigFromDatabase: jest.fn() } }));
 
 const bcrypt = require('bcrypt');
 const { sequelize, Proxy, Header, Backup } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { backupService } = require('../../src/services/backupService');
 
 const HASH = bcrypt.hashSync('correct horse', 4);

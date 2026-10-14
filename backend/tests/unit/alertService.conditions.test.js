@@ -7,11 +7,11 @@ jest.mock('../../src/services/trafficStats', () => ({
   trafficForDomains: jest.requireActual('../../src/services/trafficStats').trafficForDomains,
 }));
 jest.mock('../../src/utils/upstreamProbe', () => ({ unreachableUpstreams: jest.fn() }));
-jest.mock('../../src/services/caddyService', () => ({ verifyTlsForDomains: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { verifyTlsForDomains: jest.fn() } }));
 
 const { hostTrafficSince } = require('../../src/services/trafficStats');
 const { unreachableUpstreams } = require('../../src/utils/upstreamProbe');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { checkCondition, createRunContext } = require('../../src/services/alertService');
 
 const HOUR = 60 * 60 * 1000;

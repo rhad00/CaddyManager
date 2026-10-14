@@ -15,12 +15,11 @@ import {
 } from '../models';
 import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
 import type { TemplateHeader, TemplateMiddleware } from '../models/template';
+import { caddyService } from './caddyService';
 
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const mkdirAsync = promisify(fs.mkdir);
-// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
-const caddyService = require('./caddyService') as typeof import('./caddyService');
 dotenv.config();
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));

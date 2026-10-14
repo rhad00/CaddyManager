@@ -18,7 +18,7 @@ interface LoadPemEntry {
   [extra: string]: unknown;
 }
 
-interface TlsApp {
+export interface TlsApp {
   certificates?: { load_pem?: LoadPemEntry[]; [extra: string]: unknown };
   [extra: string]: unknown;
 }

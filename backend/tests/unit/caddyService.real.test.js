@@ -14,7 +14,7 @@ jest.mock('../../src/models', () => ({
 jest.mock('fs', () => ({ promises: { writeFile: jest.fn(), mkdir: jest.fn() }, existsSync: jest.fn(), unlinkSync: jest.fn() }));
 
 const { Proxy, Header } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService', () => {
   afterEach(() => jest.clearAllMocks());

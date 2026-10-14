@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { sendOutbound } from '../utils/outboundRequest';
 import { channelProblem } from '../utils/notificationChannels';
 import { hostTrafficSince, trafficForDomains, type TrafficSince } from './trafficStats';
+import { caddyService } from './caddyService';
 import { unreachableUpstreams } from '../utils/upstreamProbe';
 import type { AlertRule } from '../models/alertRule';
 import type { NotificationChannel } from '../models/notificationChannel';
@@ -127,7 +128,6 @@ async function freshTlsStatus(proxy: Proxy): Promise<TlsStatus> {
   if (proxy.tls_status && Date.now() - checkedAt < TLS_STATUS_MAX_AGE_MS) {
     return proxy.tls_status;
   }
-  const caddyService = require('./caddyService');
   const tlsStatus: TlsStatus = await caddyService.verifyTlsForDomains(proxyDomains(proxy), TLS_CHECK_TIMEOUT_MS);
   await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
   return tlsStatus;

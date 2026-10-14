@@ -7,7 +7,7 @@ jest.mock('../../src/models', () => ({
 }));
 
 const { Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 const isCloudflarePolicy = (p) => p.issuers?.some((i) => i.challenges?.dns?.provider?.name === 'cloudflare');
 const cfPolicies = (config) => (config.apps?.tls?.automation?.policies || []).filter(isCloudflarePolicy);

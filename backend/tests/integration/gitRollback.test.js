@@ -11,7 +11,7 @@ process.env.NODE_ENV = 'test';
 process.env.SQLITE_PATH = ':memory:';
 process.env.GIT_REPO_DIR = path.join(TMP, 'work');
 
-jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn(), getCaddyConfig: jest.fn(async () => ({})) }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { rebuildConfigFromDatabase: jest.fn(), getCaddyConfig: jest.fn(async () => ({})) } }));
 
 const { simpleGit } = require('simple-git');
 const { sequelize, Proxy, GitRepository } = require('../../src/models');

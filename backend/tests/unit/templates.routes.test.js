@@ -16,7 +16,7 @@ jest.mock('../../src/middleware/auth', () => ({
   requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
-jest.mock('../../src/services/caddyService', () => ({}));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: {} }));
 jest.mock('../../src/models/proxy', () => ({ Proxy: { findByPk: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 

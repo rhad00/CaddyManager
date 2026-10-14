@@ -8,10 +8,10 @@ jest.mock('../../src/models', () => ({
   Proxy: { findByPk: jest.fn(), create: jest.fn() },
   Template: { findOne: jest.fn() },
 }));
-jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { rebuildConfigFromDatabase: jest.fn() } }));
 
 const { DiscoveredService, Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { dockerDiscoveryService: discovery } = require('../../src/services/dockerDiscoveryService');
 
 const container = (labels = {}) => ({

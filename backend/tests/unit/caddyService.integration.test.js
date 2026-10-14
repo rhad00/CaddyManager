@@ -13,7 +13,7 @@ jest.mock('../../src/models', () => ({
 }));
 
 const { Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService integration - Cloudflare policy injection on add/update', () => {
   const originalToken = process.env.CF_API_TOKEN;

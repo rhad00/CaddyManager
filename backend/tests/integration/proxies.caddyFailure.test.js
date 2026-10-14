@@ -8,9 +8,11 @@ process.env.SQLITE_PATH = ':memory:';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 
 jest.mock('../../src/services/caddyService', () => ({
-  addProxy: jest.fn(),
-  updateProxy: jest.fn(),
-  deleteProxy: jest.fn(),
+  caddyService: {
+    addProxy: jest.fn(),
+    updateProxy: jest.fn(),
+    deleteProxy: jest.fn(),
+  },
 }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 jest.mock('../../src/middleware/auth', () => ({
@@ -22,7 +24,7 @@ jest.mock('../../src/middleware/auth', () => ({
 const express = require('express');
 const request = require('supertest');
 const { sequelize, Proxy, Header } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const proxiesRouter = require('../../src/api/proxies/routes');
 
 const app = express();

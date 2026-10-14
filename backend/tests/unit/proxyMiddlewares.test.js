@@ -12,7 +12,7 @@ jest.mock('../../src/models', () => ({
 const { Header, Middleware } = require('../../src/models');
 const { validateMiddlewares, middlewareHandlers } = require('../../src/utils/proxyMiddlewares');
 const { validateProxyInput, validateHeadersConfig } = require('../../src/utils/proxyValidation');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 const rateLimit = (configuration, extra = {}) => ({ middleware_type: 'rate_limit', configuration, enabled: true, order: 0, ...extra });
 const redirect = (configuration, extra = {}) => ({ middleware_type: 'redirect', configuration, enabled: true, order: 0, ...extra });

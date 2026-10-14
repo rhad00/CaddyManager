@@ -8,10 +8,7 @@ import type { CreationAttributes, WhereOptions } from 'sequelize';
 import { GitRepository, ConfigChange, Proxy, Header, Middleware, User, sequelize } from '../models';
 import type { ConfigChangeType } from '../models/configChange';
 import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
-
-// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
-// and requires this service back
-const getCaddyService = (): typeof import('./caddyService') => require('./caddyService');
+import { caddyService } from './caddyService';
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -310,7 +307,7 @@ export class GitService {
       await fs.writeFile(path.join(configDir, 'proxies.yaml'), proxiesYaml);
 
       // Export Caddy config
-      const caddyConfig = await getCaddyService().getCaddyConfig();
+      const caddyConfig = await caddyService.getCaddyConfig();
       await fs.writeFile(
         path.join(configDir, 'caddy.json'),
         JSON.stringify(caddyConfig, null, 2)
@@ -495,7 +492,7 @@ export class GitService {
       throw error;
     }
 
-    await getCaddyService().rebuildConfigFromDatabase();
+    await caddyService.rebuildConfigFromDatabase();
     return proxies.length;
   }
 

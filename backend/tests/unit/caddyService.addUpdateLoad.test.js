@@ -13,7 +13,7 @@ jest.mock('../../src/models', () => ({
 }));
 
 const { Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService add/update load payload assertions', () => {
   const originalToken = process.env.CF_API_TOKEN;

@@ -13,9 +13,7 @@ import {
 } from '../utils/certificates';
 import type { CertificateAuthorityType } from '../models/certificateAuthority';
 import type { TlsStatus } from '../models/proxy';
-
-// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
-const caddyService = require('./caddyService') as typeof import('./caddyService');
+import { caddyService } from './caddyService';
 
 // Certificate types CaddyManager loads into Caddy itself (ACME ones Caddy manages)
 const MANAGED_CERTIFICATE_TYPES: string[] = ['uploaded', 'self-signed'];

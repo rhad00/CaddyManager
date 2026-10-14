@@ -1,4 +1,4 @@
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('ensureAccessLogging', () => {
   test('routes the server access logger into the file log (names must match)', () => {

@@ -1,7 +1,7 @@
 const express = require('express');
 const { Template } = require('../../models/template');
 const { authMiddleware, roleMiddleware } = require('../../middleware/auth');
-const caddyService = require('../../services/caddyService');
+const { caddyService } = require('../../services/caddyService');
 const { Proxy } = require('../../models/proxy');
 const { logAction } = require('../../services/auditService');
 const { validateMiddlewares } = require('../../utils/proxyMiddlewares');

@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 3.14 | Phase 3: `caddyService` to strict TypeScript (Phase 3 complete) | done |
 | 3.13 | Phase 3: `gitService` to strict TypeScript | done |
 | 3.12 | Phase 3: `dockerDiscoveryService` to strict TypeScript | done |
 | 3.11 | Phase 3: `backupService` to strict TypeScript | done |
@@ -1804,9 +1805,33 @@ callers `api/discovery/routes.js`, `src/index.js` and the two discovery tests up
 - Verification: typecheck (loose and strict), build, full suite, PostgreSQL suites and a
   `dist/` boot pass.
 
+### 3.14 caddyService
+
+`caddyService.ts`: class and instance exported by name (`{ caddyService }`). Callers
+`api/discovery/routes.js`, `api/proxies/routes.js`, `api/templates/routes.js`, `src/index.js` and
+every test that requires or mocks it updated (the `jest.mock` factories return
+`{ caddyService: {...} }`).
+
+- Types: `CaddyJsonConfig` (the parts of Caddy's JSON this service reads and writes; the rest
+  passes through), `ProxyOperationResult`, `TlsVerification`, `DeletedProxyData`,
+  `TemplateInput`, `BackupData`. `TlsApp` is now exported from `utils/caddyTls`.
+- The services that needed `caddyService` lazily (`alertService`, `backupService`,
+  `certificateService`, `dockerDiscoveryService`, `gitService`) now import it at the top: it
+  imports only models and utils, so there is no cycle. The `getCaddyService()` helpers and the
+  `require(...) as typeof import(...)` lines are gone.
+- Behaviour is unchanged, including the in-place `domains.sort()` on proxy rows (route host order
+  depends on it) and the `rejectUnauthorized: false` of the TLS probe (it inspects the
+  certificate Caddy serves; it does not trust it). The probe reports an issuer that is an array
+  as a comma-joined string.
+- `loadCustomCertificates` still returns the model instances (a type guard narrows the PEM fields).
+- Verification: typecheck (loose and strict), build, full suite (606 tests), PostgreSQL suites,
+  the Caddy contract test against a real Caddy (22/22) and a `dist/` boot pass.
+
+Phase 3 is complete: every model, service and util under `src` is TypeScript.
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 3: the class-instance services one at a time, with their callers and mocks (`caddyService` last).
-2. TypeScript phases 3–5 (see the plan at the top).
+1. Phase 4: the routes, with zod request schemas.
+2. Phase 5 (optional): ESM.

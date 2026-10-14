@@ -22,7 +22,7 @@ jest.mock('../../src/models', () => ({
 
 const { certificateService } = require('../../src/services/certificateService');
 const { Certificate, Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { CertificateError } = require('../../src/utils/certificates');
 
 describe('CertificateService real tests', () => {

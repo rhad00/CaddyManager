@@ -19,10 +19,10 @@ jest.mock('../../src/models', () => ({
   Middleware: { create: jest.fn() },
   sequelize: { transaction: jest.fn(async () => mockTransaction) },
 }));
-jest.mock('../../src/services/caddyService', () => ({ rebuildConfigFromDatabase: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { rebuildConfigFromDatabase: jest.fn() } }));
 
 const { GitRepository } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 const { gitService } = require('../../src/services/gitService');
 
 describe('gitService.syncFromGit', () => {

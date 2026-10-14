@@ -16,10 +16,7 @@ import {
   type LabelFeatures,
 } from '../utils/discoveryLabels';
 import * as securityHeadersService from './securityHeadersService';
-
-// Loaded when first used: caddyService is still a CommonJS module (its conversion is a later step)
-// and requires this service back
-const getCaddyService = (): typeof import('./caddyService') => require('./caddyService');
+import { caddyService } from './caddyService';
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -440,7 +437,7 @@ export class DockerDiscoveryService {
         : securityHeadersService.removeSecurityHeaders(proxy.id, Header));
     }
 
-    await getCaddyService().rebuildConfigFromDatabase();
+    await caddyService.rebuildConfigFromDatabase();
     logger.info(`[DockerDiscovery] Updated proxy for ${containerName}`);
   }
 
@@ -536,7 +533,7 @@ export class DockerDiscoveryService {
           const proxy = await Proxy.findByPk(discovered.proxy_id);
           if (proxy) {
             await proxy.destroy();
-            await getCaddyService().rebuildConfigFromDatabase();
+            await caddyService.rebuildConfigFromDatabase();
             logger.info(`[DockerDiscovery] Removed proxy for stopped container`);
           }
 
@@ -594,7 +591,7 @@ export class DockerDiscoveryService {
       }
 
       if (missing.length > 0) {
-        await getCaddyService().rebuildConfigFromDatabase();
+        await caddyService.rebuildConfigFromDatabase();
         logger.info(`[DockerDiscovery] Reconciled ${missing.length} stale services`);
       }
     } catch (error) {

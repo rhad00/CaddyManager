@@ -16,7 +16,7 @@ jest.mock('fs', () => ({ promises: { writeFile: jest.fn(), mkdir: jest.fn() } })
 
 const fs = require('fs').promises;
 const { Certificate } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 const storedCert = { id: 3, type: 'uploaded', certificate_pem: 'CERT-PEM', private_key_pem: 'SECRET-KEY' };
 const liveConfig = {

@@ -1,13 +1,106 @@
-const axios = require('axios');
-const fs = require('fs').promises;
-const path = require('path');
-const tls = require('tls');
-const { sequelize, Proxy, Header, Middleware, Certificate } = require('../models');
-const { Op } = require('sequelize');
-const { parseUpstream } = require('../utils/upstream');
-const { createRouteFromProxy, shouldUseHTTPSTransport, buildSelectionPolicy, buildTlsTransport } = require('../utils/caddyRoute');
-const { withCustomCertificates, withoutCustomCertificates } = require('../utils/caddyTls');
-require('dotenv').config();
+import axios from 'axios';
+import { promises as fs } from 'fs';
+import path from 'path';
+import tls from 'tls';
+import dotenv from 'dotenv';
+import { Op, type CreationAttributes } from 'sequelize';
+import { sequelize, Proxy, Header, Middleware, Certificate } from '../models';
+import type { TlsDomainResult, TlsStatus } from '../models/proxy';
+import type { TemplateHeader, TemplateMiddleware } from '../models/template';
+import { parseUpstream } from '../utils/upstream';
+import {
+  createRouteFromProxy,
+  shouldUseHTTPSTransport,
+  buildSelectionPolicy,
+  buildTlsTransport,
+  type CaddyHandler,
+  type CaddyRoute,
+  type ProxyRouteInput,
+  type SelectionPolicy,
+  type TlsTransport,
+} from '../utils/caddyRoute';
+import {
+  withCustomCertificates,
+  withoutCustomCertificates,
+  type CaddyConfig,
+  type StoredCertificate,
+  type TlsApp,
+} from '../utils/caddyTls';
+dotenv.config();
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** A route as Caddy returns it (the ones CaddyManager did not write are only inspected) */
+interface CaddyRouteEntry {
+  match?: Array<{ host?: string | string[] }>;
+  handle?: CaddyHandler[];
+}
+
+interface CaddyServer {
+  listen: string[];
+  routes: CaddyRouteEntry[];
+  logs?: { default_logger_name: string };
+  [extra: string]: unknown;
+}
+
+interface AutomationPolicy {
+  subjects?: string[];
+  issuers?: Array<{
+    module?: string;
+    challenges?: { dns?: { provider?: { name?: string; api_token?: string } } };
+    [extra: string]: unknown;
+  }>;
+  [extra: string]: unknown;
+}
+
+/** The parts of Caddy's JSON config this service reads or writes; everything else passes through. */
+export interface CaddyJsonConfig extends CaddyConfig {
+  apps?: {
+    http?: { servers?: Record<string, CaddyServer>; [extra: string]: unknown };
+    tls?: TlsApp & { automation?: { policies?: AutomationPolicy[]; [extra: string]: unknown } };
+    [app: string]: unknown;
+  };
+  logging?: { logs?: Record<string, unknown>; [extra: string]: unknown };
+}
+
+export interface TlsVerification {
+  ok: boolean;
+  results: TlsDomainResult[];
+}
+
+export interface ProxyOperationResult {
+  success: boolean;
+  message: string;
+  routeIndex: number | null;
+  tlsStatus: TlsStatus | null;
+}
+
+/** What deleteProxy needs of a proxy whose row is already gone */
+export interface DeletedProxyData {
+  id?: string;
+  caddy_route_index?: number | null;
+  ssl_type?: string;
+}
+
+/** The parts of a template that applyTemplate copies onto a proxy */
+export interface TemplateInput {
+  headers?: TemplateHeader[] | null;
+  middleware?: TemplateMiddleware[] | null;
+}
+
+/** A backup document; includeInBackup adds the Caddy config to it */
+export interface BackupData {
+  caddy_config?: CaddyConfig | null;
+  caddy_config_error?: string;
+  [extra: string]: unknown;
+}
+
+/** The first handler's upstreams when the route is a reverse proxy */
+const upstreamsOf = (route: CaddyRouteEntry): Array<{ dial: string }> | undefined => {
+  const handler = route.handle?.[0];
+  if (!handler || handler.handler !== 'reverse_proxy') return undefined;
+  return handler.upstreams as Array<{ dial: string }> | undefined;
+};
 
 /**
  * Minimal promise-chain mutex — no external dependency required.
@@ -15,14 +108,12 @@ require('dotenv').config();
  * acquire this lock to prevent TOCTOU races and stale-index corruption.
  */
 class Mutex {
-  constructor() {
-    this._queue = Promise.resolve();
-  }
+  _queue: Promise<unknown> = Promise.resolve();
 
   /** Acquire the lock; returns a release function to call in a finally block. */
-  acquire() {
-    let release;
-    const next = new Promise((resolve) => { release = resolve; });
+  acquire(): Promise<() => void> {
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
     const current = this._queue;
     this._queue = this._queue.then(() => next);
     return current.then(() => release);
@@ -32,7 +123,13 @@ class Mutex {
 /**
  * Service for interacting with Caddy's Admin API
  */
-class CaddyService {
+export class CaddyService {
+  apiUrl: string;
+  serverName: string;
+  configBackupDir: string;
+  configBackupFile: string;
+  _configMutex: Mutex;
+
   constructor() {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
     this.serverName = process.env.CADDY_SERVER_NAME || 'srv0';
@@ -42,7 +139,7 @@ class CaddyService {
      // defer any async initialization to initializeConfig
   }
 
-  ensureHttpServer(config) {
+  ensureHttpServer(config: CaddyJsonConfig): CaddyServer {
     config.apps = config.apps || {};
     config.apps.http = config.apps.http || {};
     config.apps.http.servers = config.apps.http.servers || {};
@@ -54,7 +151,7 @@ class CaddyService {
     return config.apps.http.servers[this.serverName];
   }
 
-  getServerRoutesApiPath() {
+  getServerRoutesApiPath(): string {
     return `${this.apiUrl}/config/apps/http/servers/${this.serverName}/routes`;
   }
 
@@ -63,13 +160,13 @@ class CaddyService {
    * One policy is kept for all Cloudflare proxies; it is removed when none remain.
    * Other automation policies are left untouched. The token is resolved by Caddy from
    * its own environment ({env.CF_API_TOKEN}), so the backend does not need it.
-   * @param {Object} config - Caddy JSON config (modified in place and returned)
-   * @param {string[]} domains - domains of all active Cloudflare proxies
-   * @returns {Object} config
+   * @param config - Caddy JSON config (modified in place and returned)
+   * @param domains - domains of all active Cloudflare proxies
+   * @returns config
    */
-  setCloudflarePolicy(config, domains) {
+  setCloudflarePolicy(config: CaddyJsonConfig, domains: string[]): CaddyJsonConfig {
     const subjects = [...new Set(domains)].sort();
-    const isCloudflarePolicy = (policy) =>
+    const isCloudflarePolicy = (policy: AutomationPolicy): boolean =>
       Array.isArray(policy.issuers) &&
       policy.issuers.some(iss => iss.challenges?.dns?.provider?.name === 'cloudflare');
 
@@ -108,9 +205,8 @@ class CaddyService {
 
   /**
    * Domains of all active proxies that use the Cloudflare DNS-01 challenge
-   * @returns {Promise<string[]>}
    */
-  async cloudflareDomains() {
+  async cloudflareDomains(): Promise<string[]> {
     const proxies = await Proxy.findAll({ where: { ssl_type: 'cloudflare', status: 'active' } });
     return proxies.flatMap(p => (Array.isArray(p.domains) ? p.domains : [p.domains]));
   }
@@ -119,7 +215,7 @@ class CaddyService {
    * Ensure Caddy access logging is configured in the given config object.
    * Writes structured JSON access logs to a file readable by the backend log service.
    */
-  ensureAccessLogging(config) {
+  ensureAccessLogging(config: CaddyJsonConfig): CaddyJsonConfig {
     try {
       const logFile = process.env.CADDY_ACCESS_LOG || '/app/logs/access.log';
 
@@ -147,7 +243,7 @@ class CaddyService {
 
       return config;
     } catch (err) {
-      console.error('Failed to ensure access logging config:', err.message);
+      console.error('Failed to ensure access logging config:', errorMessage(err));
       return config;
     }
   }
@@ -155,7 +251,7 @@ class CaddyService {
   /**
    * Ensure config backup directory exists
    */
-  async ensureConfigBackupDir() {
+  async ensureConfigBackupDir(): Promise<void> {
     try {
       await fs.mkdir(this.configBackupDir, { recursive: true });
       console.log(`Config backup directory ensured: ${this.configBackupDir}`);
@@ -168,7 +264,7 @@ class CaddyService {
    * Initialize Caddy configuration on startup
    * This should be called when the application starts
    */
-  async initializeConfig() {
+  async initializeConfig(): Promise<void> {
     try {
       // Ensure config backup directory exists before doing file operations
       await this.ensureConfigBackupDir();
@@ -187,7 +283,7 @@ class CaddyService {
         // Load configuration from backup file
         console.log('Loading configuration from backup file...');
         const configData = await fs.readFile(this.configBackupFile, 'utf8');
-        const config = JSON.parse(configData);
+        const config = JSON.parse(configData) as CaddyConfig;
 
         // Apply the configuration to Caddy
         await this.loadConfig(config);
@@ -218,7 +314,7 @@ class CaddyService {
       console.log('Caddy configuration initialization complete');
     } catch (error) {
       console.error('Failed to initialize Caddy configuration:', error);
-      throw new Error(`Failed to initialize Caddy configuration: ${error.message}`);
+      throw new Error(`Failed to initialize Caddy configuration: ${errorMessage(error)}`);
     }
   }
 
@@ -226,7 +322,7 @@ class CaddyService {
    * Rebuild Caddy configuration from database. This is the full DB-to-Caddy sync used
    * at startup and after bulk changes (GitOps sync, Docker discovery).
    */
-  async rebuildConfigFromDatabase() {
+  async rebuildConfigFromDatabase(): Promise<void> {
     const release = await this._configMutex.acquire();
     try {
       // Get current config as a starting point
@@ -244,7 +340,7 @@ class CaddyService {
 
       // Filter out duplicate routes and keep track of unique domains
       // Disabled proxies are excluded from Caddy config
-      const uniqueDomains = new Set();
+      const uniqueDomains = new Set<string>();
       const uniqueProxies = proxies.filter(proxy => {
         if (proxy.status != null && proxy.status !== 'active') return false;
         const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
@@ -257,13 +353,13 @@ class CaddyService {
       });
 
       // Clear existing routes (except for the CaddyManager routes)
-      const caddyManagerRoutes = serverConfig.routes.filter(route =>
-        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
-          (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("backend:3000"))))
-        ||
-        (route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
-          (route.handle[0].upstreams && route.handle[0].upstreams.some(u => u.dial.includes("frontend:80"))))
-      );
+      const caddyManagerRoutes = serverConfig.routes.filter(route => {
+        const upstreams = upstreamsOf(route);
+        return Boolean(upstreams && (
+          upstreams.some(u => u.dial.includes("backend:3000")) ||
+          upstreams.some(u => u.dial.includes("frontend:80"))
+        ));
+      });
 
       serverConfig.routes = caddyManagerRoutes;
 
@@ -302,7 +398,7 @@ class CaddyService {
       console.log(`Rebuilt configuration with ${proxies.length} proxies from database`);
     } catch (error) {
       console.error('Failed to rebuild configuration from database:', error);
-      throw new Error(`Failed to rebuild configuration: ${error.message}`);
+      throw new Error(`Failed to rebuild configuration: ${errorMessage(error)}`);
     } finally {
       release();
     }
@@ -310,44 +406,42 @@ class CaddyService {
 
   /**
    * Get the current Caddy configuration
-   * @returns {Promise<Object>} The current configuration
+   * @returns The current configuration
    */
-  async getConfig() {
+  async getConfig(): Promise<CaddyJsonConfig> {
     try {
-      const response = await axios.get(`${this.apiUrl}/config/`);
+      const response = await axios.get<CaddyJsonConfig>(`${this.apiUrl}/config/`);
       return response.data;
     } catch (error) {
-      console.error('Failed to get Caddy configuration:', error.message);
-      throw new Error(`Failed to get configuration: ${error.message}`);
+      console.error('Failed to get Caddy configuration:', errorMessage(error));
+      throw new Error(`Failed to get configuration: ${errorMessage(error)}`);
     }
   }
 
   /**
    * Current config with CaddyManager-managed private keys removed; safe to persist or export
-   * @returns {Promise<Object>}
    */
-  async getCaddyConfig() {
+  async getCaddyConfig(): Promise<CaddyJsonConfig> {
     return withoutCustomCertificates(await this.getConfig());
   }
 
   /**
    * Uploaded and self-signed certificates to serve (private keys decrypted by the model)
-   * @returns {Promise<Array>}
    */
-  async loadCustomCertificates() {
+  async loadCustomCertificates(): Promise<Array<Certificate & StoredCertificate>> {
     const certificates = await Certificate.findAll({
       where: {
         type: ['uploaded', 'self-signed'],
         status: { [Op.ne]: 'revoked' }
       }
     });
-    return certificates.filter(c => c.certificate_pem && c.private_key_pem);
+    return certificates.filter((c): c is Certificate & StoredCertificate => Boolean(c.certificate_pem && c.private_key_pem));
   }
 
   /**
    * Re-push the running config so Caddy picks up added or removed custom certificates
    */
-  async syncCustomCertificates() {
+  async syncCustomCertificates(): Promise<void> {
     const release = await this._configMutex.acquire();
     try {
       const config = await this.getConfig();
@@ -362,9 +456,9 @@ class CaddyService {
    * Load a complete configuration into Caddy.
    * Custom certificates live only in the database (backups and exports strip their
    * keys), so they are merged into every config pushed to Caddy.
-   * @param {Object} config - The configuration to load
+   * @param config - The configuration to load
    */
-  async loadConfig(config) {
+  async loadConfig(config: CaddyConfig): Promise<void> {
     try {
       const fullConfig = withCustomCertificates(config, await this.loadCustomCertificates());
       await axios.post(`${this.apiUrl}/load`, fullConfig, {
@@ -373,21 +467,21 @@ class CaddyService {
         }
       });
     } catch (error) {
-      console.error('Failed to load Caddy configuration:', error.message);
-      throw new Error(`Failed to load configuration: ${error.message}`);
+      console.error('Failed to load Caddy configuration:', errorMessage(error));
+      throw new Error(`Failed to load configuration: ${errorMessage(error)}`);
     }
   }
 
   /**
    * Backup the current Caddy configuration
    */
-  async backupCurrentConfig() {
+  async backupCurrentConfig(): Promise<void> {
     try {
       const config = await this.getConfig();
       await this.backupConfig(config);
     } catch (error) {
       console.error('Failed to backup current configuration:', error);
-      throw new Error(`Failed to backup configuration: ${error.message}`);
+      throw new Error(`Failed to backup configuration: ${errorMessage(error)}`);
     }
   }
 
@@ -395,19 +489,19 @@ class CaddyService {
    * Backup after Caddy has accepted a change. Caddy already runs the new config, so a
    * failed backup is logged instead of failing (and rolling back) the change.
    */
-  async backupAfterChange() {
+  async backupAfterChange(): Promise<void> {
     try {
       await this.backupCurrentConfig();
     } catch (error) {
-      console.error('Config backup failed after a successful Caddy change:', error.message);
+      console.error('Config backup failed after a successful Caddy change:', errorMessage(error));
     }
   }
 
   /**
    * Backup a Caddy configuration
-   * @param {Object} config - The configuration to backup
+   * @param config - The configuration to backup
    */
-  async backupConfig(config) {
+  async backupConfig(config: CaddyConfig): Promise<void> {
     try {
       // Never write custom certificate private keys to disk in plaintext
       await fs.writeFile(
@@ -418,42 +512,42 @@ class CaddyService {
       console.log(`Configuration backed up to ${this.configBackupFile}`);
     } catch (error) {
       console.error('Failed to backup configuration:', error);
-      throw new Error(`Failed to backup configuration: ${error.message}`);
+      throw new Error(`Failed to backup configuration: ${errorMessage(error)}`);
     }
   }
 
   /**
    * Create a route configuration from a proxy (see utils/caddyRoute)
-   * @param {Object} proxy - The proxy object from the database
-   * @returns {Object} The route configuration
+   * @param proxy - The proxy object from the database
+   * @returns The route configuration
    */
-  createRouteFromProxy(proxy) {
+  createRouteFromProxy(proxy: ProxyRouteInput): CaddyRoute {
     return createRouteFromProxy(proxy);
   }
 
   /** Check if the upstream URL should use HTTPS transport configuration */
-  shouldUseHTTPSTransport(upstreamUrl) {
+  shouldUseHTTPSTransport(upstreamUrl: string): boolean {
     return shouldUseHTTPSTransport(upstreamUrl);
   }
 
   /** Caddy selection policy for a load-balanced pool (see utils/caddyRoute) */
-  buildSelectionPolicy(loadBalancing) {
+  buildSelectionPolicy(loadBalancing: Parameters<typeof buildSelectionPolicy>[0]): SelectionPolicy {
     return buildSelectionPolicy(loadBalancing);
   }
 
   /** HTTP transport that speaks TLS to the upstream (see utils/caddyRoute) */
-  buildTlsTransport(proxy) {
+  buildTlsTransport(proxy: Pick<ProxyRouteInput, 'skip_tls_verify'>): TlsTransport {
     return buildTlsTransport(proxy);
   }
 
   /**
    * Add a proxy to Caddy configuration
-   * @param {Object} proxy - The proxy object from the database
-   * @returns {Promise<Object>} The result of the operation
+   * @param proxy - The proxy object from the database
+   * @returns The result of the operation
    */
-  async addProxy(proxy) {
+  async addProxy(proxy: Proxy): Promise<ProxyOperationResult> {
     const release = await this._configMutex.acquire();
-    let newRouteIndex = null;
+    let newRouteIndex: number | null = null;
     let routePosted = false;
     try {
       // Get current config
@@ -469,12 +563,11 @@ class CaddyService {
       const proxyDial = parseUpstream(proxy.upstream_url).dial;
 
       const existingRoute = existingRoutes.find(route => {
-        if (route.match && route.match[0] && route.match[0].host &&
-          route.handle && route.handle[0] && route.handle[0].handler === "reverse_proxy" &&
-          route.handle[0].upstreams && route.handle[0].upstreams[0]) {
-          const routeDomains = route.match[0].host;
+        const routeDomains = route.match?.[0]?.host;
+        const routeUpstreams = upstreamsOf(route);
+        if (routeDomains && routeUpstreams && routeUpstreams[0]) {
           const routeDomainKey = Array.isArray(routeDomains) ? routeDomains.sort().join(',') : routeDomains;
-          const routeUpstream = route.handle[0].upstreams[0].dial;
+          const routeUpstream = routeUpstreams[0].dial;
           // Routes written before upstream normalisation stored the raw URL in dial
           return routeDomainKey === domainKey &&
             (routeUpstream === proxyDial || routeUpstream === proxy.upstream_url);
@@ -511,7 +604,7 @@ class CaddyService {
       await this.backupAfterChange();
 
       // If the proxy uses ACME or Cloudflare for TLS, ensure Cloudflare policy and perform a short TLS verification to detect ACME failures
-      let tlsStatus = null;
+      let tlsStatus: TlsStatus | null = null;
       try {
         if (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') {
           const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
@@ -523,7 +616,7 @@ class CaddyService {
               await this.loadConfig(config);
             }
           } catch (err) {
-            console.error('Failed to ensure Cloudflare policy before TLS verification:', err.message);
+            console.error('Failed to ensure Cloudflare policy before TLS verification:', errorMessage(err));
           }
           tlsStatus = await this.verifyTlsForDomains(domains, 10000);
           if (!tlsStatus.ok) {
@@ -534,12 +627,12 @@ class CaddyService {
           try {
             await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
           } catch (err) {
-            console.error('Failed to persist TLS status on proxy record:', err.message);
+            console.error('Failed to persist TLS status on proxy record:', errorMessage(err));
           }
         }
       } catch (err) {
-        console.error('Error while verifying TLS for domains:', err.message);
-        tlsStatus = { ok: false, error: err.message };
+        console.error('Error while verifying TLS for domains:', errorMessage(err));
+        tlsStatus = { ok: false, error: errorMessage(err) };
       }
 
       return {
@@ -555,10 +648,10 @@ class CaddyService {
         try {
           await axios.delete(`${this.getServerRoutesApiPath()}/${newRouteIndex}`);
         } catch (cleanupError) {
-          console.error(`Failed to remove route ${newRouteIndex} after a failed add:`, cleanupError.message);
+          console.error(`Failed to remove route ${newRouteIndex} after a failed add:`, errorMessage(cleanupError));
         }
       }
-      throw new Error(`Failed to add proxy: ${error.message}`);
+      throw new Error(`Failed to add proxy: ${errorMessage(error)}`);
     } finally {
       release();
     }
@@ -566,10 +659,10 @@ class CaddyService {
 
   /**
    * Update a proxy in Caddy configuration
-   * @param {Object} proxy - The updated proxy object from the database
-   * @returns {Promise<Object>} The result of the operation
+   * @param proxy - The updated proxy object from the database
+   * @returns The result of the operation
    */
-  async updateProxy(proxy) {
+  async updateProxy(proxy: Proxy): Promise<ProxyOperationResult> {
     let released = false;
     const release = await this._configMutex.acquire();
     const safeRelease = () => { if (!released) { released = true; release(); } };
@@ -595,7 +688,7 @@ class CaddyService {
 
       await this.backupAfterChange();
       // If the proxy uses ACME for TLS, perform a short TLS verification
-      let tlsStatus = null;
+      let tlsStatus: TlsStatus | null = null;
       try {
         if (proxy.ssl_type === 'acme' || proxy.ssl_type === 'cloudflare') {
           const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains];
@@ -608,12 +701,12 @@ class CaddyService {
           try {
             await proxy.update({ tls_status: tlsStatus, tls_checked_at: new Date() });
           } catch (err) {
-            console.error('Failed to persist TLS status on proxy record (update):', err.message);
+            console.error('Failed to persist TLS status on proxy record (update):', errorMessage(err));
           }
         }
       } catch (err) {
-        console.error('Error while verifying TLS for domains:', err.message);
-        tlsStatus = { ok: false, error: err.message };
+        console.error('Error while verifying TLS for domains:', errorMessage(err));
+        tlsStatus = { ok: false, error: errorMessage(err) };
       }
 
       return {
@@ -624,7 +717,7 @@ class CaddyService {
       };
     } catch (error) {
       console.error('Failed to update proxy in Caddy configuration:', error);
-      throw new Error(`Failed to update proxy: ${error.message}`);
+      throw new Error(`Failed to update proxy: ${errorMessage(error)}`);
     } finally {
       safeRelease();
     }
@@ -633,10 +726,10 @@ class CaddyService {
   /**
    * Delete a proxy from Caddy configuration. The caller deletes the database row first;
    * this only removes the route, shifts later route indices and updates the DNS-01 policy.
-   * @param {Object} proxy - Plain data of the deleted proxy (id, caddy_route_index, ssl_type)
-   * @returns {Promise<Object>} The result of the operation
+   * @param proxy - Plain data of the deleted proxy (id, caddy_route_index, ssl_type)
+   * @returns The result of the operation
    */
-  async deleteProxy(proxy) {
+  async deleteProxy(proxy: DeletedProxyData): Promise<{ success: boolean; message: string }> {
     const release = await this._configMutex.acquire();
     try {
       // Delete from Caddy configuration if it exists there
@@ -659,7 +752,7 @@ class CaddyService {
           // Update their route indices
           for (const p of proxiesToUpdate) {
             await p.update({
-              caddy_route_index: p.caddy_route_index - 1
+              caddy_route_index: (p.caddy_route_index as number) - 1
             });
           }
 
@@ -677,7 +770,7 @@ class CaddyService {
           this.setCloudflarePolicy(config, await this.cloudflareDomains());
           await this.loadConfig(config);
         } catch (error) {
-          console.error('Failed to update Cloudflare policy after delete:', error.message);
+          console.error('Failed to update Cloudflare policy after delete:', errorMessage(error));
         }
       }
 
@@ -687,7 +780,7 @@ class CaddyService {
       };
     } catch (error) {
       console.error('Failed to delete proxy from Caddy configuration:', error);
-      throw new Error(`Failed to delete proxy: ${error.message}`);
+      throw new Error(`Failed to delete proxy: ${errorMessage(error)}`);
     } finally {
       release();
     }
@@ -695,16 +788,16 @@ class CaddyService {
 
   /**
    * Apply a template to a proxy in Caddy configuration
-   * @param {Object} proxy - The proxy object
-   * @param {Object} template - The template object
-   * @returns {Promise<Object>} The result of the operation
+   * @param proxy - The proxy object
+   * @param template - The template object
+   * @returns The result of the operation
    */
-  async applyTemplate(proxy, template) {
+  async applyTemplate(proxy: Proxy, template: TemplateInput): Promise<ProxyOperationResult> {
     try {
       // First get the current config to show what will change
       const oldConfig = await this.getConfig();
       const oldServerConfig = this.ensureHttpServer(oldConfig);
-      const oldRoute = oldServerConfig.routes[proxy.caddy_route_index];
+      const oldRoute = oldServerConfig.routes[proxy.caddy_route_index as number];
 
       // First apply the template headers and middlewares to the proxy
       await sequelize.transaction(async (transaction) => {
@@ -727,7 +820,7 @@ class CaddyService {
               header_name: header.header_name,
               header_value: header.header_value,
               enabled: true // Explicitly enable headers from template
-            }, { transaction })
+            } as CreationAttributes<Header>, { transaction })
           ));
         }
 
@@ -739,7 +832,7 @@ class CaddyService {
             configuration: middleware.configuration,
             order: middleware.order || 0,
             enabled: middleware.enabled !== false
-          }, { transaction });
+          } as CreationAttributes<Middleware>, { transaction });
         }
       });
 
@@ -754,16 +847,16 @@ class CaddyService {
       return await this.updateProxy(proxy);
     } catch (error) {
       console.error('Failed to apply template to proxy in Caddy configuration:', error);
-      throw new Error(`Failed to apply template: ${error.message}`);
+      throw new Error(`Failed to apply template: ${errorMessage(error)}`);
     }
   }
 
   /**
    * Include Caddy configuration in a backup
-   * @param {Object} backupData - The backup data object
-   * @returns {Promise<Object>} The updated backup data
+   * @param backupData - The backup data object
+   * @returns The updated backup data
    */
-  async includeInBackup(backupData) {
+  async includeInBackup(backupData: BackupData): Promise<BackupData> {
     try {
       // Get current config
       const config = await this.getConfig();
@@ -775,17 +868,17 @@ class CaddyService {
     } catch (error) {
       console.error('Failed to include Caddy configuration in backup:', error);
       // Don't fail the entire backup if this fails
-      backupData.caddy_config_error = error.message;
+      backupData.caddy_config_error = errorMessage(error);
       return backupData;
     }
   }
 
   /**
    * Restore Caddy configuration from a backup
-   * @param {Object} backupData - The backup data object
-   * @returns {Promise<Object>} The result of the operation
+   * @param backupData - The backup data object
+   * @returns The result of the operation
    */
-  async restoreFromBackup(backupData) {
+  async restoreFromBackup(backupData: BackupData): Promise<{ success: boolean; message: string }> {
     try {
       // Check if we have Caddy configuration in the backup
       if (!backupData.caddy_config) {
@@ -804,26 +897,27 @@ class CaddyService {
       };
     } catch (error) {
       console.error('Failed to restore Caddy configuration from backup:', error);
-      throw new Error(`Failed to restore configuration: ${error.message}`);
+      throw new Error(`Failed to restore configuration: ${errorMessage(error)}`);
     }
   }
 
   // Helper: perform TLS verification for a list of domains
-  verifyTlsForDomains(domains = [], timeoutMs = 10000) {
-    const checkDomain = (domain) => {
+  verifyTlsForDomains(domains: string[] = [], timeoutMs = 10000): Promise<TlsVerification> {
+    const checkDomain = (domain: string): Promise<TlsDomainResult> => {
       return new Promise((resolve) => {
         const socket = tls.connect({ host: domain, port: 443, servername: domain, rejectUnauthorized: false }, () => {
           try {
             const cert = socket.getPeerCertificate();
             socket.end();
             if (cert && Object.keys(cert).length > 0) {
-              const issuer = cert.issuer ? (cert.issuer.O || cert.issuer.CN || null) : null;
+              const issuerName = cert.issuer ? (cert.issuer.O || cert.issuer.CN || null) : null;
+              const issuer = Array.isArray(issuerName) ? issuerName.join(', ') : issuerName;
               resolve({ domain, ok: true, certSubject: cert.subject, issuer, validFrom: cert.valid_from, validTo: cert.valid_to });
             } else {
               resolve({ domain, ok: false, error: 'No certificate presented' });
             }
           } catch (err) {
-            resolve({ domain, ok: false, error: err.message });
+            resolve({ domain, ok: false, error: errorMessage(err) });
           }
         });
 
@@ -833,7 +927,7 @@ class CaddyService {
         });
 
         socket.on('error', (err) => {
-          resolve({ domain, ok: false, error: err.message });
+          resolve({ domain, ok: false, error: errorMessage(err) });
         });
       });
     };
@@ -845,4 +939,4 @@ class CaddyService {
   }
 }
 
-module.exports = new CaddyService();
+export const caddyService = new CaddyService();

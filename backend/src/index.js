@@ -43,7 +43,7 @@ const runLeaderTasks = async () => {
   metricsService.scheduleMetricsSnapshots(60);
 
   // Synchronize proxy route indices
-  const caddyService = require('./services/caddyService');
+  const { caddyService } = require('./services/caddyService');
   await caddyService.initializeConfig();
 
   // Initialize Docker discovery service if enabled
