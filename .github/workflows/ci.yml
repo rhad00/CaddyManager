@@ -59,23 +59,16 @@ jobs:
         working-directory: backend
         run: npm ci
 
-      - name: Run backend unit tests
+      # Unit and integration tests in one run, so the coverage threshold
+      # (backend/jest.ci.config.js) applies to the whole suite
+      - name: Run backend tests with coverage
         working-directory: backend
         env:
           NODE_ENV: test
           JWT_SECRET: ci-test-secret-do-not-use-in-production
           DB_TYPE: sqlite
           SQLITE_PATH: ':memory:'
-        run: npm run test:unit -- --forceExit
-
-      - name: Run backend integration tests
-        working-directory: backend
-        env:
-          NODE_ENV: test
-          JWT_SECRET: ci-test-secret-do-not-use-in-production
-          DB_TYPE: sqlite
-          SQLITE_PATH: ':memory:'
-        run: npm run test:integration -- --runInBand
+        run: npm run test:ci
 
       - name: Build Caddy image (with project plugins)
         run: docker build -t caddymanager-caddy:ci ./caddy
@@ -96,5 +89,83 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage/
+          retention-days: 7
+
+  # Production runs on PostgreSQL; the model syncs and migrations differ from SQLite
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_DB: caddymanager_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      # One file at a time: the test files share the database
+      - name: Run backend integration tests on PostgreSQL
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+          DB_TYPE: postgres
+          DB_URL: postgres://postgres:ci-postgres-password@localhost:5432/caddymanager_test
+        run: npm run test:integration -- --runInBand
+
+  # The browser tests mock the API (no backend needed); they catch frontend breakage
+  # that the unit tests and the build cannot
+  frontend-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: frontend
+        env:
+          CI: 'true'
+        run: npm run e2e
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: frontend/test-results/
           retention-days: 7
 

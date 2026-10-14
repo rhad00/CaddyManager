@@ -49,8 +49,12 @@ This directory contains the CI/CD workflows for CaddyManager.
    - Lints frontend code
    - Runs frontend tests
    - Builds frontend
-   - Runs backend unit tests
-   - Runs backend integration tests
+   - Runs all backend tests once with coverage (`npm run test:ci`); the build fails
+     when coverage drops below the thresholds in `backend/jest.ci.config.js`
+   - Builds the Caddy image and runs the Caddy config contract tests
+2. **backend-postgres**: Runs the backend integration tests against PostgreSQL 16
+   (production's database; the other job uses SQLite)
+3. **frontend-e2e**: Runs the Playwright browser tests (Chromium, API mocked)
 
 ## Workflow Flow
 

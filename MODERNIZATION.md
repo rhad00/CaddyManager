@@ -53,7 +53,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | done |
 | 0.24 | Discovery: labels, names, events, template crash, unused labels | done |
 | 0.25 | Cluster mode: schedulers run in every instance | done |
-| 0.26 | CI: tests not run, no coverage threshold, no Postgres or Playwright job | pending |
+| 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
 | 0.27 | README references missing files | pending |
 | 0.28 | Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5 | pending |
 | 0.29 | Declared but unimplemented: Kubernetes discovery, backup upload, `custom_ssl_cert_id`, proxy middlewares (stored, never applied) | pending |
@@ -1018,13 +1018,45 @@ Left open (low risk, not label-reachable):
   and a real Caddy 2.10.2: one "Database synchronized", two request-only workers,
   three listening servers, `/health` 200, clean exit on SIGTERM with no respawn.
 
+### 0.26 CI gaps
+
+- Problem (the original review said "tests are not run"; that was out of date: since
+  0.4 CI runs the backend unit, integration and Caddy contract tests):
+  - The "Upload backend coverage" step uploaded a `backend/coverage/` that the unit
+    and integration configs never produced, and nothing enforced a minimum.
+  - Production uses PostgreSQL, but CI only ran SQLite. The Postgres-only bugs found in
+    0.12 and 0.15 (enum without `cloudflare`, transactions) would not have been caught.
+  - The Playwright tests in `frontend/e2e` were never run.
+- Fix:
+  - `backend/jest.ci.config.js` and `npm run test:ci`: the whole backend suite once,
+    with coverage of `src/` and a threshold just under the measured value (statements
+    53 / branches 50 / functions 55 / lines 53; measured 55.6 / 52.4 / 57.8 / 55.5).
+    It is a separate config because a threshold in `jest.config.js` would fail every
+    single-file run. Replaces the separate unit and integration steps; the coverage
+    artifact now exists.
+  - New job `backend-postgres`: PostgreSQL 16 service, the integration tests with
+    `DB_TYPE=postgres` (`--runInBand`: the test files share one database).
+  - New job `frontend-e2e`: installs Chromium, runs `npm run e2e` (the API is mocked,
+    no backend needed), uploads the results on failure.
+  - `frontend/.gitignore`: Playwright output; `.github/workflows/README.md` updated.
+- Verification (run locally, the workflow itself runs on GitHub):
+  - `npm run test:ci`: 60 suites passed, 1 skipped (the contract suite, which has its
+    own step); 498 tests passed; exit 0. With an unreachable threshold (99%) the same
+    run exits 1 with "does not meet global threshold".
+  - Integration tests on PostgreSQL 16, `--runInBand`: 16 suites, 149 tests passed.
+  - Playwright after `playwright install chromium`: 2 passed.
+  - The workflow YAML parses (3 jobs).
+- Not done: raising the coverage floor (80% is the project goal; least covered
+  are `index.js` (0%), `metricsService`, `migrationService`, `logService`, `twoFactor`,
+  the audit and discovery routes and `passwordReset` (6–17%)), and a job that starts
+  the real stack (backend + Caddy + frontend) for end-to-end flows.
+
 ## Where this session stopped
 
-Done: 0.1–0.25. Next up, in order:
+Done: 0.1–0.26. Next up, in order:
 
-1. 0.26 CI gaps: tests not run, no coverage threshold, no Postgres or Playwright job.
-2. 0.27 README references missing files.
-3. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
-4. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
+1. 0.27 README references missing files.
+2. 0.28 Major upgrades: `simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5.
+3. 0.29 Declared but not implemented: Kubernetes discovery, backup upload,
    `custom_ssl_cert_id`, proxy middlewares.
-5. TypeScript phases 1–5.
+4. TypeScript phases 1–5.
