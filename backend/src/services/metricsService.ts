@@ -2,6 +2,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { Op } from 'sequelize';
 import { Metric } from '../models';
+import { errorMessage } from '../utils/errorMessage';
 
 dotenv.config();
 
@@ -44,8 +45,6 @@ export interface MetricsSnapshotResult {
   id: number;
   timestamp: Date;
 }
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * Service for interacting with Caddy's Metrics API

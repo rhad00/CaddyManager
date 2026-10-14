@@ -9,8 +9,7 @@ import { GitRepository, ConfigChange, Proxy, Header, Middleware, User, sequelize
 import type { ConfigChangeType } from '../models/configChange';
 import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
 import { caddyService } from './caddyService';
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+import { errorMessage } from '../utils/errorMessage';
 
 /** What authEnv and gitFor read of a repository (the rest is only used by the sync code) */
 type AuthRepo = Pick<GitRepository, 'provider' | 'access_token'>;

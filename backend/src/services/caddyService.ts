@@ -26,9 +26,8 @@ import {
   type StoredCertificate,
   type TlsApp,
 } from '../utils/caddyTls';
+import { errorMessage } from '../utils/errorMessage';
 dotenv.config();
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** A route as Caddy returns it (the ones CaddyManager did not write are only inspected) */
 interface CaddyRouteEntry {

@@ -5,6 +5,7 @@
 import { parseUpstream, upstreamHostname } from './upstream';
 import { isRestrictedHost } from './ssrf';
 import { validateMiddlewares, type ValidationResult } from './proxyMiddlewares';
+import { errorMessage } from './errorMessage';
 
 export type { ValidationResult };
 
@@ -21,8 +22,6 @@ const PROXY_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._\-\s]{1,98}[a-zA-Z0-9]$/;
 
 const VALID: ValidationResult = { valid: true };
 const invalid = (message: string): ValidationResult => ({ valid: false, message });
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Proxy request body: user-supplied JSON, every field is checked before use */
 type Body = Record<string, unknown>;

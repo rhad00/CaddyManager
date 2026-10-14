@@ -17,8 +17,7 @@ import {
 } from '../utils/discoveryLabels';
 import * as securityHeadersService from './securityHeadersService';
 import { caddyService } from './caddyService';
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+import { errorMessage } from '../utils/errorMessage';
 
 /** A container as `docker inspect` returns it: the label helpers' view plus what is read here */
 export interface InspectedContainer extends DockerContainer {

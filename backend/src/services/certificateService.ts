@@ -14,14 +14,13 @@ import {
 import type { CertificateAuthorityType } from '../models/certificateAuthority';
 import type { TlsStatus } from '../models/proxy';
 import { caddyService } from './caddyService';
+import { errorMessage } from '../utils/errorMessage';
 
 // Certificate types CaddyManager loads into Caddy itself (ACME ones Caddy manages)
 const MANAGED_CERTIFICATE_TYPES: string[] = ['uploaded', 'self-signed'];
 // caddy_cert_id prefix for ACME certificates recorded by probing a domain over TLS
 const OBSERVED_PREFIX = 'observed:';
 dotenv.config();
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * Service for managing certificates and certificate authorities

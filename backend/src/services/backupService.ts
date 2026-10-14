@@ -16,13 +16,12 @@ import {
 import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
 import type { TemplateHeader, TemplateMiddleware } from '../models/template';
 import { caddyService } from './caddyService';
+import { errorMessage } from '../utils/errorMessage';
 
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 const mkdirAsync = promisify(fs.mkdir);
 dotenv.config();
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** What a backup file holds once parsed (the proxies are validated by prepareImportedProxies) */
 interface BackupFile {

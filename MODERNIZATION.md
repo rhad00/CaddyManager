@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.19 | Phase 4: the services and `proxyValidation` use the shared `errorMessage` | done |
 | 4.18 | Phase 4: `cluster` and `clusterSupervisor` to TypeScript | done |
 | 4.17 | Phase 4: `index` to TypeScript | done |
 | 4.16 | Phase 4: `app` to TypeScript | done |
@@ -2021,9 +2022,46 @@ Verification: typecheck (loose and strict), build, a `dist/` boot with a real Ca
 
 Verification: typecheck (loose and strict), build, full suite (646 tests), the `dist/` cluster boot above.
 
+### 4.19 one errorMessage
+
+Seven files (`proxyValidation`, `backupService`, `certificateService`, `caddyService`, `dockerDiscoveryService`, `gitService`, `metricsService`) each carried the one-line `errorMessage` of the Phase 2 and 3 conversions. They import `utils/errorMessage` (4.12) now. The difference is the case the 3.12-3.14 review noted: a rejection that is a `{ message }` object but not an `Error` (some libraries and test doubles do that) gave `[object Object]`; it gives its message again, as the old `error.message` did.
+
+This step also rewrites "Where this session stopped": Phase 4 is complete, Phase 5 (ESM) is deliberately not done, and the open items are collected in one list.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests).
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
+Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
+database migrations, which stay JavaScript: they are loaded by file name at runtime. The branch is
+`chore/modernization`; each item above is one commit (`git log --grep "(4.18)"`).
 
-1. Phase 4 (4.18 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
-2. Phase 5 (optional): ESM.
+Not done, on purpose: **Phase 5 (ESM)**. It was optional, it touches every import and every Jest mock for no
+runtime gain on Node 24 (the compiled CommonJS in `dist/` runs as it is), and nothing in Phases 0-4 needs it.
+The named exports used throughout Phase 3 and 4 are what an ESM move would need, so it stays a mechanical
+change if it is ever wanted.
+
+Validation, as it ended up: `validateBody` (zod) exists (4.1) and the discovery filters use zod (4.11). The
+other routes keep their hand-written checks or express-validator rules, because clients and tests depend on
+their exact messages, and the login and reset rules depend on `normalizeEmail`, which zod has no equivalent for.
+
+### Open items (documented, not fixed)
+
+- The rate-limit key behind a reverse proxy needs `trusted_proxies` configured in Caddy.
+- Applying a template has no Caddy-failure compensation (a failed Caddy call leaves the database changed).
+- In cluster mode the Docker status and the Git auto-sync timers run per worker.
+- The Caddy route builder applies only the first 10 `ip_filtering` entries.
+- The Docker `domain` label accepts wildcards; template lookup by name is case-sensitive.
+- Kubernetes discovery and backup upload are planned (the API answers 501 and says so).
+- `docker-compose.prod.yml` does not fail fast on empty secrets.
+- With `DB_SSL=true` PostgreSQL connects with `rejectUnauthorized: false` (pre-existing, documented in 3.5).
+  Likewise the TLS probe in `caddyService.verifyTlsForDomains` does not verify the certificate it reads, which is
+  its purpose (it inspects what Caddy serves).
+- Low-severity notes from the 2.1 review: `npm start` runs `tsc` and empties `dist/` first; the nodemon
+  `--exec` chain can race on a restart; the image carries source maps but no `src/`; CI builds the image but
+  does not start it; a uid mismatch is possible with the dev compose bind mount.
+- Spying on `caddyService.buildTlsTransport` or `shouldUseHTTPSTransport` no longer affects route generation
+  (the methods delegate to `utils/caddyRoute`); no test does that today.
+- `npm audit` still reports the `sqlite3` build chain (`tar`, `@tootallnate/once`); upgrading `sqlite3` was
+  declined in 0.28d.
+- A pull request has not been opened. The `origin` remote URL of the main checkout embeds a GitHub token: rotate it.
