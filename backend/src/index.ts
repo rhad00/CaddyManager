@@ -1,21 +1,25 @@
-const { sequelize } = require('./config/database');
-const { initializeAdmin } = require('./services/setupService');
-const { templateService } = require('./services/templateService');
-const { backupService } = require('./services/backupService');
-const { metricsService } = require('./services/metricsService');
-const { migrationService } = require('./services/migrationService');
-const { isLeader } = require('./utils/clusterRole');
-const { app, startServer } = require('./app');
+import { sequelize } from './config/database';
+import { initializeAdmin } from './services/setupService';
+import { templateService } from './services/templateService';
+import { backupService } from './services/backupService';
+import { metricsService } from './services/metricsService';
+import { migrationService } from './services/migrationService';
+import { caddyService } from './services/caddyService';
+import { dockerDiscoveryService } from './services/dockerDiscoveryService';
+import { gitService } from './services/gitService';
+import { startAlertScheduler } from './services/alertService';
+import { certificateService } from './services/certificateService';
+import { isLeader } from './utils/clusterRole';
+import { startServer } from './app';
 
-// Update app.js to include the routes
-// Routes are now registered in app.js
+// Routes are registered in app.ts
 
 /**
  * One-time and background work. Runs in a single process, or in the leader worker in
  * cluster mode: other workers would repeat the migrations and run every scheduler,
  * Docker watcher and Git auto-sync again (MODERNIZATION.md 0.25).
  */
-const runLeaderTasks = async () => {
+const runLeaderTasks = async (): Promise<void> => {
   // Sync database models - only create tables if they don't exist
   // Use migrations for schema changes instead of alter: true
   await sequelize.sync();
@@ -43,13 +47,11 @@ const runLeaderTasks = async () => {
   metricsService.scheduleMetricsSnapshots(60);
 
   // Synchronize proxy route indices
-  const { caddyService } = require('./services/caddyService');
   await caddyService.initializeConfig();
 
   // Initialize Docker discovery service if enabled
   if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {
     console.log('Docker discovery enabled, initializing...');
-    const { dockerDiscoveryService } = require('./services/dockerDiscoveryService');
     const dockerInitialized = await dockerDiscoveryService.initialize();
     if (dockerInitialized) {
       await dockerDiscoveryService.startWatching();
@@ -63,16 +65,14 @@ const runLeaderTasks = async () => {
 
   // Initialize Git service for GitOps and version control
   console.log('Initializing Git service...');
-  const { gitService } = require('./services/gitService');
   await gitService.initialize();
   console.log('Git service initialized successfully');
 
   // Start alert scheduler
-  const { startAlertScheduler } = require('./services/alertService');
   startAlertScheduler(15); // check every 15 minutes
 
   // Keep the certificate list and expiry dates current
-  require('./services/certificateService').certificateService.scheduleCertificateSync(6);
+  certificateService.scheduleCertificateSync(6);
 
   // TODO: Initialize Kubernetes discovery service if enabled
   // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {
@@ -83,7 +83,7 @@ const runLeaderTasks = async () => {
 };
 
 // Initialize the environment, the leader's background work, and the server
-const initialize = async () => {
+const initialize = async (): Promise<void> => {
   try {
     // Validate required environment variables
     const isProduction = process.env.NODE_ENV === 'production';

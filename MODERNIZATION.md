@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 4.17 | Phase 4: `index` to TypeScript | done |
 | 4.16 | Phase 4: `app` to TypeScript | done |
 | 4.15 | Phase 4: `api/index` to TypeScript, static route imports | done |
 | 4.14 | Phase 4: `git` routes to TypeScript | done |
@@ -2002,9 +2003,15 @@ Verification: typecheck (loose and strict), build, full suite (646 tests, `apiKe
 
 Verification: typecheck (loose and strict), build, full suite (646 tests), a `dist/` boot (health, ready and the API docs answer).
 
+### 4.17 the entry point
+
+`index.ts`: the services it started lazily (`caddyService`, `dockerDiscoveryService`, `gitService`, `alertService`, `certificateService`) are plain imports now. They were already loaded when the app module was, through the routes, so nothing starts earlier than before; the Docker service still only connects when `ENABLE_DOCKER_DISCOVERY=true`. The unused `app` import is gone.
+
+Verification: typecheck (loose and strict), build, a `dist/` boot with a real Caddy (the leader tasks run: 10 migrations, config init).
+
 ## Where this session stopped
 
 Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and all of `utils` (2.2–2.4). the middleware (2.5) and the typed route module (2.6); Phase 2 is complete. Next up, in order:
 
-1. Phase 4 (4.16 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
+1. Phase 4 (4.17 done): convert the routes from the smallest to the largest, one commit each, adding a zod schema where a route checks its body by hand; then `app`, `index` and the cluster entry points.
 2. Phase 5 (optional): ESM.
