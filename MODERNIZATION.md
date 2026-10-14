@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| 2.3 | Phase 2: `outboundRequest`, `notificationChannels`, `proxyMiddlewares`, `upstreamProbe` to strict TypeScript | done |
 | 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
 
 ## Changes
@@ -1415,9 +1416,27 @@ changed.
 - Verification: `npm run typecheck` (loose and strict) and `npm run build` exit 0; backend
   64 suites passed, 1 skipped; 557 tests passed.
 
+### 2.3 Outbound, alert-channel, middleware and probe helpers
+
+`outboundRequest`, `notificationChannels`, `proxyMiddlewares` and `upstreamProbe` are
+now strict `.ts` (`git mv`). Exports and behaviour are unchanged for callers.
+
+- Inputs that come from the API (channel config, middleware configuration) are typed as
+  `unknown` / `Record<string, unknown>` and narrowed before use; `CHANNEL_TYPES` and
+  `MIDDLEWARE_TYPES` are `as const` tuples with type guards, so the validator tables are
+  exhaustive by type.
+- `ProxyUpstreams` types only the Proxy fields the probe reads.
+- One cast: axios types its `lookup` callback as `(err, address: LookupAddress |
+  LookupAddress[], family?)`, which does not allow the error-only call that
+  `guardedLookup` makes; it is cast to `AxiosRequestConfig['lookup']` at the call site.
+- One tightening: `rate_limit.unit` must be a string; before, an array like
+  `["second"]` passed `Object.hasOwn` through string coercion.
+- Verification: typecheck (loose and strict), build, and the full suite (64 suites,
+  557 tests) pass.
+
 ## Where this session stopped
 
-Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and the first six helpers (2.2). Next up, in order:
+Done: 0.1–0.29, Phase 1, the Phase 2 pipeline (2.1) and ten helpers (2.2, 2.3). Next up, in order:
 
-1. Phase 2: convert the remaining `utils` (`proxyMiddlewares`, `discoveryLabels`, `notificationChannels`, `basicAuth`, `proxyValidation`, `proxyImport`, `outboundRequest`, `upstreamProbe`), then `config` and `middleware`, and a typed Caddy config module.
+1. Phase 2: convert the remaining `utils` (`discoveryLabels`, `basicAuth`, `proxyValidation`, `proxyImport`), then `config` and `middleware`, and a typed Caddy config module.
 2. TypeScript phases 3–5 (see the plan at the top).
