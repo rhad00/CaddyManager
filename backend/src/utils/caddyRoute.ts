@@ -154,7 +154,8 @@ const COMPRESSION_SKIPPED_FOR = [
   { method: ['HEAD'] },
   { header: { Authorization: ['AWS4-HMAC-SHA256*', 'AWS *'] } },
   { query: { 'X-Amz-Signature': ['*'] } },
-  { query: { Signature: ['*'], AWSAccessKeyId: ['*'] } },
+  { query: { Signature: ['*'] } },
+  { query: { AWSAccessKeyId: ['*'] } },
 ];
 
 /** Request and response header rules of the proxy, in the reverse_proxy `headers` shape */

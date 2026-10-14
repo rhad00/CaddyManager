@@ -219,7 +219,8 @@ describe('compression', () => {
         { method: ['HEAD'] },
         { header: { Authorization: ['AWS4-HMAC-SHA256*', 'AWS *'] } },
         { query: { 'X-Amz-Signature': ['*'] } },
-        { query: { Signature: ['*'], AWSAccessKeyId: ['*'] } },
+        { query: { Signature: ['*'] } },
+        { query: { AWSAccessKeyId: ['*'] } },
       ],
     }]);
   });

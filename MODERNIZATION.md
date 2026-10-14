@@ -2087,6 +2087,12 @@ next rebuild or proxy change (`initializeConfig` loads the backup file when ther
 upstream (Proxmox, Unifi...) could never be trusted. Added the column (migration `20261014-add-skip-tls-verify-to-proxies`),
 the model attribute and the API field. The web UI has no checkbox for it yet.
 
+Behaviour changes for existing installs: header rules now also apply to path-routed proxies; compression is skipped
+for HEAD and S3-signed/presigned requests on every proxy; the repair migration only removes the legacy S3 rules from
+proxies that still carry all eight (a proxy where the user deleted some keeps the rest; a leftover `Host` rule still
+drops the signed port and should be removed by hand). A header rule using `{http.auth.*}` on a proxy without basic
+auth now deletes the client's header.
+
 Verification: typecheck (loose and strict), build, full suite (667 tests), contract tests (22), e2e (294).
 
 ## Where this session stopped
