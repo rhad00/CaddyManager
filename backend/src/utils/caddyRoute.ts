@@ -21,7 +21,7 @@ export type ReverseProxyHandler = {
     active: { uri: string; interval: string; timeout: string; fails: number };
   };
   headers?: {
-    request?: { set: Record<string, string[]> };
+    request?: { set?: Record<string, string[]>; delete?: string[] };
     response?: { set: Record<string, string[]> };
   };
   transport?: TlsTransport;
@@ -158,13 +158,24 @@ const COMPRESSION_SKIPPED_FOR = [
 ];
 
 /** Request and response header rules of the proxy, in the reverse_proxy `headers` shape */
-function headerRules(headers: NonNullable<ProxyRouteInput['headers']>): ReverseProxyHandler['headers'] {
+function headerRules(
+  headers: NonNullable<ProxyRouteInput['headers']>,
+  authenticated: boolean,
+): ReverseProxyHandler['headers'] {
   const requestHeaders: Record<string, string[]> = {};
+  const strippedHeaders: string[] = [];
   const responseHeaders: Record<string, string[]> = {};
 
   for (const header of headers.filter((h) => h.enabled)) {
     if (header.header_type === 'request') {
       if (isSelfPassthrough(header.header_name, header.header_value)) continue;
+      // Without an auth handler {http.auth.*} is never filled in: Caddy would forward the literal
+      // placeholder as the user, and a header an origin trusts (X-WebAuth-User) must not be
+      // left to the client either, so it is removed
+      if (!authenticated && header.header_value.includes('{http.auth.')) {
+        strippedHeaders.push(header.header_name);
+        continue;
+      }
       requestHeaders[header.header_name] = [header.header_value];
     } else if (header.header_type === 'response') {
       responseHeaders[header.header_name] = [header.header_value];
@@ -172,7 +183,12 @@ function headerRules(headers: NonNullable<ProxyRouteInput['headers']>): ReverseP
   }
 
   const rules: NonNullable<ReverseProxyHandler['headers']> = {};
-  if (Object.keys(requestHeaders).length > 0) rules.request = { set: requestHeaders };
+  if (Object.keys(requestHeaders).length > 0 || strippedHeaders.length > 0) {
+    rules.request = {
+      ...(Object.keys(requestHeaders).length > 0 ? { set: requestHeaders } : {}),
+      ...(strippedHeaders.length > 0 ? { delete: strippedHeaders } : {}),
+    };
+  }
   if (Object.keys(responseHeaders).length > 0) rules.response = { set: responseHeaders };
   return Object.keys(rules).length > 0 ? rules : undefined;
 }
@@ -191,6 +207,10 @@ function pathRoutingHandler(
           handler: 'reverse_proxy',
           upstreams: [{ dial: upstream.dial }],
         };
+        const rules = proxy.headers && proxy.headers.length > 0
+          ? headerRules(proxy.headers, proxy.basic_auth?.enabled === true)
+          : undefined;
+        if (rules) pathHandler.headers = rules;
         if (upstream.useTls) {
           pathHandler.transport = buildTlsTransport(proxy);
         }
@@ -240,7 +260,7 @@ function reverseProxyHandler(proxy: ProxyRouteInput): ReverseProxyHandler {
   }
 
   if (proxy.headers && proxy.headers.length > 0) {
-    const rules = headerRules(proxy.headers);
+    const rules = headerRules(proxy.headers, proxy.basic_auth?.enabled === true);
     if (rules) handler.headers = rules;
   }
 

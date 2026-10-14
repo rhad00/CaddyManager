@@ -88,6 +88,21 @@ describe('createRouteFromProxy', () => {
       expect(handler.routes[2]).toEqual({ handle: [{ handler: 'static_response', status_code: 404 }] });
     });
 
+    it('applies the header rules to every path, not only to the default proxy', () => {
+      const handler = terminal(handlersOf({
+        ...base,
+        headers: [
+          { enabled: true, header_type: 'request', header_name: 'X-A', header_value: '1' },
+          { enabled: true, header_type: 'response', header_name: 'X-B', header_value: '2' },
+        ],
+        path_routing: { enabled: true, routes: [{ path: '/api', upstream_url: 'http://api:3000' }] },
+      }));
+      expect(handler.routes[0].handle[0].headers).toEqual({
+        request: { set: { 'X-A': ['1'] } },
+        response: { set: { 'X-B': ['2'] } },
+      });
+    });
+
     it('is ignored when disabled or empty', () => {
       expect(terminal(handlersOf({ ...base, path_routing: { enabled: false, routes: [{ path: '/a', upstream_url: 'x:1' }] } })).handler)
         .toBe('reverse_proxy');
@@ -147,6 +162,24 @@ describe('createRouteFromProxy', () => {
       }));
       expect(handler.headers).toEqual({
         request: { set: { 'X-Real-IP': ['{http.request.remote.host}'], 'X-A': ['{http.request.header.X-B}'] } },
+      });
+    });
+
+    describe('rules that need a signed-in user ({http.auth.*})', () => {
+      const rule = { enabled: true, header_type: 'request', header_name: 'X-WebAuth-User', header_value: '{http.auth.user.id}' };
+
+      it('are applied when basic auth is on', () => {
+        const handler = terminal(handlersOf({
+          ...base,
+          basic_auth: { enabled: true, username: 'u', hashed_password: '$2b$12$x' },
+          headers: [rule],
+        }));
+        expect(handler.headers).toEqual({ request: { set: { 'X-WebAuth-User': ['{http.auth.user.id}'] } } });
+      });
+
+      it('strip the client-supplied header instead of forwarding a literal placeholder', () => {
+        const handler = terminal(handlersOf({ ...base, headers: [rule] }));
+        expect(handler.headers).toEqual({ request: { delete: ['X-WebAuth-User'] } });
       });
     });
 
