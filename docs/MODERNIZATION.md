@@ -1208,7 +1208,7 @@ fix, not a convenience. It also took priority over the other three.
   care about are older than that:
   - the production image `node:24-slim` is Debian 12 (bookworm), glibc 2.36, and has no
     compiler for the source-build fallback, so the backend would not start;
-  - this development machine (Ubuntu 22.04, glibc 2.35), and any host on Debian 12 or
+  - the development hosts (Ubuntu 22.04, glibc 2.35), and any host on Debian 12 or
     Ubuntu 22.04.
   GitHub's `ubuntu-latest` (glibc 2.39) would have passed, so CI alone would not have
   shown the problem.
@@ -2041,7 +2041,7 @@ Verification: typecheck (loose and strict), build, full suite (646 tests), the `
 
 Seven files (`proxyValidation`, `backupService`, `certificateService`, `caddyService`, `dockerDiscoveryService`, `gitService`, `metricsService`) each carried the one-line `errorMessage` of the Phase 2 and 3 conversions. They import `utils/errorMessage` (4.12) now. The difference is the case the 3.12-3.14 review noted: a rejection that is a `{ message }` object but not an `Error` (some libraries and test doubles do that) gave `[object Object]`; it gives its message again, as the old `error.message` did.
 
-This step also rewrites "Where this session stopped": Phase 4 is complete, Phase 5 (ESM) is deliberately not done, and the open items are collected in one list.
+This step also rewrites "Current status": Phase 4 is complete, Phase 5 (ESM) is deliberately not done, and the open items are collected in one list.
 
 Verification: typecheck (loose and strict), build, full suite (646 tests).
 
@@ -2192,7 +2192,7 @@ standing in for ghcr.
 Still manual: the ghcr packages must be public (GitHub → Packages → Package settings) for `docker compose pull` to work
 without a login, and the images have only been proven locally until the first release builds them.
 
-## Where this session stopped
+## Current status
 
 Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
 database migrations, which stay JavaScript: they are loaded by file name at runtime. The branch is

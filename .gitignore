@@ -68,3 +68,16 @@ backend/uploads/
 docs
 CLAUDE.md
 FEATURE_IMPLEMENTATION.md
+
+# Local tooling and AI assistant files: never part of the repository
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.tokensave/
+.cursor/
+.cursorrules
+.aider*
+.windsurf/
+.continue/
+.github/copilot-instructions.md

@@ -23,7 +23,7 @@
   origin as strict as Ceph RadosGW. See [Testing](#-testing).
 - **Scope**: CaddyManager manages *your* Caddy reverse proxy. It is not an ingress controller and has no Kubernetes
   integration. Discovery is Docker only.
-- **Change history**: [MODERNIZATION.md](./MODERNIZATION.md) records every change of the recent overhaul, the bugs found
+- **Change history**: [docs/MODERNIZATION.md](./docs/MODERNIZATION.md) records every change of the recent overhaul, the bugs found
   and the items that are still open.
 
 ## ✨ Why CaddyManager?
@@ -1564,14 +1564,10 @@ npm run e2e             # browser tests (Playwright; run `npx playwright install
 
 GitHub Actions runs all of these on every pull request (see `.github/workflows/ci.yml`).
 
-### Scripts against a running stack
+### Install smoke test
 
-These need the application running (`docker compose up -d`):
-```bash
-./integration_test.sh           # Complete integration test suite
-./persistence_validation.sh     # Test data persistence
-./certificate_validation.sh     # Validate TLS certificates
-```
+`scripts/smoke-install.sh` runs the documented quick install (compose file, generated `.env`, `up -d`) and logs in
+through the UI; CI runs it with freshly built images. See the header of the script for its options.
 
 ---
 
