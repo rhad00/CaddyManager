@@ -104,6 +104,17 @@ export class DockerDiscoveryService {
   }
 
   /**
+   * Connect to Docker when discovery is enabled and this process has not yet. In cluster mode only
+   * the leader watches events; a follower that gets a status or sync request connects here
+   * (without starting a watcher).
+   */
+  async ensureInitialized(): Promise<boolean> {
+    if (this.initialized && this.docker) return true;
+    if (process.env.ENABLE_DOCKER_DISCOVERY !== 'true') return false;
+    return this.initialize();
+  }
+
+  /**
    * Parse labels from a Docker container
    * Expected labels:
    * - caddymanager.enable=true
@@ -605,6 +616,7 @@ export class DockerDiscoveryService {
    * Manually sync a container by ID
    */
   async syncContainer(containerId: string): Promise<{ success: boolean; message: string }> {
+    await this.ensureInitialized();
     if (!this.initialized || !this.docker) {
       throw new Error('Docker not initialized');
     }

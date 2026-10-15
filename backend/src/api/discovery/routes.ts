@@ -145,6 +145,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
  */
 router.get('/status', authMiddleware, async (req: Request, res: Response) => {
   try {
+    await dockerDiscoveryService.ensureInitialized();
     const dockerStatus = dockerDiscoveryService.getStatus();
 
     // TODO: Add Kubernetes status when implemented
@@ -457,7 +458,7 @@ router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], a
     const { source } = req.body;
 
     if (!source || source === 'docker') {
-      if (dockerDiscoveryService.initialized) {
+      if (await dockerDiscoveryService.ensureInitialized()) {
         await dockerDiscoveryService.scanExistingContainers();
       } else {
         return res.status(503).json({
