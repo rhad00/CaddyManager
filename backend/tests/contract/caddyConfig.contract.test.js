@@ -209,7 +209,7 @@ describeIfCaddy(`Caddy config contract (${validator.describeLabel})`, () => {
 
   // Regression for MODERNIZATION.md 0.11b: custom certificates go through tls.certificates.load_pem
   test('custom certificate loaded via load_pem', () => {
-    const fixtures = path.join(__dirname, '../fixtures/certs');
+    const fixtures = require('../fixtures/certs/generate')();
     const fs = require('fs');
     const config = withCustomCertificates(buildConfig([baseProxy({ ssl_type: 'custom' })]), [{
       id: 1,

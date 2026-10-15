@@ -90,7 +90,7 @@ describe('CertificateService real tests', () => {
 
     test('regenerates self-signed certificates with the same domains and validity', async () => {
       const pems = {
-        certificatePem: fs.readFileSync(path.join(__dirname, '../fixtures/certs/app.cert.pem'), 'utf8'),
+        certificatePem: fs.readFileSync(path.join(require('../fixtures/certs/generate')(), 'app.cert.pem'), 'utf8'),
         privateKeyPem: 'KEY',
       };
       jest.spyOn(certificateService, 'createSelfSignedPem').mockResolvedValue(pems);
@@ -113,7 +113,7 @@ describe('CertificateService real tests', () => {
   });
 
   describe('uploadCertificate', () => {
-    const fixtures = path.join(__dirname, '../fixtures/certs');
+    const fixtures = require('../fixtures/certs/generate')();
     let tmpDir;
     const stage = (name) => {
       const dest = path.join(tmpDir, name);

@@ -79,5 +79,3 @@ AGENTS.md
 .continue/
 .github/copilot-instructions.md
 
-# Throwaway test certificates (see backend/tests/fixtures/certs/README.md); tests read them
-!backend/tests/fixtures/certs/*.pem

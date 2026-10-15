@@ -8,7 +8,7 @@ const {
   toCertificateResponse,
 } = require('../../src/utils/certificates');
 
-const fixture = (name) => fs.readFileSync(path.join(__dirname, '../fixtures/certs', name), 'utf8');
+const fixture = (name) => fs.readFileSync(path.join(require('../fixtures/certs/generate')(), name), 'utf8');
 const CERT = fixture('app.cert.pem');
 const KEY = fixture('app.key.pem');
 const OTHER_KEY = fixture('other.key.pem');
