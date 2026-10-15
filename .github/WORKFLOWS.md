@@ -10,7 +10,11 @@ Two GitHub Actions workflows live in `.github/workflows/`:
 Release flow
 ------------
 
-1. `cog check --from-latest-tag` verifies that every commit since the latest release is a conventional commit.
+1. `cog check --from-latest-tag` reports commits since the latest release that are not conventional commits. It only
+   warns: `cog bump` ignores such commits (they are not in the version bump or the changelog), so a commit pushed
+   straight to `main` (the web editor's "Add files via upload") cannot block the release. Pull requests are held to
+   the format before they merge: the `conventional-commits` job in `ci.yml` fails on a PR title that is not
+   `type(scope): subject` and warns about commits that are not.
 2. `scripts/restore-changelog.sh` brings back the accumulated `CHANGELOG.md` (see below).
 3. `cog bump --auto` decides the next version from the commit types in `cog.toml` (`feat` = minor; `fix`, `perf`,
    `refactor`, `docs`, `style`, `test`, `build`, `ci`, `revert` = patch; `chore` = no release). With nothing to release
@@ -30,8 +34,8 @@ on its tag (`blob/vX.Y.Z/CHANGELOG.md`) and holds the full history; the copy on 
 request.
 
 To keep a change out of the next release or to avoid triggering one, use the `chore` type (for example
-`chore(readme): ...`). Pull requests must be merged with a conventional-commit title (squash) or conventional commits
-(rebase): `cog check` fails the release otherwise.
+`chore(readme): ...`). A squash-merge uses the pull request title and a rebase-merge keeps the commits, so both must
+be conventional.
 
 Secrets and permissions
 -----------------------
