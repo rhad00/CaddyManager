@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: read # release notes quote the summary of the merged pull requests
   packages: write
   id-token: write
   attestations: write
@@ -70,19 +71,38 @@ jobs:
           # Falls back to GITHUB_TOKEN if PAT is not set (downstream won't re-trigger).
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Run Cocogitto — check commits & bump version
-        id: cog
+      # Only installs cog and sets the git identity; the steps below run it so they can pass flags
+      # and report a version only when a release was really created.
+      - name: Install Cocogitto
         uses: cocogitto/cocogitto-action@v3
         with:
-          check: true
-          check-latest-tag-only: true
-          release: true
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
+      - name: Check commits since the latest release
+        run: cog check --from-latest-tag
+
+      # main is protected, so the bump commit (CHANGELOG.md + package versions) is only tagged, never merged.
+      # Each release's CHANGELOG.md therefore lives on its tag; bring the newest one back so the new
+      # section is prepended to the full history instead of starting a new file.
+      - name: Restore the accumulated CHANGELOG.md
+        run: bash scripts/restore-changelog.sh
+
+      - name: Bump version, write CHANGELOG.md and tag
+        id: cog
+        run: |
+          git tag --list 'v[0-9]*' | sort > "$RUNNER_TEMP/tags.before"
+          # --skip-untracked: the restored CHANGELOG.md shows up as a modified file
+          cog bump --auto --skip-untracked
+          git tag --list 'v[0-9]*' | sort > "$RUNNER_TEMP/tags.after"
+          # Empty when there was nothing to release (only chore commits, for instance)
+          echo "version=$(comm -13 "$RUNNER_TEMP/tags.before" "$RUNNER_TEMP/tags.after" | tail -1)" >> "$GITHUB_OUTPUT"
+
       - name: Push version tag
         if: steps.cog.outputs.version != ''
-        run: git push origin --tags
+        env:
+          VERSION: ${{ steps.cog.outputs.version }}
+        run: git push origin "refs/tags/${VERSION}"
 
   # ─── Job 3: Build & push Docker images ────────────────────────────────────────
   docker:
@@ -176,30 +196,14 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.version.outputs.version }}
 
-      - name: Extract changelog section for this release
-        id: notes
+      # Summary (from the merged pull requests), the commits of this release, a link to CHANGELOG.md at the
+      # tag and the image references. The checkout is the tag, so the script uses the scripts of that release.
+      - name: Build the release notes
         env:
           VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          # Strip the "v" prefix to match CHANGELOG.md section headers (## [1.2.3])
-          BARE="${VERSION#v}"
-          if [[ -f CHANGELOG.md ]]; then
-            awk "/^## \[${BARE}\]/,/^## \[/" CHANGELOG.md | sed '$d' > release_notes.md
-          fi
-          if [[ ! -s release_notes.md ]]; then
-            printf "## What's Changed\n\nSee [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.\n" > release_notes.md
-          fi
-          # Append Docker image references
-          cat >> release_notes.md <<EOF
-
-          ## Docker Images
-
-          \`\`\`
-          ghcr.io/${{ github.repository_owner }}/caddymanager-backend:${BARE}
-          ghcr.io/${{ github.repository_owner }}/caddymanager-frontend:${BARE}
-          ghcr.io/${{ github.repository_owner }}/caddymanager-caddy:${BARE}
-          \`\`\`
-          EOF
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-notes.js > release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

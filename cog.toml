@@ -11,20 +11,12 @@ tag_prefix = "v"
 # release job's `cog check` and in the changelog, so any merge strategy can be used
 ignore_merge_commits = true
 
-# Pre-bump hooks (run before version bump)
-# pre_bump_hooks = [
-#   "cargo test",
-# ]
-
-# Post-bump hooks (run after version bump)
-# These hooks update package.json versions across all microservices and frontend
-post_bump_hooks = [
-  # Update frontend package.json
+# Pre-bump hooks run before cog writes CHANGELOG.md and creates the bump commit, so everything they change
+# (the package versions) is part of the commit the release tag points at. Post-bump hooks would run after
+# the tag exists and their changes would be lost.
+pre_bump_hooks = [
   "cd frontend && npm version {{version}} --no-git-tag-version --allow-same-version",
-  # Update backend package.json files
   "cd backend && npm version {{version}} --no-git-tag-version --allow-same-version",
-  # Stage all updated package.json files
-  "git add frontend/package.json backend/package.json",
 ]
 
 # Changelog configuration
