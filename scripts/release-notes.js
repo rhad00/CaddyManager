@@ -15,7 +15,7 @@ const { execFileSync } = require('child_process');
 
 const tag = process.env.VERSION;
 const repo = process.env.GITHUB_REPOSITORY;
-if (!tag || !/^v\d+\.\d+\.\d+/.test(tag) || !repo) {
+if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag) || !/^[\w.-]+\/[\w.-]+$/.test(repo || '')) {
   console.error('VERSION (for example v1.2.3) and GITHUB_REPOSITORY (owner/name) are required');
   process.exit(1);
 }
@@ -51,6 +51,7 @@ function summaryOf(body) {
   return match[1]
     .replace(/^.*Generated with.*$/gm, '')
     .replace(/^(#{3,5}) /gm, (_, hashes) => `${hashes}# `) // keep headings below "## Summary"
+    .replace(/(^|[^\w`])@(?=[\w-])/g, '$1@​') // a PR description must not ping people from the release
     .trim();
 }
 
