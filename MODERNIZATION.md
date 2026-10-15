@@ -2126,6 +2126,9 @@ PostgreSQL suites (224) pass.
   `CADDY_TRUSTED_PROXIES` and `CADDY_CLIENT_IP_HEADERS` configure that in the bundled Caddyfile (loopback only by
   default), with `trusted_proxies_strict` so an address the visitor wrote into `X-Forwarded-For` cannot pose as the
   client. Covered end to end (`rateLimit*.e2e.test.js`), including the forged-left-entry case.
+  The fix only helps once Caddy trusts the proxy in front of it, which CaddyManager cannot detect, so `.env.template` and
+  `.env.prod.example` carry paste-ready presets: `private_ranges` (a proxy on the same Docker/private network) and
+  Cloudflare's published ranges with `CF-Connecting-IP` (taken 2026-10-15; both validated with `caddy validate`).
 - **F.6 Cluster.** Git auto-sync was an interval per create/update call (never stopped, stale copy of the repository,
   possible in a follower). One idempotent loop owned by the leader reads the repositories from the database on every
   tick. Caddy config writes take a database lock (`ConfigLock`, expiring, owner-checked) in addition to the in-process
