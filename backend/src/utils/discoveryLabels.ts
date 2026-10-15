@@ -5,7 +5,7 @@
 import net from 'net';
 
 const MAX_RATE_LIMIT = 100000;
-const MAX_IP_FILTER_ENTRIES = 10; // the Caddy builder applies at most 10 entries
+const MAX_IP_FILTER_ENTRIES = 10; // a label is meant for a short list; the API and UI take any number
 const PATH_PREFIX_PATTERN = /^\/[A-Za-z0-9._~\-/]{0,200}$/;
 
 /** Parsed `caddymanager.*` labels (label values are strings; the parser may set booleans) */

@@ -52,10 +52,10 @@ describe('createRouteFromProxy', () => {
       expect(filter.routes[0].match).toEqual([{ not: [{ remote_ip: { ranges: ['1.2.3.4'] } }] }]);
     });
 
-    it('applies at most 10 entries', () => {
-      const ipList = Array.from({ length: 12 }, (_, i) => `10.0.0.${i + 1}`);
+    it('applies every entry: a long deny list must not silently stop blocking', () => {
+      const ipList = Array.from({ length: 250 }, (_, i) => `10.0.${Math.floor(i / 250)}.${i + 1}`);
       const filter = filterOf({ enabled: true, mode: 'deny', ip_list: ipList });
-      expect(filter.routes[0].match[0].remote_ip.ranges).toEqual(ipList.slice(0, 10));
+      expect(filter.routes[0].match[0].remote_ip.ranges).toEqual(ipList);
     });
 
     it.each([

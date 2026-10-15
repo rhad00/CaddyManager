@@ -75,8 +75,6 @@ export interface ProxyRouteInput {
   middlewares?: MiddlewareRow[] | null;
 }
 
-const MAX_IP_FILTER_ENTRIES = 10;
-
 /** Check if the upstream URL should use HTTPS transport configuration */
 export const shouldUseHTTPSTransport = (upstreamUrl: string): boolean => parseUpstream(upstreamUrl).useTls;
 
@@ -125,7 +123,7 @@ function ipFilterHandler(ipFiltering: ProxyRouteInput['ip_filtering']): CaddyHan
   if (!ipFiltering || !ipFiltering.enabled || !ipFiltering.ip_list || ipFiltering.ip_list.length === 0) {
     return null;
   }
-  const ranges = ipFiltering.ip_list.slice(0, MAX_IP_FILTER_ENTRIES);
+  const ranges = ipFiltering.ip_list;
   const remoteIp = { remote_ip: { ranges } };
 
   // Deny mode blocks the listed addresses; allow mode blocks everything else
