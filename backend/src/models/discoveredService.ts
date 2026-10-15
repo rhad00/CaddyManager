@@ -7,7 +7,7 @@ import {
 } from 'sequelize';
 import { sequelize } from '../config/database';
 
-export type DiscoverySource = 'docker' | 'kubernetes';
+export type DiscoverySource = 'docker';
 export type DiscoveredServiceStatus = 'active' | 'stopped' | 'removed';
 
 export class DiscoveredService extends Model<
@@ -16,9 +16,9 @@ export class DiscoveredService extends Model<
 > {
   declare id: CreationOptional<string>;
   declare source_type: DiscoverySource;
-  /** Container ID or K8s service UID */
+  /** Container ID */
   declare source_id: string;
-  /** Container name or K8s service name */
+  /** Container name */
   declare source_name: CreationOptional<string | null>;
   declare domain: CreationOptional<string | null>;
   declare upstream_url: CreationOptional<string | null>;
@@ -43,18 +43,18 @@ DiscoveredService.init({
     primaryKey: true
   },
   source_type: {
-    type: DataTypes.ENUM('docker', 'kubernetes'),
+    type: DataTypes.ENUM('docker'),
     allowNull: false
   },
   source_id: {
     type: DataTypes.STRING,
     allowNull: false,
-    comment: 'Container ID or K8s service UID'
+    comment: 'Container ID'
   },
   source_name: {
     type: DataTypes.STRING,
     allowNull: true,
-    comment: 'Container name or K8s service name'
+    comment: 'Container name'
   },
   domain: {
     type: DataTypes.STRING,

@@ -556,7 +556,6 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `ENABLE_DOCKER_DISCOVERY` | `false` | Enable automatic Docker container discovery and proxy creation | No |
-| `ENABLE_K8S_DISCOVERY` | `false` | Enable Kubernetes service discovery (not yet implemented) | No |
 | `DOCKER_LABEL_PREFIX` | `caddymanager` | Prefix for Docker labels used in discovery | No |
 | `AUTO_REMOVE_STOPPED` | `false` | Automatically remove proxies when containers stop | No |
 | `DOCKER_POLL_INTERVAL` | `30000` | Reconciliation interval in milliseconds | No |
@@ -1545,7 +1544,6 @@ These need the application running (`docker compose up -d`):
 ### Planned
 - S3/cloud backup storage
 - LDAP / Active Directory authentication
-- Kubernetes service discovery
 - Advanced request routing (header/query/method conditions)
 - Multi-node clustering & high availability
 - WAF integration (CrowdSec)

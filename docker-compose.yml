@@ -46,7 +46,6 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ENABLE_DOCKER_DISCOVERY=${ENABLE_DOCKER_DISCOVERY:-false}
-      - ENABLE_K8S_DISCOVERY=${ENABLE_K8S_DISCOVERY:-false}
       - DOCKER_LABEL_PREFIX=${DOCKER_LABEL_PREFIX:-caddymanager}
       - AUTO_REMOVE_STOPPED=${AUTO_REMOVE_STOPPED:-false}
     volumes:

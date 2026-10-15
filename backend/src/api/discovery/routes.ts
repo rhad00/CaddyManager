@@ -12,7 +12,7 @@ export const router = express.Router();
 
 /** The list filters; an absent or empty one is no filter */
 const LIST_FILTERS = z.object({
-  source_type: z.enum(['docker', 'kubernetes']).optional(),
+  source_type: z.enum(['docker']).optional(),
   status: z.enum(['active', 'stopped', 'removed']).optional(),
 });
 
@@ -30,7 +30,7 @@ const scanRateLimit = rateLimit({
  * @swagger
  * tags:
  *   name: Discovery
- *   description: Docker/Kubernetes service auto-discovery
+ *   description: Docker container auto-discovery
  *
  * /discovery:
  *   get:
@@ -42,7 +42,7 @@ const scanRateLimit = rateLimit({
  *     parameters:
  *       - in: query
  *         name: source_type
- *         schema: { type: string, enum: [docker, kubernetes] }
+ *         schema: { type: string, enum: [docker] }
  *       - in: query
  *         name: status
  *         schema: { type: string }
@@ -148,14 +148,10 @@ router.get('/status', authMiddleware, async (req: Request, res: Response) => {
     await dockerDiscoveryService.ensureInitialized();
     const dockerStatus = dockerDiscoveryService.getStatus();
 
-    // TODO: Add Kubernetes status when implemented
-    // const k8sStatus = kubernetesDiscoveryService.getStatus();
-
     res.status(200).json({
       success: true,
       status: {
-        docker: dockerStatus,
-        // kubernetes: k8sStatus
+        docker: dockerStatus
       }
     });
   } catch (error) {
@@ -249,15 +245,7 @@ router.post('/:id/sync', [authMiddleware, roleMiddleware('admin')], async (req: 
       });
     }
 
-    if (service.source_type === 'docker') {
-      await dockerDiscoveryService.syncContainer(service.source_id);
-    } else if (service.source_type === 'kubernetes') {
-      // TODO: Implement K8s sync
-      return res.status(501).json({
-        success: false,
-        message: 'Kubernetes sync not yet implemented'
-      });
-    }
+    await dockerDiscoveryService.syncContainer(service.source_id);
 
     res.status(200).json({
       success: true,
@@ -445,7 +433,7 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin')], async (req: Req
  *             properties:
  *               source:
  *                 type: string
- *                 enum: [docker, kubernetes]
+ *                 enum: [docker]
  *                 description: Limit scan to a specific source
  *     responses:
  *       200:
@@ -467,8 +455,6 @@ router.post('/scan', [scanRateLimit, authMiddleware, roleMiddleware('admin')], a
         });
       }
     }
-
-    // TODO: Add K8s scan when implemented
 
     res.status(200).json({
       success: true,

@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| F.10 | Kubernetes discovery removed: CaddyManager is not an ingress controller | done |
 | F.9 | Follow-up: backup upload implemented; templates of an uploaded or restored backup validated | done |
 | F.8 | Follow-up: CI starts the backend image; sources in source maps; `npm start` no longer rebuilds | done |
 | F.7 | Follow-up: followers connect to Docker on demand (status, scan, sync) | done |
@@ -2139,6 +2140,15 @@ PostgreSQL suites (224) pass.
   `{env.CF_API_TOKEN}` would have been restored and then handed to every visitor. Templates now pass the templates
   API validation in the upload and in restore, before anything is deleted.
 
+### F.10 Kubernetes removed
+
+Decision: CaddyManager manages a Caddy for people who run their own proxy; it is not an ingress controller and will
+not become one. Everything that pointed at Kubernetes is gone: the `kubernetes` source type (model, list filter,
+sync, scan and status endpoints, OpenAPI), the `ENABLE_K8S_DISCOVERY` setting (compose, README) and the "planned"
+notes (README roadmap, the discovery page, the commented-out startup code). Discovery is Docker only. A request for
+`source_type=kubernetes` is a 400 like any unknown value. Existing PostgreSQL databases keep the unused value in
+their enum type; nothing can create such a row, so no migration is needed.
+
 ## Where this session stopped
 
 Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
@@ -2159,8 +2169,6 @@ their exact messages, and the login and reset rules depend on `normalizeEmail`, 
 - The Docker `domain` label accepts wildcards on purpose (the API does too: S3 virtual-hosted style needs them); a
   discovered proxy is created disabled, so a duplicate domain is visible in review.
 - The e2e suites need Docker with host networking (Linux) or a `caddy` binary; macOS Docker Desktop is not supported.
-- Kubernetes discovery is planned (the API answers 501 and says so). It needs a design decision: which resources
-  (Services or Ingresses), namespaces, in-cluster credentials and RBAC.
 - With `DB_SSL=true` alone PostgreSQL still connects without verifying the certificate (kept for compatibility, logs a
   warning; set `DB_SSL_CA` or `DB_SSL_REJECT_UNAUTHORIZED=true`). The TLS probe in `caddyService.verifyTlsForDomains`
   does not verify the certificate it reads, which is its purpose (it inspects what Caddy serves).

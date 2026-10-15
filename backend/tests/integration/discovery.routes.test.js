@@ -26,7 +26,7 @@ beforeAll(async () => {
   await sequelize.sync({ force: true });
   await DiscoveredService.create({ source_type: 'docker', source_id: 'c1', source_name: 'web', status: 'active' });
   await DiscoveredService.create({ source_type: 'docker', source_id: 'c2', source_name: 'db', status: 'stopped' });
-  await DiscoveredService.create({ source_type: 'kubernetes', source_id: 'k1', source_name: 'api', status: 'active' });
+  await DiscoveredService.create({ source_type: 'docker', source_id: 'c3', source_name: 'api', status: 'active' });
 });
 
 afterAll(async () => {
@@ -44,9 +44,9 @@ describe('GET /api/discovery', () => {
   });
 
   test('filters by source_type and by status', async () => {
-    expect(names(await request(app).get('/api/discovery?source_type=docker'))).toEqual(['db', 'web']);
+    expect(names(await request(app).get('/api/discovery?source_type=docker'))).toEqual(['api', 'db', 'web']);
     expect(names(await request(app).get('/api/discovery?status=active'))).toEqual(['api', 'web']);
-    expect(names(await request(app).get('/api/discovery?source_type=docker&status=active'))).toEqual(['web']);
+    expect(names(await request(app).get('/api/discovery?source_type=docker&status=active'))).toEqual(['api', 'web']);
   });
 
   test('an empty filter value means no filter', async () => {
@@ -58,6 +58,7 @@ describe('GET /api/discovery', () => {
 
   test.each([
     ['source_type=podman'],
+    ['source_type=kubernetes'],
     ['status=exploded'],
   ])('rejects an unknown filter value (%s) with a 400', async (query) => {
     const res = await request(app).get(`/api/discovery?${query}`);
@@ -77,6 +78,6 @@ describe('GET /api/discovery', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.services).toHaveLength(1);
-    expect(res.body.pagination).toMatchObject({ total: 2, page: 2, limit: 1, totalPages: 2 });
+    expect(res.body.pagination).toMatchObject({ total: 3, page: 2, limit: 1, totalPages: 3 });
   });
 });

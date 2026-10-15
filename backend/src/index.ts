@@ -73,13 +73,6 @@ const runLeaderTasks = async (): Promise<void> => {
 
   // Keep the certificate list and expiry dates current
   certificateService.scheduleCertificateSync(6);
-
-  // TODO: Initialize Kubernetes discovery service if enabled
-  // if (process.env.ENABLE_K8S_DISCOVERY === 'true') {
-  //   const k8sDiscoveryService = require('./services/kubernetesDiscoveryService');
-  //   await k8sDiscoveryService.initialize();
-  //   await k8sDiscoveryService.startWatching();
-  // }
 };
 
 // Initialize the environment, the leader's background work, and the server
