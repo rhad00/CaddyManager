@@ -200,10 +200,6 @@ router.post('/repositories', [
       });
     }
 
-    // Start auto-sync if enabled
-    if (repo.auto_sync) {
-      gitService.startAutoSync(repo);
-    }
 
     // Return without sensitive data
     const { access_token: _accessToken, ssh_key: _sshKey, ...repoData } = repo.toJSON();
@@ -292,10 +288,6 @@ router.put('/repositories/:id', [
 
     await repo.save();
 
-    // Restart auto-sync if settings changed
-    if (repo.auto_sync && repo.enabled) {
-      gitService.startAutoSync(repo);
-    }
 
     const { access_token: _accessToken, ssh_key: _sshKey, ...repoData } = repo.toJSON();
 

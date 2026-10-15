@@ -82,6 +82,7 @@ async function startCaddy(runner, { tls = false, trustedProxies = false } = {}) 
   const http = { servers: { srv0: server } };
   if (trustedProxies) {
     server.trusted_proxies = { source: 'static', ranges: ['127.0.0.1/32'] };
+    server.trusted_proxies_strict = 1; // as in the bundled Caddyfile
     server.client_ip_headers = ['X-Forwarded-For'];
   }
   const apps = { http };

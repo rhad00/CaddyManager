@@ -103,6 +103,9 @@ export class GitService {
   readonly algorithm = 'aes-256-gcm';
   secretKey: Buffer;
   initialized = false;
+  /** When each auto-sync repository was last attempted (ms), kept by the leader's loop */
+  autoSyncLastRun = new Map<string, number>();
+  private autoSyncTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.repoDir = process.env.GIT_REPO_DIR || path.join(__dirname, '../../git-repos');
@@ -130,17 +133,11 @@ export class GitService {
         logger.warn('[GitService] Set GIT_SECRET_KEY in environment for production use');
       }
 
-      // Start auto-sync for enabled repos
-      const repos = await GitRepository.findAll({
-        where: { enabled: true, auto_sync: true }
-      });
-
-      for (const repo of repos) {
-        this.startAutoSync(repo);
-      }
+      // One loop syncs every enabled auto-sync repository, however it was created or changed
+      this.startAutoSync();
 
       this.initialized = true;
-      logger.info(`[GitService] Initialized with ${repos.length} auto-sync repositories`);
+      logger.info('[GitService] Initialized, auto-sync loop started');
     } catch (error) {
       logger.error('[GitService] Initialization error:', error);
     }
@@ -537,20 +534,45 @@ export class GitService {
   }
 
   /**
-   * Start automatic sync interval for GitOps mode
+   * Start the auto-sync loop for GitOps mode (idempotent). It reads the repositories from the
+   * database on every tick, so a repository created, edited, disabled or deleted through any
+   * worker takes effect without a timer per call. Only the leader starts it.
    */
-  startAutoSync(gitRepo: Pick<GitRepository, 'id' | 'name' | 'sync_interval'>): void {
-    const interval = (gitRepo.sync_interval || 300) * 1000;
+  startAutoSync(tickMs = 15000): void {
+    if (this.autoSyncTimer) return;
+    this.autoSyncTimer = setInterval(() => {
+      this.runDueSyncs(Date.now()).catch((error) => {
+        logger.error('[GitService] Auto-sync loop failed:', errorMessage(error));
+      });
+    }, tickMs);
+    this.autoSyncTimer.unref?.();
+  }
 
-    setInterval(async () => {
+  stopAutoSync(): void {
+    if (this.autoSyncTimer) clearInterval(this.autoSyncTimer);
+    this.autoSyncTimer = null;
+  }
+
+  /** Sync the repositories whose interval has passed since they were last attempted */
+  async runDueSyncs(now: number): Promise<void> {
+    const repos = await GitRepository.findAll({ where: { enabled: true, auto_sync: true } });
+
+    const present = new Set(repos.map((repo) => repo.id));
+    for (const id of this.autoSyncLastRun.keys()) {
+      if (!present.has(id)) this.autoSyncLastRun.delete(id);
+    }
+
+    for (const repo of repos) {
+      const last = this.autoSyncLastRun.get(repo.id);
+      if (last !== undefined && now - last < (repo.sync_interval || 300) * 1000) continue;
+      // Recorded before the attempt: a failing repository waits for its interval like any other
+      this.autoSyncLastRun.set(repo.id, now);
       try {
-        await this.syncFromGit(gitRepo.id);
+        await this.syncFromGit(repo.id);
       } catch (error) {
-        logger.error(`[GitService] Auto-sync failed for ${gitRepo.name}:`, errorMessage(error));
+        logger.error(`[GitService] Auto-sync failed for ${repo.name}:`, errorMessage(error));
       }
-    }, interval);
-
-    logger.info(`[GitService] Started auto-sync for ${gitRepo.name} (every ${gitRepo.sync_interval}s)`);
+    }
   }
 
   /**

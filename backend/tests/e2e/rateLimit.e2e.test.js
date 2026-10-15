@@ -46,5 +46,14 @@ describeIfRateLimit('rate limiting', () => {
       const other = await burst(stack, '203.0.113.20', 1);
       expect(other).toEqual([200]);
     });
+
+    test('an address the visitor wrote into X-Forwarded-For does not buy a fresh allowance', async () => {
+      // the front proxy appends the real peer (203.0.113.30) to whatever the visitor sent
+      const statuses = [];
+      for (let i = 0; i < 6; i += 1) {
+        statuses.push(...await burst(stack, `198.51.100.${i}, 203.0.113.30`, 1));
+      }
+      expect(statuses.filter((s) => s === 429).length).toBeGreaterThan(0);
+    });
   });
 });
