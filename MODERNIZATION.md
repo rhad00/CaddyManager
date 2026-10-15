@@ -61,6 +61,15 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| F.9 | Follow-up: backup upload implemented; templates of an uploaded or restored backup validated | done |
+| F.8 | Follow-up: CI starts the backend image; sources in source maps; `npm start` no longer rebuilds | done |
+| F.7 | Follow-up: followers connect to Docker on demand (status, scan, sync) | done |
+| F.6 | Follow-up: one leader-owned Git auto-sync loop; a database lock for Caddy config writes in cluster mode | done |
+| F.5 | Follow-up: rate limit keys on the real client behind trusted proxies (`CADDY_TRUSTED_PROXIES`) | done |
+| F.4 | Follow-up: `DB_SSL_CA` / `DB_SSL_REJECT_UNAUTHORIZED`; prod compose fails on empty secrets | done |
+| F.3 | Follow-up: template apply restores the proxy's rules when Caddy refuses; case-insensitive template label | done |
+| F.2 | Follow-up: every `ip_filtering` entry is applied (no 10-entry cap) | done |
+| F.1 | Follow-up: stale routes rebuilt after the S3 repair migration; half-edited S3 proxies cleaned; migrations get the transaction | done |
 | E.3 | E2E: the behaviours suite (balancing, auth, IP filter, HTTPS upstream, WebSocket) and `skip_tls_verify` | done |
 | E.2 | E2E: every default template and the header rules; Grafana auth placeholder and path-route headers fixed | done |
 | E.1 | E2E: real-Caddy suite with a strict SigV4 S3 origin; the Amazon S3 template and compression fixed | done |
@@ -2095,6 +2104,41 @@ auth now deletes the client's header.
 
 Verification: typecheck (loose and strict), build, full suite (667 tests), contract tests (22), e2e (294).
 
+## Follow-ups after the e2e work (F.1 - F.9)
+
+Each item was written test first; the full suite (729 tests), the e2e suite (297), the contract tests (22) and the
+PostgreSQL suites (224) pass.
+
+- **F.1 Stale S3 routes.** A migration can export `rebuildsCaddyConfig = true`; `runMigrations` reports it and startup
+  then calls `initializeConfig({ forceRebuild: true })`, which regenerates the routes from the database instead of
+  loading the saved config. Migrations now receive the runner's transaction as a third argument. The repair also
+  removes the legacy rules from proxies that kept the `Host` rewrite plus a signing header.
+- **F.2 ip_filtering.** The builder applied only the first 10 entries, so a longer deny list silently stopped
+  blocking. All entries are applied now. (The Docker label stays at 10 entries by design.)
+- **F.3 Templates.** If Caddy refuses the route after a template was applied, the proxy's previous headers and
+  middlewares are restored. The `caddymanager.template` label matches case-insensitively.
+- **F.4 Configuration.** `DB_SSL_REJECT_UNAUTHORIZED=true` or `DB_SSL_CA=/path` verify the PostgreSQL certificate; the
+  unverified default stays (existing private-CA setups) but logs a warning. `docker-compose.prod.yml` refuses to
+  start without `DB_PASSWORD`, `JWT_SECRET`, `CSRF_SECRET` and `GIT_SECRET_KEY`.
+- **F.5 Rate limit key.** It keyed on the peer address, so every visitor behind Cloudflare or another proxy shared one
+  bucket. It uses `{http.vars.client_ip}` now (the peer address unless the server trusts proxies).
+  `CADDY_TRUSTED_PROXIES` and `CADDY_CLIENT_IP_HEADERS` configure that in the bundled Caddyfile (loopback only by
+  default), with `trusted_proxies_strict` so an address the visitor wrote into `X-Forwarded-For` cannot pose as the
+  client. Covered end to end (`rateLimit*.e2e.test.js`), including the forged-left-entry case.
+- **F.6 Cluster.** Git auto-sync was an interval per create/update call (never stopped, stale copy of the repository,
+  possible in a follower). One idempotent loop owned by the leader reads the repositories from the database on every
+  tick. Caddy config writes take a database lock (`ConfigLock`, expiring, owner-checked) in addition to the in-process
+  mutex when `CLUSTER_MODE=true`, so two workers cannot interleave their read-modify-write of the routes.
+- **F.7 Docker on followers.** `ensureInitialized()` connects on demand for `/discovery/status`, scan and sync; the
+  watcher stays with the leader.
+- **F.8 Build.** CI starts the backend image next to the project Caddy and waits for `/ready`; source maps carry the
+  sources (stack traces are readable in the image); `npm start` builds only when `dist/` is missing.
+- **F.9 Backups.** `POST /api/backups/upload` (multipart field `file`) was a 501. It validates like a restore, stores
+  under a generated name (re-encrypted with the local key), limit `BACKUP_UPLOAD_MAX_MB` (50), own rate limit. A
+  security review of it found that the `templates` section was never validated: a template header such as
+  `{env.CF_API_TOKEN}` would have been restored and then handed to every visitor. Templates now pass the templates
+  API validation in the upload and in restore, before anything is deleted.
+
 ## Where this session stopped
 
 Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
@@ -2112,22 +2156,21 @@ their exact messages, and the login and reset rules depend on `normalizeEmail`, 
 
 ### Open items (documented, not fixed)
 
-- The rate-limit key behind a reverse proxy needs `trusted_proxies` configured in Caddy.
-- Applying a template has no Caddy-failure compensation (a failed Caddy call leaves the database changed).
-- In cluster mode the Docker status and the Git auto-sync timers run per worker.
-- The Caddy route builder applies only the first 10 `ip_filtering` entries.
-- The Docker `domain` label accepts wildcards; template lookup by name is case-sensitive.
+- The Docker `domain` label accepts wildcards on purpose (the API does too: S3 virtual-hosted style needs them); a
+  discovered proxy is created disabled, so a duplicate domain is visible in review.
 - The e2e suites need Docker with host networking (Linux) or a `caddy` binary; macOS Docker Desktop is not supported.
-- Kubernetes discovery and backup upload are planned (the API answers 501 and says so).
-- `docker-compose.prod.yml` does not fail fast on empty secrets.
-- With `DB_SSL=true` PostgreSQL connects with `rejectUnauthorized: false` (pre-existing, documented in 3.5).
-  Likewise the TLS probe in `caddyService.verifyTlsForDomains` does not verify the certificate it reads, which is
-  its purpose (it inspects what Caddy serves).
-- Low-severity notes from the 2.1 review: `npm start` runs `tsc` and empties `dist/` first; the nodemon
-  `--exec` chain can race on a restart; the image carries source maps but no `src/`; CI builds the image but
-  does not start it; a uid mismatch is possible with the dev compose bind mount.
+- Kubernetes discovery is planned (the API answers 501 and says so). It needs a design decision: which resources
+  (Services or Ingresses), namespaces, in-cluster credentials and RBAC.
+- With `DB_SSL=true` alone PostgreSQL still connects without verifying the certificate (kept for compatibility, logs a
+  warning; set `DB_SSL_CA` or `DB_SSL_REJECT_UNAUTHORIZED=true`). The TLS probe in `caddyService.verifyTlsForDomains`
+  does not verify the certificate it reads, which is its purpose (it inspects what Caddy serves).
+- Left from the 2.1 review (development only): the nodemon `--exec` chain can race on a restart, and a uid mismatch is
+  possible with the dev compose bind mount.
 - Spying on `caddyService.buildTlsTransport` or `shouldUseHTTPSTransport` no longer affects route generation
   (the methods delegate to `utils/caddyRoute`); no test does that today.
-- `npm audit` still reports the `sqlite3` build chain (`tar`, `@tootallnate/once`); upgrading `sqlite3` was
-  declined in 0.28d.
-- A pull request has not been opened. The `origin` remote URL of the main checkout embeds a GitHub token: rotate it.
+- `npm audit` still reports the `sqlite3` build chain (`tar`, `node-gyp`, `make-fetch-happen`) and `nodemon`'s
+  dev-only dependencies. These run at install time, not in the server. `sqlite3` 6 was declined in 0.28d (its binary
+  needs glibc 2.38, the image has 2.36); `npm audit`'s fix for `nodemon` is a downgrade.
+- A client can still send an `X-WebAuth-User`-style header that the origin trusts when no template rule overwrites it:
+  CaddyManager cannot know which headers an origin trusts. Templates that need one (Grafana) now overwrite or delete it.
+- A pull request has not been opened.
