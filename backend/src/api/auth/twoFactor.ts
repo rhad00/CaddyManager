@@ -7,6 +7,7 @@ import { User } from '../../models';
 import { logAction } from '../../services/auditService';
 import { verifyTotpSession, generateToken } from '../../services/authService';
 import { twoFaLimiter } from '../../middleware/rateLimiter';
+import { cookiePolicy } from '../../utils/cookiePolicy';
 
 export const router = express.Router();
 
@@ -176,10 +177,10 @@ router.post('/challenge', twoFaLimiter, async (req, res) => {
     await user.save();
 
     const token = generateToken(user);
-    const isProduction = process.env.NODE_ENV === 'production';
+    const { secure, sameSite } = cookiePolicy(process.env);
     res.cookie('auth_token', token, {
-      httpOnly: true, secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      httpOnly: true, secure,
+      sameSite,
       path: '/', maxAge: 24 * 60 * 60 * 1000,
     });
 

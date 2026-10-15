@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import { doubleCsrf } from 'csrf-csrf';
+import { cookiePolicy } from './utils/cookiePolicy';
 import { sequelize, testConnection } from './config/database';
 import { buildApiRouter } from './api';
 import { setupSwagger } from './config/swagger';
@@ -68,15 +69,15 @@ if (isProduction && !process.env.CSRF_SECRET) {
 
 const csrfSecret = process.env.CSRF_SECRET || 'dev-csrf-secret';
 
-const csrfCookieName = isProduction ? '__Host-x-csrf-token' : 'x-csrf-token';
+const { secure: cookieSecure, sameSite: cookieSameSite, csrfCookieName } = cookiePolicy(process.env);
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
   getSecret: () => csrfSecret,
   getSessionIdentifier: (req) => req.cookies?.auth_token || req.headers?.authorization || 'anonymous',
   cookieName: csrfCookieName,
   cookieOptions: {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     path: '/',
   },
   getCsrfTokenFromRequest: (req) => String(req.headers['x-csrf-token'] || req.headers['csrf-token'] || ''),

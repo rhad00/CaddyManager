@@ -74,7 +74,12 @@ services:
       - CADDY_ACCESS_LOG=/var/log/caddy/access.log
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      # Secure cookies need HTTPS (browsers drop them on plain HTTP except on localhost); set
+      # COOKIE_SECURE=false in .env to change this
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - CSRF_SECRET=${CSRF_SECRET:?set CSRF_SECRET in .env}
       - GIT_SECRET_KEY=${GIT_SECRET_KEY:?set GIT_SECRET_KEY in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}

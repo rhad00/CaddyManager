@@ -33,6 +33,8 @@ services:
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=dev_secret_key_123_2316492642314
       - JWT_EXPIRES_IN=24h
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - LOG_LEVEL=debug
     # Rebuilds dist/ and restarts when a file in src/ changes (needs `npm install` in ./backend on the host)
     command: ["npm", "run", "dev"]

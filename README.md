@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub issues](https://img.shields.io/github/issues/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/issues)
 [![GitHub stars](https://img.shields.io/github/stars/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://ghcr.io/rhad00/caddymanager-backend)
+[![Container images](https://img.shields.io/badge/images-ghcr.io-blue)](https://github.com/rhad00?tab=packages&repo_name=CaddyManager)
 
 **CaddyManager** is the modern, hassle-free way to manage your reverse proxy. Built on the powerful **Caddy Server**, it gives you a beautiful UI to manage domains, SSL certificates, and complex headers without touching a single config file.
 
@@ -352,29 +352,61 @@ await caddyService.applyTemplate(proxy, template);
 
 ## 🚀 Quick Start
 
-CaddyManager offers three deployment configurations to suit different needs:
+### Quick install (pre-built images, nothing to build)
+
+You need Docker with the Compose plugin and `openssl`. The images are pulled from GitHub Container Registry
+(`ghcr.io/rhad00/caddymanager-caddy`, `-backend`, `-frontend`), so the first start takes a minute, not a build.
+
+```bash
+mkdir caddymanager && cd caddymanager
+curl -fsSLO https://raw.githubusercontent.com/rhad00/CaddyManager/main/docker-compose.ghcr.yml
+
+# secrets for this installation (the backend refuses to start in production without them)
+printf 'JWT_SECRET=%s\nCSRF_SECRET=%s\nGIT_SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Then open **http://localhost:8080** (or `http://<server-ip>:8080`). The first admin account is
+`admin@caddymanager.local`; its password is generated and printed **once** in the backend log:
+
+```bash
+docker compose -f docker-compose.ghcr.yml logs backend | grep -A2 "AUTO-GENERATED"
+```
+
+Prefer to choose it? Add `ADMIN_EMAIL=...` and `ADMIN_PASSWORD=...` to `.env` **before** the first start. Change the
+password after logging in.
+
+Good to know:
+
+- **Updating**: `docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d`.
+  Pin a release with `CADDYMANAGER_VERSION=1.2.3` in `.env` (default `latest`). Your data lives in Docker volumes
+  (`caddymanager_*`) and survives updates.
+- **Ports**: 8080 is the web UI, 80/443 are the proxy Caddy runs for your services. The Caddy admin API is not published.
+- **HTTP vs HTTPS for the UI**: the pre-built compose sets `COOKIE_SECURE=false` so you can log in over plain
+  `http://server-ip:8080` (browsers refuse Secure cookies there). Once you serve the UI over HTTPS, for example by adding a
+  proxy for it in CaddyManager itself, set `COOKIE_SECURE=true` in `.env`.
+- **Back up** `.env`: `ENCRYPTION_KEY` and `GIT_SECRET_KEY` are needed to read the secrets stored in the database.
+- **Docker auto-discovery** is off; enabling it needs the Docker socket, see the comment in the compose file.
+- The images are `linux/amd64`.
+
+### Other ways to run it
+
+CaddyManager has three compose files that build the images from this repository:
 
 ### Deployment Options Overview
 
 | Configuration | Database | Use Case | Ports | Command |
 |--------------|----------|----------|-------|---------|
-| **Default** (`docker-compose.yml`) | SQLite | Small deployments, testing | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose up -d` |
-| **Development** (`docker-compose.dev.yaml`) | SQLite | Development, debugging | Caddy: 80/443/2019, Backend: 3000, Frontend: 8080 | `docker-compose -f docker-compose.dev.yaml up -d` |
-| **Production** (`docker-compose.prod.yml`) | PostgreSQL | Production, high-traffic | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d` |
+| **Pre-built images** (`docker-compose.ghcr.yml`) | SQLite | Most installs: no build, updates by `pull` | Caddy: 80/443, UI: 8080 | see above |
+| **Default** (`docker-compose.yml`) | SQLite | Build from source | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker compose up -d` |
+| **Development** (`docker-compose.dev.yaml`) | SQLite | Development, debugging | Caddy: 80/443/2019, Backend: 3000, Frontend: 8080 | `docker compose -f docker-compose.dev.yaml up -d` |
+| **Production** (`docker-compose.prod.yml`) | PostgreSQL | Production, high-traffic | Caddy: 80/443, Frontend: 8080 | `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d` |
 
-### 1. Default Deployment (SQLite - Recommended for Small Scale)
+### 1. Default Deployment (build from source, SQLite)
 
-**Best for:** Personal use, small teams, testing, low-traffic sites
-
-**Features:**
-- SQLite database (no separate DB container needed)
-- Simple setup with minimal configuration
-- All data stored in Docker volumes
-- Caddy handles SSL/TLS on ports 80/443
-- Frontend accessible on port 8080
-- Backend API on port 3000
-
-**Quick Start:**
+**Best for:** trying local changes, or when you cannot pull from ghcr.io.
 
 1. Clone the repository:
 ```bash
@@ -382,130 +414,67 @@ git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
 ```
 
-2. (Optional) Set JWT secret:
+2. Create the `.env` file the compose file reads (it is required) with fresh secrets:
 ```bash
-export JWT_SECRET=your_secure_random_string_here
+printf 'JWT_SECRET=%s\nCSRF_SECRET=%s\nGIT_SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
 ```
+   `.env.template` lists every setting if you want to see them all.
 
-3. Start the application:
+3. Build and start:
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-4. Access the application:
-   - **Frontend UI**: http://localhost:8080
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Backend API**: http://localhost:3000
-
-5. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
-
-**Customizing Admin Credentials:**
-
-To set custom admin credentials on first startup, set these environment variables:
-
-```bash
-export ADMIN_EMAIL=your-email@example.com
-export ADMIN_PASSWORD=your-secure-password
-docker-compose up -d
-```
-
-Or add them to your docker-compose.yml:
-```yaml
-backend:
-  environment:
-    - ADMIN_EMAIL=your-email@example.com
-    - ADMIN_PASSWORD=your-secure-password
-```
+4. Open **http://localhost:8080** and log in as `admin@caddymanager.local` with the password printed once in the log
+   (`docker compose logs backend | grep -A2 AUTO-GENERATED`), or set `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env` before
+   the first start.
 
 ### 2. Development Deployment (SQLite)
 
-**Best for:** Active development, debugging, testing new features
+**Best for:** active development and debugging: source mounted for live reload, debug logging, the Caddy Admin API on
+port 2019, all ports exposed.
 
-**Features:**
-- SQLite database for simplicity
-- Source code mounted for live reload
-- Caddy Admin API exposed on port 2019
-- Debug logging enabled
-- All ports exposed for direct access
-
-**Quick Start:**
-
-1. Clone and navigate:
 ```bash
 git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
+docker compose -f docker-compose.dev.yaml up -d
 ```
 
-2. Start development environment:
-```bash
-docker-compose -f docker-compose.dev.yaml up -d
-```
+- **Frontend UI**: http://localhost:8080, **Backend API**: http://localhost:3000, **Caddy Admin API**: http://localhost:2019
+- **Login**: `admin@caddymanager.local` with the password printed once in the backend log, or set `ADMIN_PASSWORD`
+  in the environment first (`ADMIN_PASSWORD=... docker compose -f docker-compose.dev.yaml up -d`).
 
-3. Access the application:
-   - **Frontend UI**: http://localhost:8080
-   - **Backend API**: http://localhost:3000
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Caddy Admin API**: http://localhost:2019
+### 3. Production Deployment (PostgreSQL, built from source)
 
-4. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+**Best for:** production environments and high-traffic sites. PostgreSQL, secure cookies (so serve the UI over HTTPS, or
+set `COOKIE_SECURE=false`), required secrets that fail fast when missing.
 
-### 3. Production Deployment (PostgreSQL - Recommended for Scale)
-
-**Best for:** Production environments, high-traffic sites, enterprise deployments
-
-**Features:**
-- PostgreSQL database for reliability and performance
-- Optimized for production workloads
-- Environment-based configuration
-- Secure defaults
-- Caddy handles SSL/TLS on ports 80/443
-
-**Quick Start:**
-
-1. Clone the repository:
+1. Clone the repository and create the environment file:
 ```bash
 git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
-```
-
-2. Create production environment file:
-```bash
 cp .env.prod.example .env.prod
 ```
 
-3. Edit `.env.prod`. These four are required (the backend refuses to start in
-   production without `JWT_SECRET`, `CSRF_SECRET` and `GIT_SECRET_KEY`); generate the
-   secrets with `openssl rand -hex 32`:
+2. Edit `.env.prod`. These four are required (the backend refuses to start in production without `JWT_SECRET`,
+   `CSRF_SECRET` and `GIT_SECRET_KEY`); generate the secrets with `openssl rand -hex 32`:
 ```bash
 DB_PASSWORD=<a strong database password>
 JWT_SECRET=<openssl rand -hex 32>
 CSRF_SECRET=<openssl rand -hex 32>
 GIT_SECRET_KEY=<openssl rand -hex 32>
 ```
-   `.env.prod.example` also lists the recommended and optional settings
-   (`ENCRYPTION_KEY`, `CF_API_TOKEN`, `CORS_ORIGINS`, `DB_NAME`, `DB_USER`,
-   `JWT_EXPIRES_IN`, `LOG_LEVEL`).
+   `.env.prod.example` also lists the recommended and optional settings (`ENCRYPTION_KEY`, `CF_API_TOKEN`,
+   `CORS_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DB_NAME`, `DB_USER`, `JWT_EXPIRES_IN`, `LOG_LEVEL`).
 
-4. Start the application:
+3. Start:
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
-5. Access the application:
-   - **Frontend UI**: http://localhost:8080 (also serves the API under `/api`)
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - The backend port 3000 is not published to the host in production.
-
-6. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+4. Open **http://localhost:8080** (it also serves the API under `/api`; the backend port is not published). Log in as
+   `admin@caddymanager.local` with the password printed once in the backend log, or the `ADMIN_PASSWORD` you set.
 
 ### Port Reference
 
@@ -562,7 +531,8 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `CSRF_SECRET` | - | Secret for CSRF tokens (use a long random string) | **Yes (Production)** |
 | `ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) that encrypts secrets stored in the database (2FA secrets, certificate private keys, Git credentials). Generate with `openssl rand -hex 32`; keep it, losing it makes those values unreadable | Recommended |
 | `ADMIN_EMAIL` | `admin@caddymanager.local` | Initial admin user email (created on first startup if no users exist) | No |
-| `ADMIN_PASSWORD` | `changeme123` | Initial admin user password (created on first startup if no users exist) | No |
+| `ADMIN_PASSWORD` | generated | Initial admin password. When unset a random one is generated and printed once in the backend log | No |
+| `COOKIE_SECURE` | `true` in production, else `false` | Issue Secure login/CSRF cookies. Browsers keep those only over HTTPS (or on localhost), so set `false` to log in over plain `http://server-ip`. The pre-built and default compose files default to `false` | No |
 | `APP_NAME` | `CaddyManager` | Application name shown in TOTP QR codes | No |
 
 #### Caddy Configuration

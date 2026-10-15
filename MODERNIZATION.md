@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| F.12 | Installation: pre-built-image compose file, working Quick Start, `COOKIE_SECURE`, frontend image default, CI install smoke test | done |
 | F.11 | README aligned with the project; `JWT_EXPIRES_IN` (the documented name) now actually works | done |
 | F.10 | Kubernetes discovery removed: CaddyManager is not an ingress controller | done |
 | F.9 | Follow-up: backup upload implemented; templates of an uploaded or restored backup validated | done |
@@ -2161,6 +2162,35 @@ commands (`test:e2e`) and every environment variable the backend reads (an autom
 uses against the README found 18 undocumented). That comparison also found that `JWT_EXPIRES_IN`, the name the README,
 the compose files and the `.env` templates all use, was never read: the code only knew `JWT_EXPIRATION`, so token
 lifetime could not be set with the documented name. Both names work now (`JWT_EXPIRATION` wins when both are set).
+
+### F.12 Installing from the published images
+
+Question asked: is there a clear, short installation, and are the images on ghcr? The release workflow does push
+`caddymanager-backend`, `-frontend` and `-caddy` to ghcr.io (on each release that Cocogitto cuts from conventional
+commits on `main`, amd64 only), but nothing used them: every compose file built from source, and the Quick Start was
+wrong. Found by following it:
+
+- `docker-compose.yml` has `env_file: .env`, which the README never said to create (compose fails without it); the README
+  promised a `changeme123` password in every section, but none of the compose files sets it (a random password is
+  generated and printed once in the backend log); the prod and dev compose files did not even pass `ADMIN_*` through.
+- The `caddymanager-caddy` image did not contain the Caddyfile (it was bind-mounted), so a published image alone would
+  have run Caddy's stock config with the admin API closed to the backend. It is baked in now.
+- The release workflow builds the frontend with no build argument, and the Dockerfile's `ARG VITE_API_URL` was empty, so
+  parts of the UI (login context, proxy form) fell back to `http://localhost:3000/api`: the published frontend image
+  could not work off localhost. The default is `/api` now.
+- In production the login and CSRF cookies are `Secure` (and `__Host-`), which browsers discard on plain HTTP except on
+  localhost, so a normal self-hosted install opened at `http://server-ip:8080` could not log in. `COOKIE_SECURE`
+  (utils/cookiePolicy) sets it explicitly; the pre-built and default compose files default to `false`, the production
+  one to `true`.
+
+Added: `docker-compose.ghcr.yml` (pull-only, secrets required, Docker socket off by default),
+`scripts/smoke-install.sh` (the documented install end to end: compose file, generated `.env`, `up -d`, generated
+admin password from the log, a real login with the CSRF flow) and a CI step that builds the three images exactly like the
+release does and runs it. The README Quick Start is rewritten around it. Verified locally with locally built images
+standing in for ghcr.
+
+Still manual: the ghcr packages must be public (GitHub → Packages → Package settings) for `docker compose pull` to work
+without a login, and the images have only been proven locally until the first release builds them.
 
 ## Where this session stopped
 

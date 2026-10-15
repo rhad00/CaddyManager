@@ -6,6 +6,7 @@ import { router as passwordResetRoutes } from './passwordReset';
 import { router as twoFactorRoutes } from './twoFactor';
 import { loginLimiter } from '../../middleware/rateLimiter';
 import { loginValidation } from '../../middleware/validation';
+import { cookiePolicy } from '../../utils/cookiePolicy';
 
 export const router = express.Router();
 
@@ -104,11 +105,11 @@ router.post('/login', loginLimiter, loginValidation, async (req: Request, res: R
     }, req);
 
     // Set JWT as httpOnly cookie
-    const isProduction = process.env.NODE_ENV === 'production';
+    const { secure, sameSite } = cookiePolicy(process.env);
     res.cookie('auth_token', result.token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      secure,
+      sameSite,
       path: '/',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
@@ -137,8 +138,8 @@ router.post('/logout', (_req, res) => {
   // Clear the httpOnly auth cookie
   res.clearCookie('auth_token', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: cookiePolicy(process.env).secure,
+    sameSite: cookiePolicy(process.env).sameSite,
     path: '/'
   });
 

@@ -1,0 +1,101 @@
+# CaddyManager from the pre-built images on GitHub Container Registry: nothing is built on your
+# machine. Quick install:
+#
+#   mkdir caddymanager && cd caddymanager
+#   curl -fsSLO https://raw.githubusercontent.com/rhad00/CaddyManager/main/docker-compose.ghcr.yml
+#   printf 'JWT_SECRET=%s\nCSRF_SECRET=%s\nGIT_SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' \
+#     "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+# Then open http://localhost:8080. The first admin password is printed once in the backend log:
+#   docker compose -f docker-compose.ghcr.yml logs backend | grep -A2 "AUTO-GENERATED"
+# (or set ADMIN_EMAIL / ADMIN_PASSWORD in .env before the first start).
+#
+# Pin a release with CADDYMANAGER_VERSION=1.2.3 in .env (default: latest). Settings: see the README.
+
+services:
+  caddy:
+    image: ${REGISTRY:-ghcr.io/rhad00}/caddymanager-caddy:${CADDYMANAGER_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      # The Caddy Admin API (2019) is only reachable by the backend, on the internal network
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_access_logs:/var/log/caddy
+    networks:
+      - caddy_net
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN:-}
+      - CADDY_TRUSTED_PROXIES=${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+      - CADDY_CLIENT_IP_HEADERS=${CADDY_CLIENT_IP_HEADERS:-X-Forwarded-For}
+
+  backend:
+    image: ${REGISTRY:-ghcr.io/rhad00}/caddymanager-backend:${CADDYMANAGER_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_TYPE=sqlite
+      - SQLITE_PATH=/app/data/caddymanager.db
+      - CADDY_API_URL=http://caddy:2019
+      - CADDY_ACCESS_LOG=/var/log/caddy/access.log
+      - CF_API_TOKEN=${CF_API_TOKEN:-}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -hex 32)}
+      - CSRF_SECRET=${CSRF_SECRET:?set CSRF_SECRET in .env (openssl rand -hex 32)}
+      - GIT_SECRET_KEY=${GIT_SECRET_KEY:?set GIT_SECRET_KEY in .env (openssl rand -hex 32)}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-}
+      # Browsers drop Secure cookies on plain HTTP (except on localhost), so login only works over
+      # http://server-ip:8080 with this off. Set COOKIE_SECURE=true once the UI is served over HTTPS.
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - APP_URL=${APP_URL:-http://localhost:8080}
+    volumes:
+      - backend_data:/app/data
+      - backend_logs:/app/logs
+      - caddy_access_logs:/var/log/caddy:ro
+      - backend_metrics:/app/metrics
+      - backend_backups:/app/backups
+      # Docker auto-discovery (ENABLE_DOCKER_DISCOVERY=true) needs the Docker socket. It gives the
+      # backend control over Docker, so it is off by default; uncomment only if you use discovery:
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - caddy_net
+
+  frontend:
+    image: ${REGISTRY:-ghcr.io/rhad00}/caddymanager-frontend:${CADDYMANAGER_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks:
+      - caddy_net
+
+networks:
+  caddy_net:
+
+volumes:
+  caddy_access_logs:
+    name: caddymanager_caddy_access_logs
+  caddy_data:
+    name: caddymanager_caddy_data
+  caddy_config:
+    name: caddymanager_caddy_config
+  backend_data:
+    name: caddymanager_backend_data
+  backend_logs:
+    name: caddymanager_backend_logs
+  backend_metrics:
+    name: caddymanager_backend_metrics
+  backend_backups:
+    name: caddymanager_backend_backups
