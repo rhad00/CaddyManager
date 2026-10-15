@@ -1,13 +1,41 @@
 CI/CD Workflows
 ================
 
-This repository includes three GitHub Actions workflows:
+Two GitHub Actions workflows live in `.github/workflows/`:
 
+- `ci.yml` runs on pull requests and pushes: linting, the unit/integration tests, the end-to-end suite against a real
+  Caddy, PostgreSQL integration runs, and a smoke start of the built images. It never publishes anything.
+- `version-and-release.yml` ("Release") runs on every push to `main` and can be started by hand (`workflow_dispatch`).
 
-Behavioral notes:
-- On `dev` branch and PRs: CI runs linting, tests and verification builds. The `docker-build-push` workflow runs on PRs to verify multi-platform builds but does NOT push images to the registry.
-- On `main`: merges run the `cocogitto-trigger` workflow which runs `cog release --yes --push`. If cocogitto decides a new version is required it will push a tag (e.g., `vX.Y.Z`), which then triggers the `release` workflow. The `release` workflow builds and pushes images and creates the GitHub Release with changelog asset.
-	- The `release` workflow builds/pushes three images to GHCR: `caddymanager-backend`, `caddymanager-frontend`, and `caddymanager-caddy` (the caddy image is built from `caddy/Dockerfile`). All images are built multi-platform and use registry caching.
+Release flow
+------------
 
-- `GITHUB_TOKEN` — provided by GitHub Actions and used for publishing releases and pushing to GHCR. Ensure the workflows have the following permissions in the repository settings: `contents: write`, `packages: write`, `id-token: write` (these are set in the release workflow).
+1. `cog check --from-latest-tag` verifies that every commit since the latest release is a conventional commit.
+2. `scripts/restore-changelog.sh` brings back the accumulated `CHANGELOG.md` (see below).
+3. `cog bump --auto` decides the next version from the commit types in `cog.toml` (`feat` = minor; `fix`, `perf`,
+   `refactor`, `docs`, `style`, `test`, `build`, `ci`, `revert` = patch; `chore` = no release). With nothing to release
+   the workflow stops here. Otherwise it updates the package versions, prepends the new section to `CHANGELOG.md`,
+   commits and tags `vX.Y.Z`, and pushes the tag.
+4. Three images are built for `linux/amd64` and pushed to GHCR: `caddymanager-backend`, `caddymanager-frontend` and
+   `caddymanager-caddy` (built from `caddy/Dockerfile`), tagged `X.Y.Z`, `X.Y`, `X`, the short SHA and `latest`.
+5. The GitHub Release is created from `scripts/release-notes.js`:
+   - **Summary**: the `## Summary` section of every pull request merged since the previous release (so keep that
+     section meaningful in PR descriptions)
+   - **What's Changed**: the commits of the release grouped by type
+   - links to `CHANGELOG.md` at the tag and to the compare view, and the image references
 
+`main` is protected (pull request, review and signed commits required), so the release job cannot commit to it. The
+bump commit, with the changelog and the package versions, is only tagged. Each release's `CHANGELOG.md` therefore lives
+on its tag (`blob/vX.Y.Z/CHANGELOG.md`) and holds the full history; the copy on `main` is only refreshed by a pull
+request.
+
+To keep a change out of the next release or to avoid triggering one, use the `chore` type (for example
+`chore(readme): ...`). Pull requests must be merged with a conventional-commit title (squash) or conventional commits
+(rebase): `cog check` fails the release otherwise.
+
+Secrets and permissions
+-----------------------
+
+- `GITHUB_TOKEN` publishes the release and pushes to GHCR. The workflow sets `contents: write`, `packages: write`,
+  `pull-requests: read`, `id-token: write` and `attestations: write`.
+- `RELEASE_TOKEN` (optional personal access token) is used to push the tag so that it can trigger other workflows.
