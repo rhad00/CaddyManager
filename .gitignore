@@ -64,9 +64,6 @@ backend/config_backups/
 backend/config/
 backend/backups/
 backend/uploads/
-*.sh
-docs
-CLAUDE.md
 FEATURE_IMPLEMENTATION.md
 
 # Local tooling and AI assistant files: never part of the repository
@@ -81,3 +78,6 @@ AGENTS.md
 .windsurf/
 .continue/
 .github/copilot-instructions.md
+
+# Throwaway test certificates (see backend/tests/fixtures/certs/README.md); tests read them
+!backend/tests/fixtures/certs/*.pem
