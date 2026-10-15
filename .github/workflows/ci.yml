@@ -123,6 +123,24 @@ jobs:
       - name: Build the backend Docker image
         run: docker build -t caddymanager-backend:ci ./backend
 
+      # Building proves little: start the image next to the project Caddy and wait for /ready
+      # (it runs the migrations and loads the Caddy config before it answers)
+      - name: Start the backend image next to Caddy
+        run: |
+          docker network create smoke
+          docker build -t caddymanager-caddy:smoke ./caddy
+          docker run -d --name caddy --network smoke --network-alias caddy caddymanager-caddy:smoke
+          docker run -d --name backend --network smoke -p 3000:3000 \
+            -e NODE_ENV=production -e JWT_SECRET=ci-smoke-secret-0123456789 \
+            -e GIT_SECRET_KEY=ci-smoke-git-key-0123456789 -e CSRF_SECRET=ci-smoke-csrf-0123456789 \
+            -e CADDY_API_URL=http://caddy:2019 caddymanager-backend:ci
+          for i in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/ready)" = "200" ] && exit 0
+            sleep 1
+          done
+          docker logs backend
+          exit 1
+
   # Production runs on PostgreSQL; the model syncs and migrations differ from SQLite
   backend-postgres:
     runs-on: ubuntu-latest

@@ -5,6 +5,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "sourceMap": true,
+    "inlineSources": true,
     "removeComments": false,
     "declaration": false
   },

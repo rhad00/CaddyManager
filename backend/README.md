@@ -59,7 +59,7 @@ backend/
 |---------|--------------|
 | `npm run dev` | Builds, runs `dist/index.js` and rebuilds + restarts when a file in `src/` changes |
 | `npm run build` | Compiles `src/` to `dist/` (about a second) |
-| `npm start` | Builds, then runs `dist/index.js` (`npm run start:cluster` for cluster mode) |
+| `npm start` | Runs `dist/index.js` (builds first only when `dist/` does not exist; run `npm run build` after changing the source) (`npm run start:cluster` for cluster mode) |
 | `npm run typecheck` | Type-checks all of `src/` (JavaScript through JSDoc) without writing files |
 
 Running `node src/index.js` no longer works once a `.ts` file exists; use the commands

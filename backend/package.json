@@ -20,7 +20,8 @@
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "nodemon --watch src --ext js,ts,json --exec \"npm run build && node --enable-source-maps dist/index.js\"",
-    "start": "npm run build && node --enable-source-maps dist/index.js",
+    "prestart": "node -e \"require('fs').existsSync('dist/index.js') || require('child_process').execSync('npm run build', { stdio: 'inherit' })\"",
+    "start": "node --enable-source-maps dist/index.js",
     "start:cluster": "npm run build && CLUSTER_MODE=true node --enable-source-maps dist/cluster.js",
     "test:contract": "jest --config jest.contract.config.js",
     "test:e2e": "jest --config jest.e2e.config.js"
