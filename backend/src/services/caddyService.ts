@@ -805,6 +805,10 @@ export class CaddyService {
       const oldServerConfig = this.ensureHttpServer(oldConfig);
       const oldRoute = oldServerConfig.routes[proxy.caddy_route_index as number];
 
+      // What the proxy has now, to put back if Caddy refuses the new route
+      const previousHeaders = (await Header.findAll({ where: { proxy_id: proxy.id } })).map((h) => h.get({ plain: true }));
+      const previousMiddlewares = (await Middleware.findAll({ where: { proxy_id: proxy.id } })).map((m) => m.get({ plain: true }));
+
       // First apply the template headers and middlewares to the proxy
       await sequelize.transaction(async (transaction) => {
         // Remove any existing headers and middlewares
@@ -844,13 +848,21 @@ export class CaddyService {
 
       // Reload proxy with its new headers and middlewares and update Caddy (the update
       // builds the route from this instance, so both must be loaded)
-      await proxy.reload({
-        include: [
-          { model: Header, as: 'headers' },
-          { model: Middleware, as: 'middlewares' }
-        ]
-      });
-      return await this.updateProxy(proxy);
+      const withRules = { include: [{ model: Header, as: 'headers' }, { model: Middleware, as: 'middlewares' }] };
+      try {
+        await proxy.reload(withRules);
+        return await this.updateProxy(proxy);
+      } catch (caddyError) {
+        // Caddy still runs the old route, so the database goes back to match it
+        await sequelize.transaction(async (transaction) => {
+          await Header.destroy({ where: { proxy_id: proxy.id }, transaction });
+          await Middleware.destroy({ where: { proxy_id: proxy.id }, transaction });
+          await Header.bulkCreate(previousHeaders as CreationAttributes<Header>[], { transaction });
+          await Middleware.bulkCreate(previousMiddlewares as CreationAttributes<Middleware>[], { transaction });
+        });
+        await proxy.reload(withRules);
+        throw caddyError;
+      }
     } catch (error) {
       console.error('Failed to apply template to proxy in Caddy configuration:', error);
       throw new Error(`Failed to apply template: ${errorMessage(error)}`);

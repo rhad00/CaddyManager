@@ -4,8 +4,8 @@
  * redirect templates did nothing.
  */
 jest.mock('../../src/models', () => ({
-  Proxy: {}, Header: { destroy: jest.fn(), create: jest.fn() }, Certificate: {},
-  Middleware: { destroy: jest.fn(), create: jest.fn() },
+  Proxy: {}, Header: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() }, Certificate: {},
+  Middleware: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() },
   sequelize: { transaction: jest.fn(async (fn) => fn('tx')) },
 }));
 
