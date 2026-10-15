@@ -1,0 +1,15 @@
+# GitGuardian / ggshield configuration.
+# Everything below is non-secret by design: test fixtures use made-up values, and the compose files
+# and .env examples only reference variables (${DB_PASSWORD:?...}) or contain empty placeholders.
+version: 2
+
+secret:
+  ignored-paths:
+    - "backend/tests/**"
+    - "frontend/src/**/*.test.*"
+    - "frontend/tests/**"
+    - "docker-compose*.yml"
+    - "docker-compose*.yaml"
+    - ".env.template"
+    - ".env.prod.example"
+    - "**/.env.example"
