@@ -2,23 +2,26 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../src/models/template', () => ({
-  findAll: jest.fn(),
-  findByPk: jest.fn(),
-  create: jest.fn(),
-  findAndCountAll: jest.fn(),
+  Template: {
+    findAll: jest.fn(),
+    findByPk: jest.fn(),
+    create: jest.fn(),
+    findAndCountAll: jest.fn(),
+  },
 }));
 
 jest.mock('../../src/middleware/auth', () => ({
   authMiddleware: (req, res, next) => { req.user = { id: 'admin-1', role: 'admin' }; next(); },
   roleMiddleware: () => (req, res, next) => next(),
+  requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
-jest.mock('../../src/services/caddyService', () => ({}));
-jest.mock('../../src/models/proxy', () => ({ findByPk: jest.fn() }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: {} }));
+jest.mock('../../src/models/proxy', () => ({ Proxy: { findByPk: jest.fn() } }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
 
-const Template = require('../../src/models/template');
-const templateRouter = require('../../src/api/templates/routes');
+const { Template } = require('../../src/models/template');
+const { router: templateRouter } = require('../../src/api/templates/routes');
 
 describe('Templates routes', () => {
   let app;

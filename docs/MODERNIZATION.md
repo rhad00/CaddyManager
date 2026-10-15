@@ -1,0 +1,2227 @@
+# CaddyManager Modernization Log
+
+Tracks every change made on the `chore/modernization` branch, following the review of
+the backend (TypeScript readiness, obsolete packages, declared-but-missing features, tests).
+
+Each item below is one commit. Commits are prefixed with the item ID, e.g. `fix(0.5): ...`,
+so `git log --grep "(0.5)"` finds the change for any entry.
+
+## Plan
+
+| Phase | Scope |
+|-------|-------|
+| 0 | Prerequisites: dependency hygiene, Node LTS, Caddy contract test, fix broken features |
+| 0+ | Remaining functional/security fixes found in the review |
+| 1 | `tsconfig` with `allowJs` + `checkJs`, type-check in CI |
+| 2 | Convert `utils`, `config`, `middleware`; typed Caddy config module |
+| 3 | Convert models (class-based Sequelize) and services; break circular requires |
+| 4 | Convert routes; zod request schemas |
+| 5 | (Optional) ESM |
+
+## Status
+
+| ID | Item | Status |
+|----|------|--------|
+| 0.1 | Remove unused backend dependencies | done |
+| 0.2 | In-range dependency updates + `npm audit fix` | done |
+| 0.3 | Fix frontend lint error that fails CI | done |
+| 0.4 | Node 20 (EOL) → Node 24 LTS | done |
+| 0.5 | Caddy config contract test (`caddy validate`) | done |
+| 0.6 | Upstream URL copied verbatim into Caddy `dial` | done |
+| 0.7 | Basic auth: invalid handler + plaintext password | done |
+| 0.8 | SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts | done |
+| 0.9 | Active health checks rejected by Caddy | done |
+| 0.10 | "weighted" load balancing policy | done |
+| 0.11a | Certificates: parsing, key/cert match, `created_by`, ids | done |
+| 0.11b | Certificates: load custom certs via `apps.tls.certificates.load_pem` | done |
+| 0.11c | Certificates: self-signed generation needs `openssl` in the image | done |
+| 0.11d | Certificates: sync / renew / per-domain lookup without fake endpoints | done |
+| 0.11e | Certificates: ACME CAs and CA trust without fake endpoints | done |
+| 0.12 | `ssl_type` enum lacks `cloudflare` (Postgres) | done |
+| 0.13 | Access log never written, and not shared between Caddy and backend | done |
+| 0.14 | Cloudflare DNS policy captures every proxy's domains, not just Cloudflare ones | done |
+| 0.15 | Proxy create/update commits to DB before Caddy; failure leaves orphan + 500 | done |
+| 0.16 | Proxies from GitOps sync / backup restore / discovery skip upstream validation | done |
+| 0.17 | Prod compose file mounts a non-existent `./Caddyfile` | done |
+| 0.18 | GitOps sync and Docker discovery call a non-existent `caddyService.updateCaddyConfig()` | done |
+| | **Phase 0+: remaining fixes from the review** | |
+| 0.19 | API keys: write-scope check and key owner status | done |
+| 0.20 | Alerts: `error_rate` / `no_traffic` stubs, stale `tls_status`, certificate sync never scheduled | done |
+| 0.21 | Alert webhooks: SSRF | done |
+| 0.22 | Git: rollback to a commit | done |
+| 0.23a | Git: backend image has no `git` binary or CA certificates | done |
+| 0.23b | Git: token stored in `.git/config`, GitLab token URL format, password hashes in the export | done |
+| 0.24 | Discovery: labels, names, events, template crash, unused labels | done |
+| 0.25 | Cluster mode: schedulers run in every instance | done |
+| 0.26 | CI: no coverage threshold, no Postgres or Playwright job | done |
+| 0.27 | README references missing files | done |
+| 0.28 | Major upgrades: `dockerode` 5, `nodemailer` 10, `simple-git` 4 done; `sqlite3` 6 declined (0.28d) | done |
+| 0.29 | Declared but unimplemented: middlewares implemented; `custom_ssl_cert_id` removed; Kubernetes discovery and backup upload stay planned, stated honestly | done |
+| 1.1a | Phase 1 finding: audit entries lost the resource id | done |
+| 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
+| 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
+| 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| F.12 | Installation: pre-built-image compose file, working Quick Start, `COOKIE_SECURE`, frontend image default, CI install smoke test | done |
+| F.11 | README aligned with the project; `JWT_EXPIRES_IN` (the documented name) now actually works | done |
+| F.10 | Kubernetes discovery removed: CaddyManager is not an ingress controller | done |
+| F.9 | Follow-up: backup upload implemented; templates of an uploaded or restored backup validated | done |
+| F.8 | Follow-up: CI starts the backend image; sources in source maps; `npm start` no longer rebuilds | done |
+| F.7 | Follow-up: followers connect to Docker on demand (status, scan, sync) | done |
+| F.6 | Follow-up: one leader-owned Git auto-sync loop; a database lock for Caddy config writes in cluster mode | done |
+| F.5 | Follow-up: rate limit keys on the real client behind trusted proxies (`CADDY_TRUSTED_PROXIES`) | done |
+| F.4 | Follow-up: `DB_SSL_CA` / `DB_SSL_REJECT_UNAUTHORIZED`; prod compose fails on empty secrets | done |
+| F.3 | Follow-up: template apply restores the proxy's rules when Caddy refuses; case-insensitive template label | done |
+| F.2 | Follow-up: every `ip_filtering` entry is applied (no 10-entry cap) | done |
+| F.1 | Follow-up: stale routes rebuilt after the S3 repair migration; half-edited S3 proxies cleaned; migrations get the transaction | done |
+| E.3 | E2E: the behaviours suite (balancing, auth, IP filter, HTTPS upstream, WebSocket) and `skip_tls_verify` | done |
+| E.2 | E2E: every default template and the header rules; Grafana auth placeholder and path-route headers fixed | done |
+| E.1 | E2E: real-Caddy suite with a strict SigV4 S3 origin; the Amazon S3 template and compression fixed | done |
+| 4.19 | Phase 4: the services and `proxyValidation` use the shared `errorMessage` | done |
+| 4.18 | Phase 4: `cluster` and `clusterSupervisor` to TypeScript | done |
+| 4.17 | Phase 4: `index` to TypeScript | done |
+| 4.16 | Phase 4: `app` to TypeScript | done |
+| 4.15 | Phase 4: `api/index` to TypeScript, static route imports | done |
+| 4.14 | Phase 4: `git` routes to TypeScript | done |
+| 4.13 | Phase 4: `certificates` routes to TypeScript | done |
+| 4.12 | Phase 4: `proxies` routes to TypeScript; `errorMessage` helper | done |
+| 4.11 | Phase 4: `discovery` routes to TypeScript; list filters validated | done |
+| 4.10 | Phase 4: `templates` routes to TypeScript | done |
+| 4.9 | Phase 4: `alerts` routes to TypeScript | done |
+| 4.8 | Phase 4: `audit` routes to TypeScript; the `userId` filter fixed | done |
+| 4.7 | Phase 4: `users` routes to TypeScript | done |
+| 4.6 | Phase 4: `keys` routes to TypeScript, `currentUser` helper | done |
+| 4.5 | Phase 4: `metrics` routes to TypeScript | done |
+| 4.4 | Phase 4: `backups` routes to TypeScript | done |
+| 4.3 | Phase 4: `auth` routes (login, password reset, 2FA) to TypeScript | done |
+| 4.2 | Phase 4: `features` and `logs` routes to TypeScript | done |
+| 4.1 | Phase 4: `zod` and the `validateBody` middleware | done |
+| 3.14 | Phase 3: `caddyService` to strict TypeScript (Phase 3 complete) | done |
+| 3.13 | Phase 3: `gitService` to strict TypeScript | done |
+| 3.12 | Phase 3: `dockerDiscoveryService` to strict TypeScript | done |
+| 3.11 | Phase 3: `backupService` to strict TypeScript | done |
+| 3.10 | Phase 3: `certificateService` to strict TypeScript | done |
+| 3.9 | Phase 3: `metricsService` to strict TypeScript, with real tests | done |
+| 3.8 | Phase 3: `templateService` and `migrationService` (first class-instance services, named exports) | done |
+| 3.7 | Phase 3: `alertService` and `authService` to strict TypeScript (all function-style services done) | done |
+| 3.6 | Phase 3: function-style services (`auditService`, `emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`, `trafficStats`, `logService`) to strict TypeScript | done |
+| 3.5b | Review fix: `createdAt` / `updatedAt` stay NOT NULL in the class models, with a guard test | done |
+| 3.5 | Phase 3: `config/database` and `models/index` to strict TypeScript | done |
+| 3.4 | Phase 3: `Certificate`, `CertificateAuthority`, `ConfigChange`, `DiscoveredService`, `GitRepository` models as typed classes (all models done) | done |
+| 3.3 | Phase 3: `AlertRule`, `ApiKey`, `AuditLog`, `Backup`, `Metric`, `NotificationChannel` models as typed classes | done |
+| 3.2 | Phase 3: `Proxy`, `Header`, `Middleware`, `Template` models as typed classes | done |
+| 3.1 | Phase 3: first class-based model (`User`) and the pattern for the others | done |
+| 2.6 | Phase 2: typed Caddy route module (`utils/caddyRoute.ts`) extracted from `caddyService` | done |
+| 2.5 | Phase 2: `middleware/*` and `config/swagger` to strict TypeScript (`config/database` waits for Phase 3) | done |
+| 2.4 | Phase 2: `proxyValidation`, `proxyImport`, `basicAuth`, `discoveryLabels` to strict TypeScript (all of `utils` is `.ts`) | done |
+| 2.3 | Phase 2: `outboundRequest`, `notificationChannels`, `proxyMiddlewares`, `upstreamProbe` to strict TypeScript | done |
+| 2.2 | Phase 2: pure helpers to strict TypeScript (`clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`, `certificates`) | done |
+
+## Changes
+
+### 0.1 Remove unused backend dependencies
+
+- Removed `@kubernetes/client-node` (never imported; pulled in the deprecated `request`
+  package and 4 of the 8 critical `npm audit` findings).
+- Removed `otplib` (TOTP is implemented with `speakeasy`).
+- Removed `@babel/preset-env` (no Babel config exists; Jest runs plain CommonJS).
+- Removed `sequelize-cli` (no `.sequelizerc`; migrations run through `migrationService`).
+- `pg` and `sqlite3` are kept: Sequelize loads them dynamically by dialect.
+- Verification: backend suite 32/32 suites, 136/136 tests passing.
+
+### 0.2 In-range dependency updates + `npm audit fix`
+
+- Backend: `npm update` + `npm audit fix`, then raised every caret floor in `package.json`
+  to the installed version so fresh installs cannot resolve back to vulnerable minimums
+  (e.g. `express-rate-limit ^8.7.1` fixes the IPv4-mapped IPv6 rate-limit bypass,
+  `axios ^1.20.0`, `multer ^2.4.0`, `js-yaml ^4.3.2`, `express ^5.3.0`).
+- Backend production audit: **41 → 14** (critical 8 → 3). The remaining 14 need major
+  upgrades (`simple-git` 4, `sqlite3` 6, `nodemailer` 10, `dockerode` 5) and are
+  handled as separate items.
+- Frontend: lockfile resynced (it was missing Tailwind's optional platform binaries,
+  so `npm ci` failed on npm 11), `npm update` + `npm audit fix`, floors raised
+  (`vite ^6.4.4`, `react ^19.3.0`, `react-router-dom ^7.18.4`, `tailwindcss ^4.3.3`).
+- Frontend audit: **23 → 0**.
+- Verification: backend 136/136 tests; frontend 15/15 tests; `vite build` succeeds.
+
+### 0.3 Fix frontend lint error that fails CI
+
+- `e2e/playwright.config.js` uses `process.env`, but the flat ESLint config applied only
+  browser globals to every file, so `npm run lint` (a CI step) failed with `no-undef`.
+- Added a block giving Node globals to `e2e/**` and root `*.config.{js,mjs}` files.
+- Verification: `npm run lint` → 0 errors (4 pre-existing `exhaustive-deps` warnings).
+
+### 0.4 Node 20 (EOL) → Node 24 LTS
+
+- Node 20 reached end-of-life in April 2026.
+- `backend/Dockerfile`: `node:20-slim` → `node:24-slim`; deprecated `npm ci --only=production`
+  → `npm ci --omit=dev`.
+- `frontend/Dockerfile`: `node:20-alpine` → `node:24-alpine` (and `as` → `AS`).
+- `.github/workflows/ci.yml` matrix and `version-and-release.yml`: 20 → 24.
+- `engines.node: ">=24"` in both `package.json` files; README tech-stack lines updated.
+- Verification: both Docker images build; in the backend image (Node v24.21.0)
+  `bcrypt` and `sqlite3` native modules load.
+
+### 0.5 Caddy config contract test (`caddy validate`)
+
+- New suite `backend/tests/contract/caddyConfig.contract.test.js` (+ `caddyValidator.js`,
+  `jest.contract.config.js`, `npm run test:contract`).
+- Builds full configs exactly like `rebuildConfigFromDatabase` (routes from
+  `createRouteFromProxy`, access logging, Cloudflare policy) for every proxy feature and
+  runs them through a real `caddy validate`.
+- Caddy source: `CADDY_BIN`, `CADDY_IMAGE` (Docker), or `caddy` on `PATH`; skipped when
+  none is available unless `CADDY_CONTRACT_REQUIRED=true`.
+- Plugin-dependent cases (rate limit, Cloudflare DNS) run only when `caddy list-modules`
+  reports the module; `CADDY_REQUIRED_MODULES` makes CI fail if the project image was
+  built without them (the `caddy/Dockerfile` silently falls back to stock Caddy).
+- `caddy validate` does not parse `dial` addresses (resolved per request), so the suite
+  also checks every upstream `dial` is a plain `host:port`.
+- CI: builds `./caddy` and runs the suite with `CADDY_CONTRACT_REQUIRED=true`.
+- Known-broken cases are recorded with `test.failing` so CI stays green; each fix flips
+  its case to a normal `test`:
+  - 0.6 `http://app:8080` upstream → `dial: "http://app:8080"` (new finding: the API has
+    required an `http(s)://` URL since `fa5a042`, but Caddy's `dial` needs `host:port`,
+    so every request through such a proxy fails with "too many colons in address").
+  - 0.7 `basic_auth` → `unknown module: http.handlers.basic_auth`
+  - 0.8 health checks → `unknown field "max_fails"`
+  - 0.9 `weighted` policy → `unknown module: http.reverse_proxy.selection_policies.weighted`
+- Verification: against the project image (`caddy/Dockerfile`, Caddy 2.10.2 + plugins)
+  18/18 pass (14 valid + 4 expected failures); against stock `caddy:2.10.2` 16 pass,
+  2 plugin cases skipped; without Caddy the suite is skipped and the main suite passes.
+
+### 0.6 Upstream URL copied verbatim into Caddy `dial`
+
+- Problem: since `fa5a042` the proxies API requires `upstream_url` to be an `http(s)://`
+  URL, while the UI hinted `localhost:8080`, and `createRouteFromProxy` wrote the URL
+  straight into `dial`. Caddy accepts that config but every request fails with
+  "too many colons in address". Load-balancing and path-routing upstreams had the same
+  problem, and path-route upstreams were not validated at all.
+- New `backend/src/utils/upstream.js`:
+  - `parseUpstream()` accepts `http(s)://host[:port]` or bare `host[:port]` and returns
+    `{ dial: "host:port", useTls, hostname }`. Default ports are 80/443; port 443 implies
+    TLS (as before). Paths, queries and credentials are rejected.
+  - `upstreamHostname()` for host-only checks.
+- `caddyService.createRouteFromProxy` uses it for the single upstream, every
+  load-balancing member and every path route. Path routes to `https://` upstreams now get
+  a TLS transport. A load-balanced pool gets a TLS transport if any member uses TLS.
+  New `buildTlsTransport()` helper.
+- `addProxy` duplicate detection compares against both the normalised dial and the raw
+  URL, so routes written before this fix are still detected.
+- API `validateUpstreamUrl` accepts both input forms. It runs the existing SSRF host
+  checks first, then the structural rules. New `validatePathRoutingConfig` validates
+  path-route paths and upstreams.
+- UI placeholder updated to `http://app:8080, https://api or app:3000`.
+- Existing proxies get correct `dial` values on the next config rebuild or update.
+- Open question (not changed): the SSRF guard rejects private ranges such as
+  `10.0.0.0/8` and `192.168.0.0/16`, which are common upstreams for a self-hosted
+  reverse proxy. Docker service names are unaffected.
+- Tests: new `tests/unit/upstream.test.js` (19 cases); contract case flipped from
+  `test.failing` to `test`, plus a new case for URL-form load-balancing and path-routing
+  upstreams with https.
+- Verification: backend 155 passed; contract suite 19/19 against the project image.
+
+### 0.7 Basic auth: invalid handler + plaintext password
+
+- Problems:
+  - `createRouteFromProxy` emitted `handler: "basic_auth"`, which only exists as a Caddyfile
+    directive. Caddy rejected the whole config (`unknown module`), so enabling basic auth
+    on one proxy broke config loads for every proxy.
+  - The UI sends `basic_auth.password`; the API stored it as-is (plaintext in the
+    database, returned by every GET) and never produced the `hashed_password` the route
+    builder read.
+- New `backend/src/utils/basicAuth.js`:
+  - `prepareBasicAuth(input, existing)` validates the username (RFC 7617: no colon; 1-64
+    printable characters, no spaces) and the password (8-72 bytes, the bcrypt limit).
+    It bcrypt-hashes a new password (12 rounds), keeps the stored hash when no password is
+    sent (edit form), hashes a legacy plaintext value if one is found, and rejects
+    enabling without a password. bcrypt is loaded lazily, because `caddyService` unit
+    tests mock `fs` and that breaks native module resolution.
+  - `toCaddyAuthHandler()` emits `{ handler: "authentication", providers: { http_basic:
+    { accounts: [...] } } }`. If enabled without a hash it fails closed for that route
+    (static 401) instead of aborting the whole rebuild or exposing the upstream.
+  - `redactBasicAuth()` replaces the hash with `has_password: true`.
+- Proxies API: create/update run `prepareBasicAuth` (400 on invalid input); list, get,
+  create and update responses go through `serializeProxy`, so no hash or password is
+  ever returned. Git exports and backups still contain the bcrypt hash, so restores and
+  GitOps keep working.
+- Migration `20261013-hash-basic-auth-passwords.js` hashes existing plaintext passwords
+  on startup and removes them.
+- Runtime check (live `caddy:2.10.2` with the generated handler and a raw bcrypt hash):
+  no credentials → 401, wrong password → 401, correct password → 200.
+- Tests: `tests/unit/basicAuth.test.js` (17), `tests/integration/basicAuth.proxies.test.js`
+  (5: hashing on create, hash kept on update, 400 without password, no hash in GET,
+  migration). Contract case flipped to `test`. `caddyService.real.test.js` assertions that
+  encoded the invalid handler now expect `authentication`.
+- Verification: backend 177 passed (unit 111, integration 63); contract 19/19.
+- Renumbering: a background security review after 0.6 led to finding SSRF guard bypasses
+  that already existed before this work. They are now item 0.8, and the following items
+  shifted by one.
+
+### 0.8 SSRF guard bypass via IPv4-mapped IPv6 / trailing-dot hosts
+
+- Problem (existed before this work): the upstream SSRF guard compared hostname strings,
+  so these all passed:
+  - `http://[::ffff:127.0.0.1]` (loopback)
+  - `http://[::ffff:a9fe:a9fe]` (the cloud metadata IP 169.254.169.254)
+  - `http://localhost.:8080`
+  - `*.localhost` names
+- New `backend/src/utils/ssrf.js` `isRestrictedHost()`:
+  - Uses Node's `net.BlockList`, which matches IPv4-mapped IPv6 addresses against the
+    IPv4 rules.
+  - Blocks the same IPv4 ranges as before, plus IPv6 `::/96` (unspecified, loopback,
+    IPv4-compatible), `64:ff9b::/96` (NAT64), `fc00::/7` and `fe80::/10`.
+  - Normalises case and trailing dots and treats `*.localhost` as loopback (RFC 6761).
+- `validateUpstreamUrl` uses it in place of the hand-written IPv4/IPv6 helpers. Numeric
+  forms such as `2130706433` and `0x7f.1` were already normalised by `URL` and are
+  covered by regression tests.
+- Follow-ups not addressed here:
+  - DNS names that resolve to private addresses are not checked.
+  - Alert webhook URLs and Git repository URLs are fetched without any SSRF check
+    (tracked with the alert and Git items).
+- Tests: `tests/unit/ssrf.test.js` (43 cases); 6 bypass regressions added to
+  `tests/integration/proxies.routes.real.test.js`.
+- Verification: backend 226 passed.
+
+### 0.9 Active health checks rejected by Caddy
+
+- Problem: the route builder always emitted `max_fails` inside `health_checks.active`.
+  That field only exists on passive checks, so Caddy rejected the whole config
+  (`unknown field "max_fails"`) whenever a proxy enabled health checks. It also used the
+  deprecated `path` field.
+- Fix: `active: { uri, interval, timeout, fails }`. The stored and UI field names are
+  unchanged: `path` → `uri`, and "Max Fails" → `fails` (consecutive failures before an
+  upstream is marked unhealthy).
+- API: `health_checks.path` must start with `/` and contain no spaces.
+- README: Caddy's active checks are HTTP only, so the "TCP/HTTP" claims were corrected.
+- Tests: `tests/unit/healthChecks.test.js` (3); contract case flipped to `test`.
+- Verification: backend 229 passed; contract 19/19.
+
+### 0.10 "weighted" load balancing policy
+
+- Problems:
+  - The README advertised a `weighted` strategy, but Caddy has no such module, so the
+    config was rejected.
+  - Per-upstream weights from the UI were written to `max_requests`, which is a
+    per-upstream concurrency cap, not a weight. Weights therefore never affected
+    distribution, and low "weights" throttled upstreams instead.
+- Fix: new `caddyService.buildSelectionPolicy()`:
+  - Round robin with any weight set, `weighted`, or `weighted_round_robin` →
+    `{ policy: "weighted_round_robin", weights: [...] }` in upstream order. A missing or
+    invalid weight counts as 1.
+  - Other policies (`least_conn`, `ip_hash`, `random`, `first`) pass through and ignore
+    weights.
+  - `max_requests` is no longer emitted.
+- API accepts `weighted_round_robin` and `weighted`; weights must be integers 1–1000.
+- UI adds a "Weighted Round Robin" option and labels round robin "(weighted when weights
+  are set)". README strategy lists updated.
+- Tests: `tests/unit/loadBalancing.test.js` (4); contract case flipped to `test` and
+  `weighted_round_robin` added to the policy matrix. No `test.failing` cases remain.
+- Verification: backend 233 passed; contract 20/20; frontend lint clean.
+
+### 0.11 Certificate subsystem (overview)
+
+Checked against a live Caddy 2.10.2: `GET /certificates`, `DELETE /certificates/:id`,
+`/acme/accounts` and `POST /load/certificates` all return 404, because they are not part
+of Caddy's admin API. Most certificate features failed at runtime, and the unit tests hid
+this by mocking axios. The fix is split into 0.11a–e, one commit each. The goal is
+"works against a real Caddy, or fails with an honest error", not new features.
+
+### 0.11a Certificates: parsing, key/cert match, `created_by`, ids
+
+- Problems found besides the fake endpoints:
+  - `parseCertificateInfo` called `fs.writeFileSync` on `fs.promises` and an `execSync`
+    that was never imported. It always threw, and the catch silently recorded issuer
+    "Unknown" and a fake validity of now → +365 days for every certificate.
+  - `Certificate.created_by` is NOT NULL, but upload and sync never set it, so the insert
+    failed.
+  - There was no check that the private key matches the certificate.
+  - The service required `uuid`, which is not a declared dependency.
+  - Upload and generate responses returned the stored (encrypted) private key.
+  - `GET /certificates/domains/:domain` returned full rows, including decrypted private
+    keys, to any authenticated user. It was hidden only because that route always
+    failed earlier on the fake sync endpoint.
+- New `backend/src/utils/certificates.js` (Node `crypto.X509Certificate`, no openssl CLI):
+  - `parsePemCertificate()`: issuer, subject, validity, DNS SANs, fingerprint.
+  - `assertKeyMatchesCertificate()`.
+  - `resolveCertificateDomains()`: domains default to the certificate SANs; requested
+    domains must be covered (single-label wildcard matching).
+  - `toCertificateResponse()` strips `private_key_pem`.
+  - `CertificateError` maps to HTTP 400.
+- Service: upload and generate use the parser, record `created_by`, use
+  `crypto.randomUUID()`, and validate input before touching disk. Generate always
+  cleans up its temp directory. `parseCertificateInfo` was removed.
+- Routes: pass `req.user.id`; `domains` is optional on upload; `CertificateError` → 400;
+  every certificate response is sanitized.
+- Model and migration `20261013-certificates-created-by-nullable.js`: `created_by` is
+  nullable, for rows created by sync rather than by a user.
+- Test fixtures: `tests/fixtures/certs/` (test-only EC P-256 pair plus an unrelated key).
+- Tests: `tests/unit/certificateUtils.test.js` (9). In `certificateService.real.test.js`,
+  the test that asserted the silent fallback was replaced with upload tests (real
+  metadata stored; a mismatched key is rejected before Caddy or the database is touched).
+- Still broken after this item: loading into Caddy (0.11b).
+- Verification: backend 243 passed.
+
+### 0.11b Certificates: load custom certs via `apps.tls.certificates.load_pem`
+
+- Problems:
+  - Uploaded and self-signed certificates were pushed to `POST /load/certificates`, which
+    does not exist, so no custom certificate ever reached Caddy.
+  - `gitService.exportConfigToFile` called `caddyService.getCaddyConfig()`, which did not
+    exist either. Every Git export, and therefore every auto-commit, threw.
+- New `backend/src/utils/caddyTls.js` (pure, non-mutating):
+  - `withCustomCertificates(config, certs)` replaces the `load_pem` entries tagged
+    `caddymanager` with the given certificates and keeps foreign entries.
+  - `withoutCustomCertificates(config)` removes them, private keys included.
+- `caddyService`:
+  - `loadConfig()` merges every stored uploaded or self-signed certificate (not revoked)
+    into each config it pushes. Certificates survive rebuilds, startup from the backup
+    file, and backup restore without any path needing to remember them.
+  - `backupConfig()` (plaintext `caddy_config_backup.json`), `includeInBackup()` and
+    the new `getCaddyConfig()` (used by the Git export) strip managed certificates, so
+    private keys never land on disk or in Git.
+  - New `loadCustomCertificates()` and `syncCustomCertificates()` (read-modify-write
+    under the existing config mutex).
+- `certificateService`:
+  - Upload and generate store the row first, then `activateCertificate()` syncs Caddy. If
+    Caddy rejects the config, the row is removed again and the error is reported.
+  - Delete removes the row, then syncs.
+  - The fake `loadCertificateIntoCaddy` and its `DELETE /certificates/:id` call are gone.
+- Runtime check (live `caddy:2.10.2`, fixture certificate via `load_pem`, HTTPS route for
+  `app.example.com`): the response is 200 with the fixture certificate (CN
+  `app.example.com`, expires 2126), and there are no ACME attempts. Caddy logs "skipping
+  automatic certificate management because one or more matching certificates are already
+  loaded".
+- Tests:
+  - New: `tests/unit/caddyTls.test.js` (6) and `tests/unit/caddyService.certificates.test.js`
+    (5: merged on load; only uploaded/self-signed queried; no keys in the backup file,
+    backup archive or Git export; sync re-pushes).
+  - New contract case with the real fixture PEM.
+  - Five `caddyService` test files gained a `Certificate` model mock.
+- Verification: backend 254 passed; contract 21/21.
+
+### 0.11c Certificates: self-signed generation needs `openssl` in the image
+
+- Problem: `generateSelfSignedCertificate` shells out to the `openssl` CLI (with
+  `execFileSync`), but `node:24-slim` (and the earlier `node:20-slim`) does not include it,
+  so generation always failed in the shipped container. CI and dev machines have openssl,
+  which hid the gap.
+- Fix: `backend/Dockerfile` installs `openssl` (`--no-install-recommends`, apt lists
+  removed).
+- Verification: built the image and ran the real `generateSelfSignedCertificate` inside it
+  (in-memory SQLite, Caddy push stubbed). Result: type `self-signed`, both SANs, 30-day
+  validity, PEM produced.
+
+### 0.11d Certificates: sync / renew / per-domain lookup without fake endpoints
+
+- Problems:
+  - `syncCertificates` read `GET /certificates`, which does not exist.
+    `GET /certificates/domains/:domain` called sync first, so it always failed with 500.
+  - Renew sent `DELETE /certificates/:id`, which does not exist, and was only allowed
+    for ACME certificates, which Caddy renews on its own anyway.
+  - Domain lookup used `LIKE %domain%`, so `app.example.com` also matched
+    `myapp.example.com`.
+- Changes:
+  - `syncCertificates()` probes active ACME/Cloudflare proxy domains over TLS, using the
+    existing `verifyTlsForDomains`, which now also reports `issuer`. Wildcards are skipped.
+    Results are upserted as "observed" ACME rows (`caddy_cert_id = observed:<domain>`);
+    rows for domains no longer proxied are marked `revoked`. Per-domain probe failures are
+    returned instead of aborting the sync. It is not wired to a schedule yet; the alerts
+    item uses it to refresh expiry data.
+  - `getCertificatesForDomain()` reads stored data only and matches domains exactly.
+  - `renewCertificate()`:
+    - ACME → 400 "Caddy renews ACME certificates automatically…".
+    - Uploaded → 400 "upload a replacement".
+    - Self-signed → regenerated in place with the same domains and validity period,
+      then Caddy is synced.
+  - Self-signed generation is split into `validateSelfSignedInput()` and
+    `createSelfSignedPem()` for reuse by renew. The renew route maps `CertificateError`
+    to 400. The fake `getCertificatesFromCaddy` was removed.
+- Tests: in `certificateService.real.test.js`, the test of the fake endpoint was replaced
+  with sync (upsert, revoke, failures reported, wildcards skipped, no axios), exact domain
+  lookup, and renew for all three types.
+- Verification: backend 258 passed.
+
+### 0.11e Certificates: ACME CAs and CA trust without fake endpoints
+
+- Problems:
+  - Adding an ACME CA called `POST /acme/accounts`, which does not exist, so it always
+    failed.
+  - `POST /cas` also required a certificate file, which the UI never sends for ACME CAs.
+  - Trusting a custom CA patched `root_ca_pool` into Caddy's TLS app. That field does
+    not exist, so Caddy rejected it (and a missing TLS app caused a TypeError).
+  - The `/certificates/acme/accounts` routes proxied to non-existent endpoints.
+- Changes:
+  - CAs are stored as database records only. Type must be `acme` or `custom`. ACME CAs
+    need an `https` directory URL. Custom CAs need a parseable PEM file, and the file is
+    only required for custom CAs. Trust toggling and delete are database-only.
+    `CertificateError` → 400.
+  - The ACME account routes return 501 with an explanation, because Caddy creates ACME
+    accounts itself from issuer config.
+  - All fake admin-API helpers were removed (`registerACMEAccount`, `getACMEAccounts`,
+    `addACMEAccount`, `deleteACMEAccount`, `trustCACertificate`, `untrustCACertificate`),
+    along with the unused axios import.
+- Known limitation and follow-up: CA records are not applied to Caddy yet.
+  - An ACME CA could become an `acme` issuer (`ca` and `email`) in the automation policy
+    for ACME proxies.
+  - Trusted custom CAs should be applied per proxy on the upstream TLS transport.
+    Applying them globally is not safe, because a custom root pool would replace the
+    system roots for public upstreams.
+- Verification: backend 258 passed.
+
+### 0.12 `ssl_type` enum lacks `cloudflare` (Postgres)
+
+- Problem: `Proxies.ssl_type` was `ENUM('acme','custom','none')`, while `cloudflare` is
+  used throughout (UI, route builder, discovery labels). SQLite does not enforce ENUMs,
+  so this only broke on PostgreSQL, the recommended production database: saving a
+  Cloudflare proxy failed with `invalid input value for enum`. The API did not validate
+  `ssl_type` at all, and the TLS recheck route rejected Cloudflare proxies.
+- Changes:
+  - Model enum is now `acme | cloudflare | custom | none`.
+  - Migration `20261014-add-cloudflare-ssl-type.js` runs
+    `ALTER TYPE "enum_Proxies_ssl_type" ADD VALUE IF NOT EXISTS 'cloudflare'` on
+    PostgreSQL. It is a no-op on SQLite and idempotent.
+  - API rejects unknown `ssl_type` values with 400.
+  - `POST /proxies/:id/recheck-tls` accepts Cloudflare proxies.
+- Verification on PostgreSQL 16 (throwaway container, old schema recreated): the insert
+  is rejected before the migration and succeeds after it; running the migration twice
+  is harmless.
+- Tests: two cases added to `tests/integration/basicAuth.proxies.test.js` (create a
+  Cloudflare proxy; reject an unknown type). Backend 260 passed.
+
+### 0.13 Access log never written, and not shared between Caddy and backend
+
+- Problems, found by running the real setup:
+  1. The logging config included `http.log.access.srv0`, but the server logs as
+     `http.log.access.access` (from `default_logger_name: "access"`). No access-log entry
+     was ever written, even on a single host.
+  2. Caddy wrote the file inside the caddy container, where no volume is shared with the
+     backend, so the Access Log Viewer read a file that was never there.
+  3. Caddy creates log files with mode 0600 and the backend runs as `node`, so even a
+     shared file would have been unreadable.
+- Changes:
+  - `ensureAccessLogging` derives the include filter from the logger name and sets the
+    file writer `mode: "0644"`.
+  - All three compose files add a `caddy_access_logs` volume (read-write in Caddy,
+    read-only in the backend) at `/var/log/caddy`, and set
+    `CADDY_ACCESS_LOG=/var/log/caddy/access.log` for the backend. The backend writes that
+    path into the Caddy config and reads it back.
+  - README documents the shared-volume requirement.
+- Runtime check (two containers, one named volume): Caddy with the generated logging config
+  served a request, and the backend image, running as `node`, read the matching line
+  from the shared file (mode `-rw-r--r--`). Before the include fix the file stayed empty.
+- Tests: `tests/unit/accessLogging.test.js` (2); the contract suite validates the `mode`
+  field (21/21). `docker compose config` renders all three files. Backend 262 passed.
+- Found while here, logged as 0.17: the dev and prod compose files mount `./Caddyfile`,
+  which does not exist (the file is `caddy/Caddyfile`).
+
+### 0.14 Cloudflare DNS policy scope
+
+- Problem: `ensureCloudflarePolicy` added domains whenever `CF_API_TOKEN` was set in the
+  backend environment, even for plain ACME proxies:
+  - `addProxy` and `updateProxy` called it for every ACME proxy.
+  - `rebuildConfigFromDatabase` passed every proxy's domains.
+  - Subjects were only ever merged, never removed (including on delete).
+
+  With a Cloudflare token configured, every ACME domain was silently switched to the
+  DNS-01 challenge and stayed there after its proxy changed type or was deleted.
+- Fix: replaced it with `setCloudflarePolicy(config, domains)`, which sets the single
+  DNS-01 policy's subjects to exactly the given domains, removes the policy when the list
+  is empty, and leaves other automation policies alone. New `cloudflareDomains()` reads
+  the domains of active Cloudflare proxies from the database. Rebuild, add, update and
+  delete all recompute the policy from that list. The backend no longer needs
+  `CF_API_TOKEN` itself, because Caddy resolves `{env.CF_API_TOKEN}` from its own
+  environment.
+- Tests:
+  - New `tests/unit/cloudflarePolicy.test.js` (5).
+  - `caddyService.loadPayload` asserted the bug (a plain ACME proxy expected in the DNS-01
+    policy); it now asserts that only Cloudflare domains are covered.
+  - `tokenRemovalAndNonCloudflare` was rewritten (switching to ACME removes the domain; no
+    policy for non-Cloudflare proxies even with a token set).
+  - Removed `policyDedup` and `cloudflare` tests, which tested the old merge semantics;
+    the `test:regression` script now points at the new file.
+- Verification: backend 263 passed; contract 21/21 (Cloudflare case on the plugin image).
+
+### 0.15 Database and Caddy drift on failed proxy changes
+
+- Problem:
+  - Create and update commit the transaction, then call Caddy. When Caddy rejected the
+    change, the `catch` called `rollback()` on the finished transaction, which threw
+    again. The client got a 500 and the row stayed in the database without a matching
+    Caddy route.
+  - Retrying a failed create then returned 400 "already exists".
+  - A rejected update left the database describing a config Caddy was not running, and
+    the next full rebuild would push it.
+  - Delete: the route deletes the row and passes `proxy.toJSON()` to
+    `caddyService.deleteProxy`, which called `proxy.destroy()` again on that plain
+    object. The resulting TypeError skipped the Cloudflare policy cleanup after the
+    route removal.
+  - `addProxy` and `updateProxy` failed when writing the local config backup failed,
+    even though Caddy had already applied the change.
+- Fix:
+  - New `src/services/proxyCompensation.js`. If Caddy rejects a create, `discardProxy`
+    removes the new proxy with its headers and middlewares. If Caddy rejects an update,
+    `restoreProxy` writes back the snapshot taken before the update (row, headers,
+    middlewares). Caddy's `/load` is atomic, so its config is unchanged in that case.
+  - Both cases answer 502 with Caddy's error; the form already shows `message`.
+  - The `catch` blocks only roll back unfinished transactions.
+  - `deleteProxy` no longer touches the database.
+  - The post-change backup is best-effort (`backupAfterChange`).
+- Review follow-up (code review and background security review of the first commit):
+  - `restoreProxy` no longer writes back `caddy_route_index`, `tls_status` or
+    `tls_checked_at`. A concurrent delete may have shifted the index since the snapshot.
+  - The restore only applies while the row's `updatedAt` still matches the value the
+    failed update committed, so an edit made in the meantime is not overwritten. In
+    that case the 502 says the previous version could not be restored.
+  - A failing compensation step (`tryCompensation`) no longer turns the 502 into a
+    generic 500. The response keeps Caddy's error and says what needs manual cleanup.
+  - `addProxy` takes the new route's index from the routes it already read (appending
+    under the config mutex). If a later step fails, it deletes that route, so a
+    discarded proxy never stays live in Caddy.
+- Tests:
+  - New `tests/integration/proxies.caddyFailure.test.js` (6): create and update
+    rollbacks, retry after a failed create, a failed cleanup, a concurrent edit during
+    the Caddy call, and the delete hand-off.
+  - `caddyService.real`: the delete test asserted the double destroy; it is replaced by
+    index-shift and DNS-01 cleanup tests. Added tests for a failed backup, and for
+    `addProxy` removing its posted route (and not deleting anything when the POST
+    itself failed).
+- Verification: backend 273 passed, 21 skipped (contract, no local Caddy); the
+  compensation tests also pass 6/6 against PostgreSQL 16.
+- Found while here, logged as 0.18: `caddyService.updateCaddyConfig()` does not exist,
+  but GitOps sync (`gitService`), Docker discovery (3 calls) and the discovery delete
+  route call it. Proxies created or removed by those paths never reach Caddy, and the
+  TypeError is swallowed or turned into a 500.
+
+### 0.17 Prod compose Caddyfile mount
+
+- Problem: `docker-compose.prod.yml` bind-mounted `./Caddyfile`, which does not exist
+  (the file is `caddy/Caddyfile`; the dev compose file already used that path). Docker
+  creates a missing bind source as an empty directory, so Caddy failed at startup
+  reading `/etc/caddy/Caddyfile`.
+- Fix: mount `./caddy/Caddyfile`.
+- Verification: `docker compose -f docker-compose.prod.yml config` resolves the source to
+  the existing file, and `caddy adapt` on it succeeds in the project Caddy image.
+
+### 0.18 GitOps sync and Docker discovery never reached Caddy
+
+- Problem: five call sites used `caddyService.updateCaddyConfig()`, which does not
+  exist: `gitService.syncFromGit`, Docker discovery (container update, container stop,
+  reconcile) and `DELETE /api/discovery/:id?deleteProxy=true`.
+  - Each threw a TypeError after the database change. Discovery logged and swallowed
+    it.
+  - Git sync then called `rollback()` on its committed transaction, which threw again
+    and replaced the error.
+  - The discovery route answered 500 after deleting the proxy.
+  - Result: proxies synced from Git, or changed or removed by discovery, stayed out of
+    Caddy (or stayed live in it) until the next restart.
+- Fix:
+  - The callers use `rebuildConfigFromDatabase()`, the full DB-to-Caddy sync. It now
+    holds the config mutex, so it cannot interleave with add, update or delete.
+  - The rebuild clears `caddy_route_index` on proxies it leaves out (disabled, or a
+    duplicate of another proxy's domains). Before, they kept a stale index, and their
+    next update overwrote whichever route now sat there.
+  - Git sync only rolls back unfinished transactions. If the Caddy step fails,
+    `last_commit_sha` is not advanced, so the next sync retries that commit.
+- Tests:
+  - New `tests/unit/caddyService.callers.test.js` scans `src/` for every
+    `caddyService.<method>(` call and asserts the method exists (17 call sites). It
+    caught all five broken calls.
+  - New `tests/unit/gitService.sync.test.js` (2): a sync pushes to Caddy; a Caddy
+    failure surfaces its own error without a rollback and does not advance the commit.
+  - Added a rebuild test that clears the index of a disabled proxy.
+- Verification: backend 293 passed, 21 skipped.
+
+### 0.16 Validate proxies from GitOps sync, backup restore and discovery
+
+- Problem: only `POST/PUT /api/proxies` validated proxies. Since 0.18 the import paths
+  reach Caddy, and the background security review flagged both of these:
+  - **GitOps sync** passed every field of `config/proxies.json` to `Proxy.create`:
+    restricted upstreams such as `169.254.169.254`, forged `id`/`created_by`,
+    unchecked basic-auth hashes. Anyone who can push to the repository controls these.
+  - **Docker discovery** took domain, port and SSL type from container labels without
+    checks. New labels on an existing proxy rewrote its domain and upstream and pushed
+    them live, even for a proxy an admin had approved. Anyone who can label a container
+    could retarget it.
+  - **Backup restore** copied 7 fields and dropped the rest (basic auth, load balancing,
+    health checks, path routing, ...). It applied nothing to Caddy, and a bad file
+    answered 500.
+- Fix:
+  - The API's validators moved unchanged from `api/proxies/routes.js` to
+    `utils/proxyValidation.js`.
+  - New `utils/proxyImport.js` (`prepareImportedProxies`) runs `validateProxyInput` on
+    every entry and keeps only the API's whitelisted fields (proxy, header and
+    middleware fields). Basic auth takes an exported bcrypt hash only if it is
+    well-formed; a plaintext password written by hand is hashed. All invalid entries
+    are reported together (`ProxyImportError`).
+  - Git sync and backup restore call it before deleting anything, so a bad repository
+    or file changes nothing. Both routes answer 400 with the list of invalid entries.
+  - Backup restore now keeps every API field and runs `rebuildConfigFromDatabase` after
+    the commit. A Caddy failure is reported in `result.caddy` and the response message;
+    the restore itself stands.
+  - Discovery checks label values (domain, port 1–65535, SSL type). The private-address
+    rule does not apply, because the host comes from Docker (container name or network
+    IP). A label change to an active proxy's domain or upstream sets it to `disabled`
+    for admin review, as newly discovered proxies already are.
+- Tests:
+  - `proxyImport` (11).
+  - `gitService.sync` (+2: invalid entry refuses the sync before deleting; whitelist).
+  - New `backupRestore.validation` integration test (3): full round-trip incl. basic
+    auth, load balancing, health checks and headers; tampered file refused; Caddy
+    failure reported.
+  - `dockerDiscovery.validation` (8).
+  - `importRoutes.errors` (3).
+- Verification: backend 321 passed, 21 skipped.
+- Review follow-up (code review of the first commit):
+  - An import is refused when two entries share a domain, as the API refuses a domain
+    another proxy already serves.
+  - `basic_auth: null` is refused, as in the API.
+  - The review also noted that `validateMiddlewaresConfig` checks fields
+    (`type`, `requests_per_second`) that stored middlewares do not have. Caddy route
+    building never reads Middleware rows, so this has no effect on Caddy. Logged under
+    0.29 (middlewares stored but never applied) instead of validating dead data.
+  - Verification: backend 323 passed, 21 skipped.
+- Found while here (added to the discovery and Git fix tier):
+  - Discovery was suspected of misreading `State`. Checked against a real Docker
+    daemon in 0.24: inspect returns `State` as an object, so `State.Running` was
+    right. The real bugs are listed under 0.24.
+  - `websocket_enabled` is not a Proxy column, so the label is silently dropped.
+  - The Git export commits each proxy's basic-auth bcrypt hash to the repository.
+
+### 0.19 API key permissions and owner
+
+- Problem:
+  - `authMiddleware` turned an API key into `{ id: created_by, role }`, taking the role
+    from the key's scope alone. The owner was never loaded, so a key kept working after
+    its owner was locked, deleted or demoted. An `admin` key created by an admin stayed
+    admin for good.
+  - A `write` key got role `user`, which does not exist (the User enum is `admin`,
+    `read-only`). Every mutating route requires `admin`, so `write` keys could not
+    write anything. The UI and README document `write` as GET + POST + PUT.
+  - Scopes were only checked where a route called `requireApiKeyPermission` (5
+    routes). A `read` key of an admin passed every other admin-only mutation.
+  - The API key routes and user management had no scope check: a `write` key could
+    create new keys or manage users.
+  - Deleting a user who owns API keys failed with 500: `api_keys.created_by` is NOT NULL
+    with a foreign key to users.
+- Fix:
+  - A key authenticates as its owner, with the owner's current role. Owner missing or
+    not `active` → 401.
+  - `authMiddleware` enforces the key's scope by HTTP method on every route:
+    GET/HEAD/OPTIONS need `read`, POST/PUT/PATCH need `write`, DELETE (and anything
+    else) needs `admin`. Scopes are cumulative.
+  - `requireApiKeyPermission` uses the same scope order.
+  - User and API key management require the `admin` scope. Proxy create and update
+    require `write`, as documented; delete keeps `admin`.
+  - Deleting a user deletes their API keys in the same transaction.
+- Tests:
+  - New `tests/integration/apiKeyAuth.test.js` (19, real middleware and SQLite): the
+    scope × method matrix; user and key management need `admin`; the key acts as its
+    owner; a read-only owner caps an admin key; demotion applies at once; locked owner;
+    deleting an owner removes the keys.
+  - The users and keys route tests were updated for the new imports.
+- Verification: backend 342 passed, 21 skipped (49 suites passed, 1 skipped).
+- Review follow-up (security review of the first commit):
+  - Account security refuses API keys: `/auth/2fa/*` answers 403 to any key. A
+    `write` key could otherwise call `/2fa/setup` + `/2fa/verify` for its owner,
+    replace the TOTP secret and lock the owner out. This was open before 0.19.
+  - Administration areas need the `admin` scope for every method: users, keys,
+    backups, alerts, Git and audit. `write` keys reached some of their POST/PUT routes
+    (create backup, alert tests, Git sync) through the method rule. This is enforced in
+    `authMiddleware` from the router mount path (`/api` and `/api/v1`), so new routes in
+    those areas are covered without per-route checks.
+  - Proxy create/update requiring `write` (no longer `admin`) is intentional: it is the
+    documented meaning of `write` ("create/update"), and the role check still requires
+    the owner to be an admin.
+  - Last-admin guard: demoting, locking or deleting the last *active* admin is
+    refused. Locked admins no longer count. The check runs in the change's transaction
+    with the admin rows locked, so concurrent requests cannot both pass. Admins cannot
+    lock their own account.
+  - Tests: `apiKeyAuth` +7 (admin areas, 2FA); new `users.lastAdmin` (5).
+  - Verification: backend 354 passed, 21 skipped. Both files also pass against
+    PostgreSQL 16.
+- Second follow-up (background security review of the first follow-up):
+  - The area check parsed `req.baseUrl`. Express matches routes case-insensitively:
+    `POST /api/USERS` reaches the users router with `req.baseUrl` `/api/USERS`, so a
+    `write` key bypassed the admin-scope rule. Verified against Express.
+  - Areas are now marked by mounting `adminScopeArea` / `noApiKeyArea` in front of the
+    router, so Express's own routing decides what is inside an area. No path
+    parsing is left.
+  - The API router moved from `app.js` to `src/api/index.js` (`buildApiRouter`), the
+    single place listing the areas. The tests mount that same router.
+  - Tests: `apiKeyAuth` +6 (case and prefix variants for admin areas and 2FA, on the
+    real API router).
+
+### 0.20 Alerts evaluate real data
+
+- Problem:
+  - `error_rate` and `no_traffic` rules could be created in the UI but always returned
+    "not triggered".
+  - `cert_expiry` read `proxy.tls_status`, which is only written when a proxy is saved
+    or rechecked by hand, so expiry warnings were based on data of any age.
+  - `upstream_down` fired when that same stale TLS check of the proxy's own domain had
+    failed, which says nothing about the upstream.
+  - Alerts also ran for disabled proxies, which are not in Caddy.
+  - `certificateService.syncCertificates` existed but was never scheduled.
+- Fix:
+  - New `services/trafficStats.js` counts requests and 5xx per host from the access
+    log (shared with the backend since 0.13). Hosts are normalised (case, port).
+  - `error_rate`: share of 5xx over the last 15 minutes, at least 20 requests;
+    `threshold` = percent, default 5.
+  - `no_traffic`: no request to any of the proxy's domains for `threshold` minutes
+    (default 60). Only when the log covers the whole window (not new or rotated) and
+    the proxy is older than the window.
+  - `upstream_down`: new `utils/upstreamProbe.js` opens a TCP connection to every
+    upstream (main, load-balanced, path-routed) and reports the ones that refuse or
+    time out.
+  - `cert_expiry` refreshes a TLS status older than 6 hours before judging it and
+    skips proxies without TLS.
+  - Only active proxies are evaluated. The log is read once per window per run.
+    Messages describe each condition.
+  - `scheduleCertificateSync(6)` runs the sync a minute after startup and every 6
+    hours.
+- Tests:
+  - New `trafficStats` (3), `upstreamProbe` (3, real TCP server and a closed port),
+    `alertService.conditions` (10, every condition incl. quiet cases),
+    `certificateService.schedule` (1, fake timers, survives a failed run).
+- Verification:
+  - Backend 378 passed, 21 skipped.
+  - Live check: a Caddy 2.10.2 using CaddyManager's access-log config served 30× 200
+    for one host and 30× 502 for another. `trafficStats` read 30/0 and 30/30 from the
+    real log; `error_rate` fired for the failing host (100%) and stayed quiet for the
+    other.
+- Review note (background security review): it flagged the TCP probe as SSRF. Kept as
+  is:
+  - The probe only connects to upstreams of active proxies. Those are admin-created and
+    pass the SSRF rule on save, and Caddy already proxies to them on the same compose
+    network.
+  - It only learns reachable or not, reported to admin channels. An admin can already
+    have Caddy fetch full content from those hosts.
+  - Discovered proxies start disabled and are not probed.
+
+### 0.21 Alert channels: SSRF and secret exposure
+
+- Problem:
+  - Slack, Discord and webhook channels stored any URL and posted to it with
+    redirects followed. Any configured URL was requested by the backend, including
+    cloud metadata (`169.254.169.254`), the Caddy admin API (`localhost:2019`) and
+    internal services. The "test" button made this an on-demand request.
+  - Webhooks accepted any HTTP method and headers, including `Host`.
+  - `GET /alerts/channels` (any logged-in user) redacted only `webhook_url`: webhook
+    `url` and header values (typically `Authorization`) were visible to read-only
+    users.
+- Fix:
+  - New `utils/outboundRequest.js` (`sendOutbound`) checks the URL (http/https, no
+    restricted IP literal) and resolves names through `guardedLookup`. The lookup
+    refuses any restricted address at connection time, so a DNS answer cannot be
+    swapped after the check. Redirects are not followed; 10 s timeout.
+  - `ALERT_WEBHOOK_ALLOW_PRIVATE=true` (documented in `.env.example`) allows private
+    ranges for internal receivers. Loopback and link-local stay blocked.
+  - New `utils/notificationChannels.js` validates per type: email needs valid
+    addresses; Slack/Discord an https `webhook_url`; webhook a safe `url`, method
+    POST/PUT/PATCH, header names without `Host`/`Content-Length`/... and single-line
+    values.
+  - Create and update validate; update validates the merged channel. `***`
+    placeholders from the redacted list keep the stored secret, so editing in the UI
+    still works.
+  - The list and create/update responses redact URLs and header values; header names
+    stay visible.
+  - `sendToChannel` re-validates stored channels (created before this change) before
+    sending.
+- Tests:
+  - New `outboundRequest` (13: URL rules, the private-range switch, lookup guard,
+    no redirects).
+  - New `alertChannels.validation` integration (12: per-type rejections,
+    merged-update validation, redaction, keeping secrets on edit, legacy channel
+    refused at send).
+- Verification:
+  - Backend 403 passed, 21 skipped.
+  - Live DNS check: `localtest.me` (public name resolving to `127.0.0.1`/`::1`) is
+    refused by the guard inside axios's real request path.
+- Review follow-up (background security review):
+  - Problem: the `***` placeholder let an admin keep the stored `Authorization`
+    header while pointing the webhook at a new URL, sending another admin's secret to
+    a server of their choice.
+  - Fix: stored header values are only kept while the URL and channel type stay the
+    same; otherwise the values must be re-entered (400).
+  - Test: +1 in `alertChannels.validation`.
+
+### 0.22 GitOps rollback
+
+- Problem:
+  - `rollbackToCommit` checked out the target commit and then called `syncFromGit`.
+    That pulled the branch again (`git pull origin <branch>`), so the config applied
+    was the branch head, not the target. The rollback did nothing.
+  - Even with the right config applied, the next auto-sync saw branch head ≠
+    `last_commit_sha` and re-applied the head.
+  - Each call left a `backup-<timestamp>` branch and the clone on a detached HEAD.
+  - The SHA was passed to `git checkout` as is: `--output=/tmp/x` reached git as an
+    option (the route validated the format, the service did not). A commit from
+    another branch was accepted.
+  - All failures answered 500.
+- Fix:
+  - Rollback validates the SHA, resolves it to a commit in the tracked branch's
+    history (`rev-parse`, `merge-base`), and reads `config/proxies.json` at that
+    commit with `git show`. Nothing is checked out.
+  - The configuration is applied through `applyProxyDefinitions`, now shared with
+    sync (validation and whitelist from 0.16, transaction, Caddy rebuild).
+  - The rollback is recorded so auto-sync keeps it. With auto-commit, a
+    "Rollback to <sha>" commit with the exported configuration is pushed, so Git and
+    the database agree. Without it, the branch head is marked as seen; the next commit
+    pushed to the branch is applied as usual.
+  - `cloneOrUpdateRepo` checks out the tracked branch before pulling, which repairs
+    clones left detached by the old rollback.
+  - `getDiff` refuses refs that are not SHAs or `HEAD`.
+  - Errors map to 400/404 (`GitRollbackError`), invalid configuration to 400.
+- Regression found and fixed here (from the 0.16 follow-up): refusing
+  `basic_auth: null` on import broke re-importing CaddyManager's own exports. Proxies
+  without basic auth are exported with `null`, which affects backups and Git exports
+  alike. `null` now means "not set". A backup round-trip test with a proxy without
+  basic auth guards it; the earlier round-trip test only used a proxy with basic auth.
+- Tests:
+  - New `gitRollback` integration (5) on a real local Git repository (`file://`
+    remote) and SQLite: rollback applies the target and survives the next sync;
+    auto-commit pushes a matching rollback commit; unknown SHA, off-branch commit and
+    option-like input are refused without changes.
+  - `importRoutes.errors` +1 (rollback 404 mapping).
+  - `proxyImport` and `backupRestore.validation` updated for the null case.
+- Verification: backend 412 passed, 21 skipped.
+
+### 0.23a Git in the backend image
+
+- Problem: GitOps uses `simple-git`, which runs the `git` binary. The backend image
+  (`node:24-slim` + `openssl`) had neither `git` nor a CA bundle, so every GitOps call
+  (test connection, sync, export, rollback) failed in Docker. HTTPS clones would also
+  have failed certificate verification.
+- Fix: install `git` and `ca-certificates` in `backend/Dockerfile`.
+- Verification: in the rebuilt image, `git` and `/etc/ssl/certs/ca-certificates.crt`
+  are present, and `gitService.testConnection` succeeds against
+  `https://github.com/caddyserver/caddy.git`. Before the change the image had neither.
+
+### 0.23b Git credentials and secrets
+
+- Problem:
+  - Clones used a URL with the access token embedded, so the token was stored in
+    plain text in the clone's `.git/config` (`remote.origin.url`). It also appeared
+    in the git command line and in logged error messages that include the URL.
+    Pushes passed the same URL.
+  - GitLab and GitHub got `<token>:x-oauth-basic`. GitLab rejects that; it expects
+    `oauth2:<token>`.
+  - The Git export (`config/proxies.json`) contained each proxy's basic-auth bcrypt
+    hash, so anyone with read access to the repository could crack the passwords
+    offline.
+- Fix:
+  - The token is sent per command as an `Authorization: Basic` header through git's
+    environment config (`GIT_CONFIG_COUNT`/`KEY`/`VALUE` → `http.extraHeader`). It is
+    not on disk, not on the command line, and not in URLs.
+  - Clones and pushes use the clean repository URL (`push origin <branch>`). Clones
+    made by older versions have `origin` reset to the clean URL on the next update.
+  - Usernames per provider: GitHub `x-access-token`, GitLab and Gitea `oauth2`,
+    Bitbucket `x-token-auth`; the token is the password.
+  - git runs with an allowlisted environment (PATH, HOME, locale, CA and proxy
+    settings) and `GIT_TERMINAL_PROMPT=0`. simple-git's `allowUnsafeConfigEnvCount`
+    is enabled only when a token is set; the only key is the constant
+    `http.extraHeader`.
+  - The Git export drops `hashed_password` (and legacy `password`). A sync keeps the
+    hash stored for the proxy of the same name (`prepareImportedProxies(...,
+    { existingBasicAuth })`). Backups still carry hashes: they are local, optionally
+    encrypted, and a restore needs them.
+- Tests: new `gitCredentials` integration (9) on a real local repository:
+  - the clone's `.git/config` has no token, and a legacy token URL is cleaned on
+    update;
+  - per-provider basic credentials, and none without a token;
+  - the export has no hash, and a sync keeps the stored hash.
+- Verification:
+  - Backend 421 passed, 21 skipped.
+  - Against a local HTTP server, `testConnection` made git send `Authorization: Basic`
+    for `oauth2:<token>` on its first request; the logged command and the error
+    contain no token.
+
+### 0.24 Docker discovery
+
+- Problem (found by running discovery against a real Docker daemon, API 1.55):
+  - Labels: `docker inspect` has them under `Config.Labels`, with no top-level
+    `Labels`. `parseContainerLabels` read the top level, so it returned null for
+    every container and discovery never found anything. The `labels` stored on a
+    DiscoveredService were undefined too.
+  - Names: inspect has `Name` (`/web`), not `Names`, so the upstream host and the
+    proxy name fell back to the short container ID.
+  - Events: they carry `Action` and `Actor.ID`; there is no `status` or `id`.
+    `handleDockerEvent` threw on `id.substr`, so start and stop events were never
+    handled.
+  - Template label: `templateService.applyTemplateToProxy` does not exist. The call
+    threw after `Proxy.create` and before the proxy was linked, so every scan created
+    another orphan proxy.
+  - `path_prefix`, `rate_limit`, `ip_filter` and `security_headers` were parsed and
+    ignored; `websocket_enabled` is not a Proxy column.
+  - `State.Running` was correct (see the correction under 0.16).
+- Fix:
+  - New `utils/discoveryLabels.js`: `labelsOf` (Config.Labels, then Labels),
+    `containerNameOf` (Name, then Names[0], then the short ID), label validation and
+    the label → proxy field mapping.
+  - Events are read through `Action`/`Actor.ID`, falling back to `status`/`id`.
+  - A template label copies the template's headers onto the proxy. The proxy is linked
+    to its DiscoveredService before headers are added, so a failure there cannot
+    leave an orphan that the next scan duplicates.
+  - Labels now take effect:
+    - `security_headers=true` → `security_headers_enabled` plus the default headers.
+    - `rate_limit=<n>` → `rate_limit` (whole number, 1–100000 requests per second).
+    - `ip_filter=<ip|cidr,...>` → allow-list `ip_filtering` (1–10 entries, each a
+      valid IP or CIDR).
+    - `path_prefix=/api` → `path_routing` for `/api` and `/api/*` only.
+    - Invalid values skip the container with a warning, as for domain and port.
+  - Labels are untrusted input, so a label change on an `active` proxy that alters
+    the domain, upstream, rate limit, IP filter, path routing or security headers sets
+    it to `disabled` for admin review (before, only domain and upstream did). A
+    removed label removes the feature.
+  - The `websocket` label is dropped: Caddy's reverse_proxy passes WebSocket upgrades
+    through.
+  - `createOrUpdateProxy` is split into `updateLinkedProxy`, `createDisabledProxy`
+    and `applyTemplateHeaders`.
+  - The callers guard now covers every `<name>Service.<method>(` call against
+    `src/services/<name>Service.js` (`services.callers.test.js`, replacing the
+    caddyService-only one). It would have caught `applyTemplateToProxy`.
+- Tests: new `dockerDiscovery.inspect` unit (10) with inspect-shaped and
+  event-shaped fixtures: labels, name, feature mapping, invalid values, template,
+  review on a removed access label, start and stop events.
+- Verification:
+  - Backend 59 suites passed, 1 skipped; 471 tests passed, 21 skipped.
+  - Against the real daemon, a started container's real event, inspected by
+    `handleDockerEvent`, reached `createOrUpdateProxy` with its domain and upstream
+    `http://<name>:8080`.
+
+#### 0.24b Review follow-up
+
+A security review of 0.24 found no way for container labels to reach Caddy unvalidated
+or to change an active proxy's access controls without review (labels are immutable
+per container, and a recreated container gets a new Id and a new DISABLED proxy). It
+did find these defects, now fixed:
+
+- **A restart wiped admin settings.** An absent label meant "remove the feature", so a
+  container or backend restart reset the IP filter, rate limit, security headers and
+  compression an admin had set in the UI, and disabled the proxy. Now a rescan changes
+  a field only when the labels changed since the last scan (the previous labels are
+  the stored `DiscoveredService.labels`) and the proxy still holds what they set; a
+  value the admin changed is kept (`featureUpdates`). Unchanged labels touch nothing
+  and do not rebuild Caddy.
+- **`path_prefix` with `security_headers` or `template` did nothing** (the Caddy
+  builder only attaches headers to the default handler). The combination is refused
+  with a warning instead of showing "headers enabled" while none are served.
+- **Path routing answered unmatched paths with an empty 200.** The builder now ends
+  the subroute with a 404 `static_response` (checked with `caddy validate`, 21
+  contract tests).
+- `path_prefix` with `..` or `//` and IPv6 zone IDs (`fe80::1%eth0`) in `ip_filter`
+  are refused: Caddy rejects the zoned form, and one bad entry would break the whole
+  config on rebuild.
+- **`reconcileServices` removed live containers' proxies about 15 minutes after
+  start**, because `last_seen` is only refreshed by a scan or start event. It now
+  asks Docker which containers run, refreshes those, removes only the missing ones,
+  and removes nothing if Docker cannot be listed.
+
+Left open (low risk, not label-reachable):
+
+- The Caddy builder keeps only the first 10 `ip_filtering.ip_list` entries; for a
+  UI/API `deny` list longer than that, the rest are silently not blocked. (Labels
+  are limited to 10.) The model comment also says `block` where the builder knows
+  `deny`. Still open after 0.29 (the middleware work did not touch it).
+- The `domain` label accepts wildcards and is not checked for a duplicate of an active
+  domain; new proxies are DISABLED, so an admin sees both in review.
+- A template is found by exact name (`authelia` does not match `Authelia` on a
+  case-sensitive database); template rows are copied without header validation; the
+  template's `middleware` is ignored.
+- Discovered services store all container labels; check the API does not expose them
+  before showing them in the UI.
+
+### 0.25 Cluster mode: one leader runs the background work
+
+- Problem: `CLUSTER_MODE=true` forked N workers that all ran `index.js` in full. Each
+  one ran the migrations, the backup, metrics, alert and certificate schedulers, Docker
+  discovery (so every container event was handled N times) and the Git init with
+  auto-sync. Alerts and notifications were sent N times. Without `GIT_SECRET_KEY`
+  (development only) each worker also had its own random key and could not decrypt
+  the Git tokens another worker had stored.
+- Fix:
+  - `utils/clusterRole.js`: `isLeader()` is false only for a worker the primary started
+    with `CLUSTER_ROLE=follower`. (A first version also required the leader role in
+    cluster mode; a review showed that `CLUSTER_MODE=true` left in a shared `.env`
+    with `node src/index.js` would then have no leader at all.)
+  - `index.js`: the one-time and background work moved into `runLeaderTasks()`, which
+    only the leader runs. Other workers validate the environment and serve requests.
+    After `startServer()` the process sends `{ type: 'ready' }` to the primary.
+  - `clusterSupervisor.js` (the primary): forks the leader alone, forks the followers
+    when the leader reports ready (so they never meet an unmigrated database),
+    replaces a dead follower with a follower and a dead leader with a new leader, and
+    stops forking on SIGTERM/SIGINT (a pending respawn or a late "ready" forks
+    nothing after that). `cluster.js` forwards the signal to the workers and exits
+    after 20 s if one hangs.
+  - A leader that dies before it is ready is retried after 1 s, 2 s, 4 s … (max 30 s);
+    after 8 failures in a row the primary exits with an error instead of crash-looping.
+  - Outside production the primary creates one `GIT_SECRET_KEY` for all workers when
+    none is set. Production still refuses to start without it.
+- Not fixed (documented in `cluster.js`):
+  - The Caddy config mutex is per process. Writes made through different workers at the
+    same moment are not serialized, so route indices can race. A fix needs a lock
+    shared across processes (database or file). Until then `CLUSTER_WORKERS=1`, or one
+    instance behind a load balancer, is the safe setting for heavy writers.
+  - A Git repository created or edited through a follower starts its auto-sync timer in
+    that follower (`startAutoSync`; the timer is never stopped, also in a single
+    process); only the leader starts timers at boot.
+  - Docker discovery runs only in the leader, so `GET /discovery/status` and manual
+    container sync answer "not initialized" when a follower handles the request.
+    Fixing both needs the leader to own the work (IPC) or the follower to initialize
+    its own Docker client lazily; left for the cluster rework if clustering is kept.
+- Tests: new `clusterSupervisor` unit (14) with a fake cluster: roles, start order,
+  follower and leader replacement, no second follower start, retry and give-up of a
+  leader that keeps dying, no forking after stop, a direct start with
+  `CLUSTER_MODE=true`.
+- Verification: the real `node src/cluster.js` with 3 workers, a file SQLite database
+  and a real Caddy 2.10.2: one "Database synchronized", two request-only workers,
+  three listening servers, `/health` 200, clean exit on SIGTERM with no respawn.
+
+### 0.26 CI gaps
+
+- Problem (the original review said "tests are not run"; that was out of date: since
+  0.4 CI runs the backend unit, integration and Caddy contract tests):
+  - The "Upload backend coverage" step uploaded a `backend/coverage/` that the unit
+    and integration configs never produced, and nothing enforced a minimum.
+  - Production uses PostgreSQL, but CI only ran SQLite. The Postgres-only bugs found in
+    0.12 and 0.15 (enum without `cloudflare`, transactions) would not have been caught.
+  - The Playwright tests in `frontend/e2e` were never run.
+- Fix:
+  - `backend/jest.ci.config.js` and `npm run test:ci`: the whole backend suite once,
+    with coverage of `src/` and a threshold just under the measured value (statements
+    53 / branches 50 / functions 55 / lines 53; measured 55.6 / 52.4 / 57.8 / 55.5).
+    It is a separate config because a threshold in `jest.config.js` would fail every
+    single-file run. Replaces the separate unit and integration steps; the coverage
+    artifact now exists.
+  - New job `backend-postgres`: PostgreSQL 16 service, the integration tests with
+    `DB_TYPE=postgres` (`--runInBand`: the test files share one database).
+  - New job `frontend-e2e`: installs Chromium, runs `npm run e2e` (the API is mocked,
+    no backend needed), uploads the results on failure.
+  - `frontend/.gitignore`: Playwright output; `.github/workflows/README.md` updated.
+- Verification (run locally, the workflow itself runs on GitHub):
+  - `npm run test:ci`: 60 suites passed, 1 skipped (the contract suite, which has its
+    own step); 498 tests passed; exit 0. With an unreachable threshold (99%) the same
+    run exits 1 with "does not meet global threshold".
+  - Integration tests on PostgreSQL 16, `--runInBand`: 16 suites, 149 tests passed.
+  - Playwright after `playwright install chromium`: 2 passed.
+  - The workflow YAML parses (3 jobs).
+- Not done: raising the coverage floor (80% is the project goal; least covered
+  are `index.js` (0%), `metricsService`, `migrationService`, `logService`, `twoFactor`,
+  the audit and discovery routes and `passwordReset` (6–17%)), and a job that starts
+  the real stack (backend + Caddy + frontend) for end-to-end flows.
+
+### 0.27 README references
+
+- Problem (checked every file the README links or names against the repository):
+  - `.env.prod.example` did not exist, but the production quick start starts with
+    `cp .env.prod.example .env.prod`.
+  - That quick start listed two required values, but `docker-compose.prod.yml` also
+    consumes `CSRF_SECRET` and `GIT_SECRET_KEY` (the backend refuses to start in
+    production without them) and `ENCRYPTION_KEY`, `CF_API_TOKEN`, `CORS_ORIGINS`.
+    It also pointed at `http://localhost:3000`, which production does not publish.
+  - The Testing section documented `test.sh`, `discovery_test.sh`,
+    `git_integration_test.sh` and `metrics_test.sh`, none of which exist, and none of
+    the real test commands.
+  - The Documentation list linked `CLAUDE.md` and `FEATURE_IMPLEMENTATION.md`, which do
+    not exist.
+  - `.env.prod`, which the README tells people to create, was not in `.gitignore`.
+- Fix:
+  - New `.env.prod.example`: required, recommended and optional settings with how to
+    generate each secret; `.env.prod` added to `.gitignore`.
+  - Quick start lists the four required values and the real access points.
+  - Testing section: the npm commands (unit, integration, `test:ci`, PostgreSQL,
+    contract, frontend unit and Playwright) and the three scripts that exist.
+  - Documentation list: only files that exist, plus the workflows README.
+  - Not changed: `config/proxies.json` and `proxies.yaml` are files in the user's Git
+    repository, not in this one.
+- Not done: `docker-compose.prod.yml` still starts with an empty `DB_PASSWORD` or
+  `JWT_SECRET` when the variables are unset (`${VAR}` instead of `${VAR:?message}`);
+  the backend then stops or runs with a blank password. Failing fast in the compose
+  file is a behavior change, left for the deployment pass.
+
+### 0.28 Major upgrades (one commit per package)
+
+Release notes read before each upgrade; each package is verified on its own.
+
+#### 0.28a dockerode 4.0.2 → 5.0.1
+
+- Upstream changes: dropped the `uuid` dependency, raised the minimum Node version
+  (the package says >= 14.17; we run 24). Nothing in the API changed.
+- Used by: `dockerDiscoveryService` only (`new Docker`, `ping`, `getEvents`,
+  `listContainers`, `getContainer().inspect()`).
+- Verification: the live discovery check against the real Docker daemon (API 1.55)
+  still gets the start event, parses the inspect labels and reaches
+  `createOrUpdateProxy`; backend 60 suites passed, 1 skipped; 498 tests passed.
+
+#### 0.28b nodemailer 8.0.11 → 10.1.1
+
+- Upstream breaking changes: 9.0 validates TLS certificates by default when fetching
+  remote content (attachment URLs, OAuth2 token endpoints, HTTP proxy CONNECT); 10.0
+  requires Node 20+ and is rewritten in TypeScript, still shipping a CommonJS build.
+  10.1.x hardens the SMTP connection and pool.
+- Used by: `emailService` (password reset) and `alertService` (email alert channel).
+  Both create a plain SMTP transport (host, port, secure, auth) and send text mail, with
+  no attachments, OAuth2 or proxy, so neither breaking change applies. The 9.0 change
+  does not affect the SMTP connection itself.
+- Verification: a real SMTP server (Mailpit in Docker) received both the password reset
+  mail and an alert email sent through the real `emailService` and
+  `alertService.sendToChannel`; backend 60 suites passed, 1 skipped; 498 tests passed.
+
+#### 0.28c simple-git 3.36.0 → 4.0.2 (security fix)
+
+`npm audit --omit=dev` reported **critical** advisories for `simple-git` and
+`@simple-git/argv-parser`: command execution through unblocked Git configuration
+includes and trailer configuration, and the `VISUAL` editor variable missing from the
+unsafe-editor check. They are fixed only in 4.0.1/4.0.2, so this upgrade is a security
+fix, not a convenience. It also took priority over the other three.
+
+- Upstream breaking changes (4.0.0): the default export is gone (`const { simpleGit } =
+  require('simple-git')`); abbreviated long options (`--conf=…`) throw; **every
+  `GIT_*` variable is removed from the child's environment, and a call that supplies one
+  explicitly throws, unless it is named in the new `allowEnvironment` option**;
+  deprecated `silent()`, `clearQueue()` and `gitP` are removed.
+- Changes here:
+  - `gitService`: named import; `allowEnvironment` lists exactly the five variables
+    `authEnv()` builds (`GIT_TERMINAL_PROMPT`, `GIT_SSL_CAINFO`, `GIT_CONFIG_COUNT`,
+    `GIT_CONFIG_KEY_0`, `GIT_CONFIG_VALUE_0`). `allowUnsafeConfigEnvCount` is kept, still
+    only when a token is set.
+  - Tests that required `simple-git` (`gitCredentials`, `gitRollback`) or mocked it
+    (`gitService.sync`) use the named export.
+  - All option arrays in the service already used full option names.
+- Gain beyond the advisories: a plain `simpleGit(path)` (no explicit environment, used
+  for local operations) no longer passes a stray `GIT_*` variable of the backend
+  process to git.
+- Verification:
+  - Against a local HTTP server the real `gitService.testConnection` made git send
+    `Authorization: Basic oauth2:<token>` for a GitLab repository and no header for a
+    repository without a token.
+  - An ambient `GIT_CONFIG_COUNT/KEY_0/VALUE_0` set to `core.sshCommand` in the backend
+    process did not reach git (the command it would have run did not run).
+  - Backend 60 suites passed, 1 skipped; 498 tests passed. `npm audit --omit=dev` no
+    longer lists `simple-git` or `@simple-git/argv-parser`.
+
+#### 0.28d sqlite3 5.1.7 → 6.0.1: tried and declined
+
+- Why it was on the list: `npm audit` ties the `node-gyp` → `tar`/`make-fetch-happen`
+  advisories (one critical, three high) to `sqlite3`, and the only fix npm offers is 6.0.1.
+- What happened: 6.0.1 installs, but its prebuilt binary needs **glibc 2.38**, and fails
+  at load with `GLIBC_2.38 not found` (61 of 61 suites failed to start). Both places we
+  care about are older than that:
+  - the production image `node:24-slim` is Debian 12 (bookworm), glibc 2.36, and has no
+    compiler for the source-build fallback, so the backend would not start;
+  - the development hosts (Ubuntu 22.04, glibc 2.35), and any host on Debian 12 or
+    Ubuntu 22.04.
+  GitHub's `ubuntu-latest` (glibc 2.39) would have passed, so CI alone would not have
+  shown the problem.
+- Also: the 6.0.0 release notes mark the repository **unmaintained**. Sequelize 6 can only
+  use this driver (`better-sqlite3` is not supported before Sequelize 7), so there is no
+  swap available now.
+- Decision: stay on 5.1.7 (restored from the lockfile; the suite is green on it).
+- Residual `npm audit --omit=dev` findings, all reviewed:
+  - `sqlite3` → `node-gyp` → `tar`, `make-fetch-happen`, `cacache`,
+    `http-proxy-agent`, `@tootallnate/once` (critical/high/low): build and install
+    tooling that unpacks the module's own prebuilt archive or compiles it. Nothing in
+    the running backend calls it, and the archive comes from the package's release.
+  - `sequelize` → `uuid` (moderate): the advisory is a missing bounds check when a
+    caller passes its own output buffer to `uuid` v3/v5/v6; Sequelize only calls v4
+    without a buffer. The "fix" npm proposes is a downgrade to Sequelize 3.
+  - `npm audit --audit-level=high` (the `audit:check` script) therefore still exits
+    non-zero. CI does not run it.
+- To revisit, in this order: (1) move the image to `node:24-trixie-slim` (glibc 2.41),
+  (2) require glibc ≥ 2.38 or a compiler for non-Docker installs and say so in the
+  README, (3) then take sqlite3 6; or leave SQLite behind when Sequelize 7 (or another
+  ORM) arrives in the TypeScript phases.
+
+### 0.29 Declared but not implemented
+
+Each item was checked in the code, the API, the UI and the README, then either built or
+made honest.
+
+#### Proxy middlewares: implemented
+
+- Problem:
+  - Middleware rows were stored, returned by the API and shown in the UI, but the Caddy
+    builder never read them. The shipped "rate limit" and "redirect" templates therefore
+    did nothing.
+  - Applying a template copied its headers only, never its middlewares, and reloaded the
+    proxy without them before the Caddy update.
+  - The validator checked fields (`type`, `requests_per_second`, `allowed_ips`) that
+    middlewares do not have, and the API wrote `...middleware` (any field) to the database.
+- Fix (`utils/proxyMiddlewares.js`):
+  - Two types are supported, the ones that have a defined configuration and a template:
+    `rate_limit` (`{ rate, unit }`, 1–100000 per second/minute/hour, per client address)
+    and `redirect` (`{ from, to, code }`, a path or an http(s) URL without whitespace or
+    control characters, code 301/302/303/307/308). `ip_filter` and `basic_auth` rows are
+    refused with a pointer to the proxy's own `ip_filtering` and `basic_auth` settings.
+  - The builder (`createRouteFromProxy`) turns enabled middlewares, in their order, into
+    Caddy handlers: rate limits next to the proxy's own rate limit (before authentication;
+    ignored when that setting is on, so the two never stack), redirects after the access
+    controls so they cannot bypass them. Stored entries that no longer validate are
+    skipped rather than sent to Caddy, where one bad handler rejects the whole config.
+  - `applyTemplate` replaces the proxy's headers and middlewares and reloads both.
+    Docker discovery's `template` label copies the middlewares too. Template create and
+    update validate `middleware`. The proxy API writes only the four documented fields.
+- Tests: new `proxyMiddlewares` unit (30), a discovery case, a contract case (22 contract
+  tests with Caddy required), the import fixture used a type outside the model's enum and
+  was corrected.
+- Verification on a real Caddy (the project image, with the rate_limit plugin), config
+  from the real builder: `GET /` → 302 with `Location: /app/kibana`; a disabled redirect
+  is not applied; with 3 requests per minute the fourth request gets 429.
+- Compatibility: a proxy that already has `ip_filter`, `basic_auth` or other unsupported
+  middleware rows is refused on its next save with a message naming the type (the UI
+  never created them).
+
+#### custom_ssl_cert_id: removed from the API
+
+Uploaded custom certificates are loaded into Caddy globally and Caddy picks one by the
+requested host name, so a per-proxy certificate id had no effect, and nothing in the UI,
+the tests or the docs used it. It is no longer accepted (`PROXY_ALLOWED_FIELDS`), so the
+API does not pretend to select a certificate. The column stays in the model to avoid a
+schema change; drop it with the next schema migration.
+
+#### Kubernetes discovery: stays planned
+
+`ENABLE_K8S_DISCOVERY` is documented as not implemented in the README, the roadmap lists
+it as planned, and the API answers 501 for a Kubernetes sync. Only the discovery page
+claimed it ("Docker containers and Kubernetes services"); the sentence now says
+Kubernetes is planned. Building it needs a client library and RBAC design: its own item.
+
+#### Backup upload: stays planned
+
+`POST /backups/upload` answers 501 "not implemented", documented as such in the API spec,
+and the README lists cloud storage as planned. Nothing claims otherwise. Restoring a backup
+that is on the server works.
+
+#### 0.29b Security review follow-up
+
+A security review of 0.29 found one real problem, confirmed on a real Caddy before fixing:
+Caddy expands `{placeholders}` in response header values. A redirect with
+`to: "/x/{env.HOME}"` answered `Location: /x//root`. In production Caddy's environment
+holds `CF_API_TOKEN` and `{file.*}` reads files, so a backend admin (proxy or template)
+could expose them to any visitor with one unauthenticated GET, and
+`{http.request.uri.query.u}` let a request choose the redirect target.
+
+- Redirect `from`/`to`: braces, backslashes, whitespace and control characters are
+  refused; a path may not start with `//` or `/\` (browsers read both as another site).
+- Header values (proxies and templates): `{env.*}` and `{file.*}` are refused, as are
+  line breaks and non-text values. Other placeholders such as `{http.request.host}`
+  stay: the shipped templates use them.
+- Templates: `headers` and `middleware` must be arrays and are validated on create and
+  update (before, `headers` was stored unchecked).
+- A middleware stored as disabled stays disabled when a template is applied or a
+  discovery template label copies it.
+- Tests: 36 (was 30) in `proxyMiddlewares`; the real-Caddy check is unchanged for valid
+  input (302 with Location, 429 on the fourth request).
+
+Left open, with the reasoning:
+
+- The rate limit key is `{http.request.remote.host}`, the TCP peer. It cannot be spoofed
+  with `X-Forwarded-For`, but behind Cloudflare, another proxy or the Docker bridge all
+  clients share one key, and the proxy's IP filtering has the same blind spot. The proper
+  fix is `trusted_proxies` on the Caddy server and `{http.request.client_ip}`; that is a
+  deployment setting (which proxies to trust) and applies to the existing rate limit and
+  IP filter as well, so it is a separate item.
+- Header values already stored with an `{env.*}`/`{file.*}` placeholder (the check is on
+  write) keep working until they are saved again. A backup restore of templates writes
+  `headers` without this check; the builder does not run it either.
+- A template apply whose Caddy update fails after the database commit leaves the new
+  middlewares in the database with Caddy on the old route (same shape as the proxy
+  create/update compensation of 0.15, not yet applied to templates).
+
+## Phase 1: type checking
+
+### 1.1a Audit entries lost the resource id
+
+Found by running `tsc` with `checkJs` for the first time (see 1.1b): 19 call sites pass
+`resourceId` to `logAction` (proxy, template and API key changes, certificates), but
+`logAction` did not read it, and the audit table has no column for it. Every such entry
+therefore lacked the id of the affected object.
+
+- Fix: `logAction` keeps it in the entry's `details` as `resource_id` (no schema change;
+  details that are not an object are wrapped as `{ message, resource_id }`). Its JSDoc
+  now lists `resourceId`, `status` and the optional parameters.
+- Tests: new `auditService.logAction` (5). Entries written before this fix have no id.
+
+### 1.1b Type checking with tsc (checkJs)
+
+- Setup (`backend/tsconfig.json`, `npm run typecheck`):
+  - TypeScript **7.0.2**. It removed `moduleResolution: node10`; the config uses
+    `module`/`moduleResolution: nodenext`, which reads these `.js` files as CommonJS
+    (`package.json` has no `"type": "module"`).
+  - `allowJs` + `checkJs`, `noEmit`, `strict: false` for now, `types: [node, jest]`;
+    covers `src/**/*.js` and `src/**/*.d.ts`. Tests are not type-checked yet.
+  - Dev dependencies: `typescript`, `@types/node` 24 (the runtime is Node 24, not the
+    newest 26), `@types/express` 5, `@types/jest` 30, and the types of `cors`,
+    `cookie-parser`, `morgan`, `jsonwebtoken`, `supertest`, `bcrypt`, `dockerode`,
+    `js-yaml`. Libraries that ship types (sequelize, axios, nodemailer, winston, helmet,
+    express-rate-limit, simple-git, csrf-csrf) need nothing.
+  - `src/types/express.d.ts` declares what the auth middleware puts on the request
+    (`req.user`, `apiKeyMinScope`, `apiKeyForbidden`).
+  - CI: a "Type-check the backend" step before the tests; the workflows README is updated.
+- First run: 103 errors in 27 files; now 0. Most were typing noise, fixed with JSDoc and
+  narrow casts (no behavior change): `object` parameters in `basicAuth` and
+  `logService` got real shapes, JWT payloads, GCM cipher types, DNS lookup callbacks,
+  the `node:cluster` module, Date arithmetic through `getTime()`, `parseInt(String(…))`
+  for query parameters, `{ rateLimit }` and `require('helmet').default` for the two
+  packages whose typings call them differently (both forms work at runtime).
+- Real findings (besides 1.1a):
+  - **CSRF header option ignored.** `csrf-csrf` 4 renamed `getTokenFromRequest` to
+    `getCsrfTokenFromRequest`; with the old name the library silently used its default
+    (`x-csrf-token` only), so the `csrf-token` fallback header never worked. The
+    frontend uses `x-csrf-token`, so nothing broke. Fixed with the new name; the
+    fallback now works. New integration test `csrfHeader` (4).
+  - **Query parameters that are not strings.** `?from=a&from=b` or `?a[b]=1` reach routes
+    as arrays or objects. New `utils/query.js` `queryString()` (first plain string)
+    for the repository diff and history routes, and `String()` before `parseInt` in the
+    list routes. Test `query` (6).
+  - `gitService.GitRollbackError` was attached after `module.exports = new GitService()`;
+    it is now a getter on the class (same use: `instanceof gitService.GitRollbackError`).
+- Verification: `npm run typecheck` exits 0; a probe file with `/** @type {number} */
+  const x = 'a'` makes it exit 1 (removed again); backend 64 suites passed, 1 skipped;
+  557 tests passed.
+- Next (Phase 2): turn `strict` on file by file, then convert `utils`, `config` and
+  `middleware` to TypeScript. Jest needs a transformer for `.ts` first; the TypeScript 7
+  compiler does not offer the API that `ts-jest` uses, so the choice (an SWC or esbuild
+  transformer, or Node's built-in type stripping) is the first step of that phase.
+
+## Phase 2: converting to TypeScript
+
+### 2.1 Build pipeline and the first .ts file
+
+Nothing can be converted until `.ts` files can be built, tested and shipped. This step
+puts that in place and proves it with one real module (`utils/query`, now `query.ts`).
+
+- **Build** (`tsconfig.build.json`, `npm run build`): `tsc` compiles `src/**/*.{js,ts}` to
+  `dist/` (CommonJS, source maps, comments kept because Swagger reads the JSDoc of the API
+  files). TypeScript 7 does it in about a second. `dist/` mirrors `src/`, so the
+  `__dirname`-relative paths (backups, config backups, migrations, Swagger globs) stay
+  valid; the Swagger spec has the same 56 paths from `src` and from `dist`.
+- **Run**: `npm start` builds then runs `dist/index.js`; `npm run dev` is nodemon
+  rebuilding and restarting on a change in `src/` (checked: a touched file restarts the
+  server); `npm run start:cluster` runs `dist/cluster.js`. `node src/index.js` stops
+  working as soon as a `.ts` file exists (documented in the backend README).
+- **Tests**: Jest keeps running the sources. `babel.config.js` (Babel 7 `preset-env` for
+  the current Node + `preset-typescript`, matching the Babel 7 inside Jest 30) strips the
+  types and turns `import`/`export` into CommonJS. `ts-jest` is not an option: its
+  peer dependency is `typescript >=4.3 <7`, and this project uses TypeScript 7. The coverage run
+  (`test:ci`) counts `.ts` files too.
+- **Docker** (`backend/Dockerfile`): two stages. The first installs everything and runs
+  `npm run build`; the second installs production dependencies only and copies `dist/`.
+  Starts with `node --enable-source-maps dist/index.js`. The repository ignores
+  `.dockerignore` files on purpose (root `.gitignore`), so none is added: a local
+  `docker build` sends the whole `backend/` directory, `node_modules` included, as
+  context (only `src/` and the package files are copied into the image).
+  The dev compose file now runs `npm run dev` (the source is mounted over `/app`).
+- **CI**: a "Build the backend" step after the type check, and a new `backend-image` job
+  that builds the Docker image from a fresh checkout (no `node_modules` in its context).
+- Rule for the conversions that follow: a converted module keeps exporting what its
+  callers `require`. Modules that do `module.exports = { a, b }` become `export const a`
+  (compiled to `exports.a`), which `require` callers and `jest.mock` factories still
+  match. Babel's TypeScript preset cannot compile `export =`, so a module that exports a
+  single object or class (the services) needs its consumers and test mocks changed in
+  step; that is Phase 3.
+- Verification:
+  - `npm run typecheck` and `npm run build` exit 0; backend 64 suites passed, 1 skipped;
+    557 tests passed; coverage 56.6% statements (threshold 53).
+  - `dist/` booted against a real Caddy: `/health` and `/ready` 200, migrations ran.
+  - Cluster mode from `dist/cluster.js`: one leader, two request-only workers, health 200.
+  - The built Docker image (486 MB) boots against a real Caddy, health 200, runs as the
+    `node` user, has no dev tooling and no `src/`, only `dist/`.
+- Not done: the Docker image build is only exercised in CI from now on, not the
+  production compose file.
+
+### 2.1b Review follow-up: keep the `.js` tests in production's language mode
+
+A review of 2.1 found one medium issue: `babel.config.js` applied `preset-env` to every
+file, and Babel treats files as ES modules by default, so under Jest the existing
+`.js` files gained `"use strict"` and a top-level `this` of `undefined`, while production
+(tsc output of plain scripts) has neither. Nothing failed, but tests and production
+differed in language mode. The presets are now an `overrides` entry for `/\.ts$/`; the
+`.js` files go through `babel-jest`'s own preset only (`jest.mock` hoisting).
+64 suites / 557 tests still pass.
+
+Acknowledged, not changed (all low): `npm start` needs `tsc` (dev dependencies) and
+empties `dist/` first; the nodemon `--exec` chain could leave the old server running on
+a signal race; the image has source maps but no `src/`, so stack traces show unopenable
+paths; CI builds the image but does not start it; the dev compose bind mount can hit
+uid mismatches on Linux.
+
+### 2.2 Pure helpers in strict TypeScript
+
+Six `utils` modules with no framework dependencies are now `.ts` (renamed with `git mv`,
+so history follows): `clusterRole`, `ssrf`, `upstream`, `caddyTls`, `encryption`,
+`certificates`. Their callers still `require` them; `module.exports = {…}` became named
+exports, which compile to the same `exports.x` shape, so no caller or `jest.mock` factory
+changed.
+
+- **Strict mode, per file**: `tsconfig.strict.json` (`strict: true`, `.ts` files only) runs
+  after the loose check inside `npm run typecheck` and in CI. Every converted file is
+  therefore strict from the start; the `.js` files stay on the loose `checkJs` setup until
+  they are converted.
+- Types worth noting: `ParsedUpstream` and `CertificateInfo` are exported interfaces;
+  `CaddyConfig` types only the `apps.tls.certificates.load_pem` path and passes the rest
+  through; `encrypt`/`decrypt` have overloads so `null` stays `null` and a string stays a
+  string; `CertificateError` declares `statusCode` as a field.
+- Behaviour changes: none intended. One deliberate tightening in `decrypt`: the plaintext
+  is now `Buffer.concat([update, final]).toString('utf8')` instead of
+  `update(buf) + final('utf8')`, which could corrupt a multi-byte character split between
+  the two chunks. `Buffer.slice` (deprecated) became `subarray`.
+- Verification: `npm run typecheck` (loose and strict) and `npm run build` exit 0; backend
+  64 suites passed, 1 skipped; 557 tests passed.
+
+### 2.3 Outbound, alert-channel, middleware and probe helpers
+
+`outboundRequest`, `notificationChannels`, `proxyMiddlewares` and `upstreamProbe` are
+now strict `.ts` (`git mv`). Exports and behaviour are unchanged for callers.
+
+- Inputs that come from the API (channel config, middleware configuration) are typed as
+  `unknown` / `Record<string, unknown>` and narrowed before use; `CHANNEL_TYPES` and
+  `MIDDLEWARE_TYPES` are `as const` tuples with type guards, so the validator tables are
+  exhaustive by type.
+- `ProxyUpstreams` types only the Proxy fields the probe reads.
+- One cast: axios types its `lookup` callback as `(err, address: LookupAddress |
+  LookupAddress[], family?)`, which does not allow the error-only call that
+  `guardedLookup` makes; it is cast to `AxiosRequestConfig['lookup']` at the call site.
+- One tightening: `rate_limit.unit` must be a string; before, an array like
+  `["second"]` passed `Object.hasOwn` through string coercion.
+- Verification: typecheck (loose and strict), build, and the full suite (64 suites,
+  557 tests) pass.
+
+### 2.4 Proxy validation, import, basic auth and discovery labels
+
+The last four `utils` modules are strict `.ts` now (`git mv`): `proxyValidation`,
+`proxyImport`, `basicAuth`, `discoveryLabels`. Every file in `src/utils` is TypeScript.
+
+- Request bodies stay `unknown` / `Record<string, unknown>` and are narrowed by the
+  existing runtime checks; small input interfaces (`LoadBalancingInput`,
+  `HealthChecksInput`, …) document what each validator reads.
+- Shared types are exported: `ValidationResult`, `BasicAuth`, `PreparedProxy`,
+  `LabelConfig`, `LabelFeatures`, `DockerContainer`.
+- `bcrypt` is still loaded lazily with `require` inside `hash()` (typed as
+  `typeof import('bcrypt')`): `caddyService` only needs `toCaddyAuthHandler`, and its unit
+  tests mock `fs`, which breaks native module resolution.
+- `REVIEWED_FIELDS` is typed `readonly string[]` so the JS caller can test arbitrary
+  field names against it.
+- Behaviour: unchanged. Header names that are not strings are compared as their string
+  form (`String(name)`) instead of relying on regex coercion.
+- Verification: typecheck (loose and strict), build and the full suite (64 suites,
+  557 tests) pass; `dist/` boots against a real Caddy (health, ready and API docs 200,
+  10 migrations ran).
+
+### 2.5 Middleware and Swagger config
+
+`middleware/auth`, `middleware/rateLimiter`, `middleware/validation` and
+`config/swagger` are strict `.ts` (`git mv`); exports are unchanged. `@types/swagger-jsdoc`
+and `@types/swagger-ui-express` were added as dev dependencies.
+
+- **`config/database` stays JavaScript on purpose.** Typing `sequelize` makes every
+  `sequelize.define(...)` model an attribute-less `Model<any, any>`, which breaks the type
+  check in about 350 places across the services. It is converted with the class-based
+  models in Phase 3.
+- `auth.ts` reads the `ApiKey` and `User` models through two small interfaces
+  (`ApiKeyModel`, `UserModel`) for the same reason; Phase 3 replaces them with the real
+  model classes. The lazy `require('../models')` (circular-require avoidance) is kept.
+- `authMiddleware` is now typed, so Express infers the `req` type of route handlers after
+  it. That surfaced one place where a named route parameter is typed
+  `string | string[]` (`api/certificates/routes.js`); it is cast to `string`.
+- Behaviour changes, all on malformed requests: an `X-API-Key` header that is not a string
+  is stringified instead of throwing; a `?token=` query parameter that is not a single
+  string (`?token=a&token=b`) is ignored, giving 401 "No token provided" instead of 401
+  "Invalid token"; `roleMiddleware` denies a user without a role.
+- Open item (not changed here): with `DB_SSL=true`, `config/database` connects with
+  `rejectUnauthorized: false`, so the PostgreSQL server certificate is not verified. It
+  needs a setting for a CA file or a verify flag before it can be tightened without
+  breaking existing deployments.
+- Verification: typecheck (loose and strict), build and the full suite (64 suites,
+  557 tests) pass; `dist/` boots against a real Caddy.
+
+### 2.6 Typed Caddy route module
+
+The mapping from a proxy row to its Caddy JSON route moved out of `caddyService` into
+`src/utils/caddyRoute.ts` (strict): `createRouteFromProxy`, `buildSelectionPolicy`,
+`buildTlsTransport`, `shouldUseHTTPSTransport`. They are pure functions of the proxy, so
+they are testable without Caddy or a database.
+
+- `CaddyService` keeps the four methods as one-line delegates, so existing callers and
+  test spies are unchanged.
+- Types: `ProxyRouteInput` (the proxy columns the route reads), `CaddyRoute`,
+  `ReverseProxyHandler`, `SelectionPolicy`, `TlsTransport`.
+- The 220-line method is split into `ipFilterHandler`, `headerRules`,
+  `pathRoutingHandler` and `reverseProxyHandler`. Handler order and key order are the
+  same as before; the existing caddyService tests and the Caddy contract test (22/22
+  against a real Caddy) pass unchanged.
+- New `tests/unit/caddyRoute.test.js` (23 tests) covers the module directly.
+- Review note: the delegates keep `caddyService.createRouteFromProxy` etc. callable, but
+  spying on `caddyService.buildTlsTransport` or `shouldUseHTTPSTransport` no longer changes
+  what `createRouteFromProxy` produces (it calls the module functions directly). No test
+  does that today.
+- Verification: typecheck (loose and strict), build, full suite and contract test pass.
+
+## Phase 3: class-based models and services
+
+Plan: convert the models one batch at a time (a model file exports a named class; callers
+and `jest.mock` factories change from the class itself to `{ ClassName }`), then the
+services, then `config/database` last, because typing `sequelize` is what makes the
+remaining `sequelize.define()` models fail the type check. Babel needs
+`allowDeclareFields` for the `declare` attribute fields.
+
+### 3.1 First class-based model: User
+
+`models/user.ts` is a `Model<InferAttributes<User>, InferCreationAttributes<User>>`
+subclass with `declare` attribute fields, the same hooks (password hashing, TOTP secret
+encryption and decryption) and `checkPassword` as a method. Table, columns and hooks are
+unchanged (`modelName: 'User'` pluralises to `Users` as `define` did).
+
+- Exported as the named export `User`; `models/index.js` and `models/backup.js` read
+  `const { User } = require('./user')`. The only test that mocked the file
+  (`tests/unit/app.test.js`) now returns `{ User: {...} }`.
+- `api/users/routes.js`: a JSDoc type said the transaction callback returns
+  `Promise<void>`; it returns the updated user and the helper ignores it, so it is
+  `Promise<unknown>`.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  the PostgreSQL integration suites (17 suites, 153 tests) and a `dist/` boot pass.
+
+### 3.2 Proxy, Header, Middleware and Template models
+
+`models/proxy.ts`, `header.ts`, `middleware.ts` and `template.ts` are typed classes (same
+pattern as User). Tables, columns and defaults are unchanged.
+
+- `Proxy` declares typed JSON columns (`RateLimitConfig`, `IpFilteringConfig`,
+  `PathRoutingConfig`, `LoadBalancingConfig`, `HealthChecksConfig`, `BasicAuth`) and the
+  `headers` / `middlewares` association properties (`NonAttribute`, present when loaded with
+  `include`). `Template.headers` / `middleware` are typed lists (`TemplateHeader`,
+  `TemplateMiddleware`).
+- Named exports; `models/index.js`, `api/proxies/routes.js`, `api/templates/routes.js`,
+  `services/alertService.js` and the basic-auth hashing migration read `{ Proxy }` etc.
+  The mocks in `app.test.js`, `templates.routes.test.js` and
+  `proxies.routes.real.test.js` return `{ Proxy: {...} }` etc.
+- `src/types/sequelize.d.ts` declares `Transaction.finished` (set by Sequelize, used by the
+  route handlers to skip a second rollback; it was untyped).
+- Type fixes in JS callers that typed models exposed: route params are cast to `string`
+  (Express types them `string | string[]`), `proxy.domains` is read as `string[] | string`
+  (older rows may hold a single string), `toJSON()` results that get `headers` added are
+  cast to a record, and `featureUpdates` takes the proxy as a loose record.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests), Caddy contract test (22/22) and a `dist/` boot.
+
+### 3.3 AlertRule, ApiKey, AuditLog, Backup, Metric and NotificationChannel models
+
+Six more typed classes (same pattern; tables, columns, indexes and defaults unchanged).
+`AuditLog` keeps `updatedAt: false` (no `updatedAt` attribute); `Metric` keeps its
+`metrics` table name and two indexes; `Backup` keeps its `creator` association to User;
+`NotificationChannel.type` uses the `ChannelType` union from `utils/notificationChannels`.
+
+- Callers read the named export (`auditService`, `api/alerts/routes`, `alertService`);
+  the tests that mocked or required the files were updated the same way.
+- `tests/unit/app.test.js` mocks `config/database` with a stub `define`; a class
+  model calls `Model.init` against the real Sequelize instance, so the three models that
+  the route files load there (`AuditLog`, `AlertRule`, `NotificationChannel`) are
+  mocked like the proxy models already were.
+- `backupService.createBackup`: the JSDoc said `String`; it is `'auto' | 'manual'`.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests) and a `dist/` boot pass.
+
+### 3.4 Certificate, CertificateAuthority, ConfigChange, DiscoveredService and GitRepository models
+
+The last five models are typed classes; every model in `src/models` is a class now. Tables,
+columns and defaults are unchanged.
+
+- The encryption hooks of `Certificate` (`private_key_pem`) and `GitRepository`
+  (`access_token`, `ssh_key`) moved from `addHook` calls into the `hooks` option of
+  `init`, the way `User` has them: `addHook` hands the hook an untyped `Model`, `init`
+  hands it the typed instance. Same hooks, same order, same effect.
+- `Certificate` and `CertificateAuthority` had a `description` key on some columns.
+  Sequelize ignores it (the option is `comment`), so it never reached the schema; the
+  text is kept as doc comments on the class fields, and no `comment` was added (that
+  would change the schema).
+- Type fixes in JS callers: route params cast to `string`; the discovery list filter
+  (`?source_type=`, `?status=`) is cast to `WhereOptions` (the query values are still not
+  validated; that is Phase 4); the certificate sync status and the CA type are cast to their
+  unions.
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests) and a `dist/` boot pass.
+
+### 3.5 Database config and the models index
+
+`config/database.ts` and `models/index.ts` are TypeScript (strict). `sequelize` is now a
+real `Sequelize` type, which is what made this wait until every model was a class.
+
+- `models/index.ts` imports the 16 classes, sets up the same associations (same aliases,
+  including both `creator` on `Backup` itself and `backupCreator` here) and re-exports
+  `sequelize` plus the models. `require('../models')` callers and the `jest.mock` factories
+  for the index are unchanged.
+- One behaviour change in `config/database`: `DB_TYPE=postgres` without `DB_URL` or
+  `DATABASE_URL` threw before too, but with Node's `The "url" argument must be of type
+  string. Received undefined`; it now throws `DB_TYPE=postgres requires DB_URL (or
+  DATABASE_URL) to be set` at start-up.
+- `migrationService.getExecutedMigrations`: the raw query's rows are cast to
+  `{ name: string }[]`.
+- Unchanged and still open: with `DB_SSL=true` the connection sets
+  `rejectUnauthorized: false` (see 2.5).
+- Verification: typecheck (loose and strict), build, full suite (65 suites, 580 tests),
+  PostgreSQL suites (17 suites, 153 tests), Caddy contract test (22/22) and a `dist/`
+  boot pass.
+
+### 3.5b Review fix: createdAt and updatedAt stayed NOT NULL
+
+A schema review of 3.1–3.4 compared the DDL of the old and new models on SQLite and
+PostgreSQL (`sync()` statements and `createTableQuery` per model). Everything was identical
+(table names, columns, types, defaults, enums, references, comments, indexes, column order)
+except one regression that I introduced: every class model listed `createdAt:
+DataTypes.DATE` and `updatedAt: DataTypes.DATE` in `init()` (the typed attribute map
+requires them because the class declares them). Sequelize only makes a timestamp
+`NOT NULL` when it adds the column itself, so a **fresh** database got nullable timestamps
+(`sync()` does not alter existing tables, so deployed databases were never affected).
+
+- Fix: the entries are now `{ type: DataTypes.DATE, allowNull: false }` (`createdAt` only on
+  `AuditLog`, which has `updatedAt: false`). The DDL is identical to the old one again.
+- Guard: `tests/integration/schema.timestamps.test.js` asserts every table's `createdAt` /
+  `updatedAt` is `NOT NULL` and that `AuditLogs` has no `updatedAt`. It uses
+  `describeTable`, so it runs on SQLite and PostgreSQL. It failed (33 nullable columns)
+  before the fix.
+- The other review checks passed: hooks moved from `addHook` to `init({ hooks })` behave
+  the same; `declare` fields do not shadow Sequelize's getters (tsc target ES2023 emits no
+  initialisers for them, Babel has `allowDeclareFields`); the dropped `description` keys
+  never reached the schema; every direct `require` of a model file uses the named export.
+- Verification: typecheck (loose and strict), build, full suite (66 suites, 582 tests),
+  PostgreSQL suites (18 suites, 155 tests) and a `dist/` boot pass.
+
+### 3.6 Function-style services
+
+Seven services that export plain functions are strict `.ts` (`git mv`): `auditService`,
+`emailService`, `proxyCompensation`, `securityHeadersService`, `setupService`,
+`trafficStats`, `logService`. `module.exports = { a, b }` became named exports, which
+compile to the same `exports.a` shape, so no caller or mock changed. (The services that
+export a class instance, `module.exports = new XService()`, need their callers and mocks
+changed and follow one at a time.)
+
+- Types: `AuditEvent`, `ProxySnapshot`, `SecurityHeader`, `LogEntry`, `LogFilters`,
+  `TrafficSince`, `HostTraffic`. `AuditLog.details` is typed `AuditDetails` (an object, a
+  list or a plain message: callers have always logged all three).
+- `auditService` reads the client address from `req.socket` (`req.connection` is its
+  deprecated alias).
+- **Fixed on the way:** the access-log route passed `req.query` values straight to
+  `logService`, so a repeated parameter (`?method=a&method=b`) reached `.toUpperCase()` as an
+  array and failed with a 500. The route now takes the first string of each filter with
+  `queryString`.
+- **Guard gap closed:** `tests/unit/services.callers.test.js` (every `xService.method(` call
+  must name an existing method) only scanned `.js` files, so each converted service silently
+  dropped out of it (59 -> 55 tests). It now scans `.ts` too, and understands both service
+  shapes (the module itself, or an instance exported under the service's own name).
+- New `tests/unit/logService.test.js` (11 tests): `logService` had none. It covers line
+  parsing, the filters, the limit, the stats and the route, including the repeated
+  parameter.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites and a `dist/` boot pass.
+
+### 3.7 alertService and authService
+
+The last two function-style services are strict `.ts` with named exports (callers and
+mocks unchanged).
+
+- `alertService`: `AlertDetails` is the union of what each condition type reports,
+  `RunContext` types `createRunContext`, and the channel settings are read through one
+  `ChannelSettings` interface after `channelProblem` has validated them. Models are still
+  loaded lazily (circular-require avoidance).
+- `Proxy.tls_status` is typed (`TlsStatus`, `TlsDomainResult`: the shape
+  `caddyService.verifyTlsForDomains` writes).
+- `authService`: `AuthResult` is one interface (`success`, optional `message`,
+  `require_2fa`, `totp_session`, `user`, `token`) because the auth route reads those
+  fields without narrowing; Phase 4 can turn it into a union when the routes are typed.
+  `verifyTotpSession` returns `null` (not `undefined`) for a token without a subject.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites and a `dist/` boot pass.
+
+### 3.8 First class-instance services: templateService and migrationService
+
+The pattern for the services that export `module.exports = new XService()`: the class and
+the instance are both named exports (`export class TemplateService`,
+`export const templateService = new TemplateService()`), callers read
+`const { templateService } = require(...)`, and tests that mocked the module return
+`{ templateService: {...} }`. (Babel's TypeScript preset cannot compile `export =`, and a
+named export is what ESM in Phase 5 needs anyway.) `tests/unit/services.callers.test.js`
+already resolves an instance exported under the service's own name.
+
+- `templateService`: the seven default templates are now one `DEFAULT_TEMPLATES` list (typed
+  `TemplateSeed`) created in a loop inside the same transaction, instead of seven
+  copy-pasted `Template.create` calls. A script ran the original and the new service against
+  a fake `Template` and compared every `create` call (7 calls, same order, same
+  headers and middleware, all in the transaction): identical.
+- `migrationService`: typed `Migration` files (`up` / `down`), results `MigrationRunResult`
+  and `MigrationRollbackResult`. Migrations stay `.js`: the runner only loads `.js` files, and
+  `dist/migrations` holds the same names, so `SequelizeMeta` is unaffected.
+- Callers changed: `src/index.js` (both services), `templateService.real.test.js`,
+  `templateService.test.js`.
+- Verification: typecheck (loose and strict), build, full suite (67 suites, 593 tests),
+  PostgreSQL suites, and a `dist/` boot that ran all 10 migrations through the new service.
+
+### 3.9 metricsService
+
+`metricsService.ts`: class and instance exported by name (`{ metricsService }`), callers
+`src/index.js`, `api/metrics/routes.js` and `metricsService.test.js` updated.
+
+- Types: `MetricPoint`, `ParsedMetrics`, `MetricsSummary`, `StatusCodeTotals`,
+  `MetricsSnapshotResult`. Error handling reads `error instanceof Error` instead of assuming
+  `.message`.
+- The existing `metricsService.test.js` only checked that the module loads (every assertion is
+  conditional on a function that does not exist). New `tests/unit/metricsService.parse.test.js`
+  (14 tests) covers the Prometheus parser (labels, values with exponents and timestamps,
+  skipped lines), the sums and averages, status-class grouping, the summary, the 10 s cache,
+  the Caddy failure message, the http / tls / system filters, snapshot saving, retention
+  cleanup and the history listing.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 605 tests) and a
+  `dist/` boot pass.
+
+### 3.10 certificateService
+
+`certificateService.ts`: class and instance exported by name (`{ certificateService }`);
+callers `api/certificates/routes.js`, `src/index.js` (the scheduler start) and three tests
+updated. It still `require`s `caddyService`, which is converted last.
+
+- Typed parameters and results (`SyncSummary`, Certificate and CertificateAuthority instances,
+  `TlsStatus` for the probe results). The observed-certificate map is built only from rows
+  that have a `caddy_cert_id` (the `LIKE 'observed:%'` query already guarantees it).
+- `toCertificateResponse` (utils/certificates) has overloads (nullish in, nullish out; an
+  object in, a record without `private_key_pem` out), so route handlers can pass Certificate
+  instances.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
+  PostgreSQL suites, Caddy contract test (22/22) and a `dist/` boot pass.
+
+### 3.11 backupService
+
+`backupService.ts`: class and instance exported by name (`{ backupService }`); callers
+`api/backups/routes.js`, `src/index.js` and four tests updated (the `jest.mock` factory in
+`importRoutes.errors.test.js` now returns `{ backupService: { restoreBackup } }`).
+
+- Types: `CreateBackupResult`, `RestoreBackupResult`, the parsed `BackupFile`, and a small
+  `BackupUser` (a token may carry only the id). Rows built from imported data are cast to
+  `CreationAttributes` at the point where `prepareImportedProxies` has already validated them.
+- `Buffer.slice` (deprecated) became `subarray` in the backup decryption; the retention
+  query imports `Op` at the top instead of requiring it inside the method. No other change.
+- Verification: typecheck (loose and strict), build, full suite (68 suites, 606 tests),
+  PostgreSQL suites (the backup restore integration tests included) and a `dist/` boot pass.
+
+### 3.12 dockerDiscoveryService
+
+`dockerDiscoveryService.ts`: class and instance exported by name (`{ dockerDiscoveryService }`);
+callers `api/discovery/routes.js`, `src/index.js` and the two discovery tests updated.
+
+- Types: `InspectedContainer` (the label helpers' `DockerContainer` plus `State` and
+  `NetworkSettings`), `ParsedLabelConfig`, `DockerEvent`, `DockerDiscoveryStatus`. The event
+  stream is held in a local so the handlers do not depend on `this.docker` staying set.
+- The three lazy `require('./caddyService')` calls (circular dependency) share one
+  `getCaddyService()` helper until caddyService is converted.
+- `securityHeadersService` is function-style, so it is imported as a namespace (the inspect
+  test's mock is unchanged). `substr` became `slice`. No other behaviour change.
+- `services.callers.test.js` generates one case per distinct call site; the three
+  `caddyService.rebuildConfigFromDatabase(` calls in this file now go through the helper, so the
+  suite has one case fewer (605 tests); the other files still cover that method.
+- Verification: typecheck (loose and strict), build and the full suite pass.
+
+### 3.13 gitService
+
+`gitService.ts`: class and instance exported by name (`{ gitService }`), plus `GitRollbackError`
+(still reachable as `gitService.GitRollbackError`, which the route's `instanceof` uses). Callers
+`api/git/routes.js`, `api/proxies/routes.js`, `src/index.js` and five tests updated; the
+`jest.mock` factories in `importRoutes.errors` and `proxies.routes.real` now return
+`{ gitService: {...} }`.
+
+- Types: `SyncResult`, `RollbackResult`, `AuthRepo` (what `authEnv`/`gitFor` read of a
+  repository) and `ProxySnapshot` for the commit message. `commitConfigChange` takes a
+  `ConfigChangeType`. The token-bearing environment is still built only by `authEnv`.
+- The lazy `require('./caddyService')` calls share one `getCaddyService()` helper until
+  caddyService is converted; `User` and `sequelize` are imported at the top instead of being
+  required inside methods.
+- Behaviour: an empty repository (no `log.latest`) now fails with a clear message instead of a
+  `TypeError`; `getDiff` for an unknown repository throws "Git repository not found" instead of
+  a `TypeError` (still a 500 in the route). `substr` became `slice`.
+- `services.callers.test.js` generates a case per call site, so the two `caddyService` calls that
+  now go through the helper leave it two cases smaller (603 tests).
+- Verification: typecheck (loose and strict), build, full suite, PostgreSQL suites and a
+  `dist/` boot pass.
+
+### 3.14 caddyService
+
+`caddyService.ts`: class and instance exported by name (`{ caddyService }`). Callers
+`api/discovery/routes.js`, `api/proxies/routes.js`, `api/templates/routes.js`, `src/index.js` and
+every test that requires or mocks it updated (the `jest.mock` factories return
+`{ caddyService: {...} }`).
+
+- Types: `CaddyJsonConfig` (the parts of Caddy's JSON this service reads and writes; the rest
+  passes through), `ProxyOperationResult`, `TlsVerification`, `DeletedProxyData`,
+  `TemplateInput`, `BackupData`. `TlsApp` is now exported from `utils/caddyTls`.
+- The services that needed `caddyService` lazily (`alertService`, `backupService`,
+  `certificateService`, `dockerDiscoveryService`, `gitService`) now import it at the top: it
+  imports only models and utils, so there is no cycle. The `getCaddyService()` helpers and the
+  `require(...) as typeof import(...)` lines are gone.
+- Behaviour is unchanged, including the in-place `domains.sort()` on proxy rows (route host order
+  depends on it) and the `rejectUnauthorized: false` of the TLS probe (it inspects the
+  certificate Caddy serves; it does not trust it). The probe reports an issuer that is an array
+  as a comma-joined string.
+- `loadCustomCertificates` still returns the model instances (a type guard narrows the PEM fields).
+- Verification: typecheck (loose and strict), build, full suite (606 tests), PostgreSQL suites,
+  the Caddy contract test against a real Caddy (22/22) and a `dist/` boot pass.
+
+Phase 3 is complete: every model, service and util under `src` is TypeScript.
+
+### 4.1 zod and the request-body middleware
+
+Phase 4 starts with the validation layer, so the route conversions that follow can add a schema
+where a route checks its body by hand. `zod` 4 is a dependency of the backend;
+`middleware/validateRequest.ts` exports `validateBody(schema)`.
+
+- On success `req.body` becomes the parsed data (trimmed, coerced, defaulted; fields the schema
+  does not name are dropped), so a handler only sees what the schema allows.
+- On failure the response is the envelope of the express-validator rules in
+  `middleware/validation.ts`: 400, `{ success: false, message: 'Validation error', errors }`, with
+  each error as `{ type: 'field', msg, path, location: 'body' }` (nested paths are dotted). The
+  rejected value is not echoed back, because it may be a password or a token. The frontend does
+  not read `errors`.
+- The existing express-validator rules stay until the route that uses them is converted.
+- Tests: `tests/unit/validateRequest.test.js` (6 tests).
+
+### 4.2 features and logs routes
+
+`api/features/routes.ts` and `api/logs/routes.ts`. The pattern for every converted route module: a named export `router` (Babel's TypeScript preset cannot compile `export =`). `api/index.js` loads a module with `loaded.router ?? loaded`, so converted and not yet converted modules mix until the last one is done; tests read `{ router }`.
+
+- The log filters are typed with `LogFilters` and a `FILTER_NAMES` tuple. No behaviour change.
+- Verification: typecheck (loose and strict), build, full suite (612 tests), a `dist/` boot, and the swagger spec built from `dist/` still lists `/features` and `/logs/*` (56 paths in all).
+
+### 4.3 auth routes (login, password reset, 2FA)
+
+`api/auth/routes.ts`, `passwordReset.ts` and `twoFactor.ts`, each exporting `router`. `@types/speakeasy` and `@types/qrcode` are new dev dependencies.
+
+- `AuthResult` (3.7's note) is now a union: a failure (`message`), a 2FA challenge (`totp_session`) or a signed-in user (`user`, `token`). The login route narrows it with `=== false` and `'totp_session' in result`, which also works in the non-strict `tsconfig.json` pass.
+- zod is not used here on purpose. The login and reset rules normalise the email with express-validator's `normalizeEmail` (it lowercases and, for some providers, strips dots), which the stored emails depend on and which zod has no equivalent for. The 2FA bodies answer with their own messages ('TOTP code required'). Both stay as they are, so the responses do not change.
+- `new Date(user.reset_token_expires ?? 0)`: a null expiry already compared as the epoch; it is now explicit.
+- Verification: typecheck (loose and strict), build, full suite (612 tests), PostgreSQL suites, a `dist/` boot.
+
+### 4.4 backups routes
+
+`api/backups/routes.ts` exports `router`; `importRoutes.errors.test.js` mounts `.router`.
+
+- Handlers that take `:id` are typed `Request<{ id: string }>`, so the id is a `string` (Express's default params type is `string | string[]`). A handler that sits behind an array of middleware has to be annotated explicitly: TypeScript cannot infer `req` and `res` there.
+- `currentUser(req)` is the one place that reads the signed-in user as the backup service wants it (`{ id: string }`; `authMiddleware` has set it).
+- No behaviour change (the unused `result` of `deleteBackup` is dropped).
+- Verification: typecheck (loose and strict), build, full suite (612 tests).
+
+### 4.5 metrics routes
+
+`api/metrics/routes.ts` exports `router`. The mechanical part of a route conversion (imports, the named export, `Request`/`Response` annotations, `Request<{ id: string }>` for `:params`) is done by a small script and the typecheck output is fixed by hand. No behaviour change.
+
+Verification: typecheck (loose and strict), build, full suite (612 tests).
+
+### 4.6 API key routes, and currentUser
+
+`api/keys/routes.ts` exports `router`; `keys.routes.regression.test.js` reads `{ router }`.
+
+- `utils/requestUser.ts` exports `currentUser(req)`: the signed-in user, or a thrown error when `authMiddleware` did not run. `req.user` is optional on `Request`, and the routes that sit behind `authMiddleware` read it in many places; one helper replaces the casts. (`backups/routes.ts` keeps its own cast; it moves to this helper when that file is next touched.) Tests: `tests/unit/requestUser.test.js`.
+- The key list drops `key_hash` by destructuring instead of `delete`, which the strict config rejects for a required field, and which no longer mutates the object `toJSON()` returned.
+- The body checks keep their own messages ('name must be between 1 and 100 characters', ...), so there is no zod schema here: the tests and API clients depend on those messages.
+
+Verification: typecheck (loose and strict), build, full suite.
+
+### 4.7 user routes
+
+`api/users/routes.ts` exports `router`; the two users tests read `{ router }`.
+
+- `currentUser(req)` replaces `req.user` reads. The delete route keeps its `req.user && ...` check as it was.
+- `changeUserKeepingAnAdmin` and `isActiveAdmin` are typed (`User`, `Transaction`); the update's `updates` object is a `Partial<Pick<User, ...>>`.
+- The list's `page` and `limit` go through `queryString` (a repeated `?page=1&page=2` takes the first value, which is what `parseInt` of the joined array gave).
+- The update keeps ignoring an unknown `role` or `status` silently, so there is no zod schema for it.
+
+Verification: typecheck (loose and strict), build, full suite, PostgreSQL suites.
+
+### 4.8 audit routes (and a broken userId filter)
+
+`api/audit/routes.ts` exports `router`. The route had no test, so `tests/integration/audit.routes.test.js` (8 tests, SQLite and PostgreSQL) comes first.
+
+- **Bug found by the test:** `GET /audit/logs?userId=...` filtered on `userId`, a column the model does not have (`user_id`), so it failed with a database error. It now filters on `user_id`.
+- The filters, the `page` and the date range are read with `queryString`. A repeated or nested parameter (`?action=a&action=b`, `?action[x]=1`) used to reach the query as an array or object; it is now ignored, like a missing filter. A `page` that is not a positive integer falls back to 1 (it used to produce `NaN` and a database error).
+- Statistics use the imported `sequelize` (`fn`, `col`) instead of `AuditLog.sequelize`, which is possibly undefined as far as the types know.
+- Both the list and the statistics build their date condition with one `dateRange` helper.
+
+Verification: typecheck (loose and strict), build, full suite (622 tests), PostgreSQL suites (19 suites, 163 tests).
+
+### 4.9 alert routes
+
+`api/alerts/routes.ts` exports `router`; `alertChannels.validation.test.js` reads `{ router }`.
+
+- `keepRedacted` (the "***" placeholders the UI sends back for stored secrets) is typed with a small `ChannelFields` interface. Its behaviour, including the rule that header secrets are only kept while the destination stays the same, is unchanged.
+- The channel and rule bodies keep their existing checks (`channelProblem`, per-field messages), so there is no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (622 tests).
+
+### 4.10 template routes
+
+`api/templates/routes.ts` exports `router`; `templates.routes.test.js` reads `{ router }`.
+
+- `currentUser(req)` for the audit entries; `template.set(field, value)` replaces the dynamic `template[field] = value` (a Sequelize attribute assignment is a `set`, so the effect is the same).
+- `validateTemplateContent` is typed with the shared `ValidationResult`. The checks keep their messages, so no zod schema here either.
+
+Verification: typecheck (loose and strict), build, full suite (622 tests).
+
+### 4.11 discovery routes, and the list filters
+
+`api/discovery/routes.ts` exports `router`. This closes the open item "the discovery list filter (`?source_type=`, `?status=`) is not validated".
+
+- The two filters go through a zod schema (`source_type`: docker or kubernetes; `status`: active, stopped or removed). An unknown value is a 400 `{ success: false, message: 'Invalid filter', errors }`; before, it went into the query (a database error on PostgreSQL, an empty list on SQLite). An empty value still means no filter; a repeated filter takes its first value and a nested one is ignored, like every other `queryString` read.
+- `caddyService` is imported at the top (the route used to `require` it inside the delete handler).
+- A zod pitfall the new test caught: an optional key that is absent comes out as `undefined`, which Sequelize rejects in a `where`, so the undefined entries are dropped before the query.
+- `tests/integration/discovery.routes.test.js` (7 tests) runs on SQLite and PostgreSQL.
+
+Verification: typecheck (loose and strict), build, full suite (629 tests), PostgreSQL suites (20 suites, 170 tests).
+
+### 4.12 proxy routes, and the shared errorMessage helper
+
+`api/proxies/routes.ts` exports `router`; the three proxy route tests read `{ router }`.
+
+- `utils/errorMessage.ts` exports `errorMessage(error)`: an Error's message, a `{ message }` object's message, else the value as a string. The routes use it for every `catch` value. The services still carry their own copies of the one-line version, which turns a `{ message }` rejection that is not an Error into `[object Object]` (a note of the 3.12–3.14 review); they move to the shared helper in a later step. Tests: `tests/unit/errorMessage.test.js`.
+- `serializeProxy` takes a model instance or a plain object (the duck-typed `toJSON` check is kept); `startTransaction()` is the one place that reaches `Proxy.sequelize`.
+- A proxy just saved is reloaded with its headers and middlewares; if the reload finds nothing, the handler throws (it used to fail on the first property read) and the request ends in the same 500 path.
+- The body checks stay in `validateProxyInput`, which already holds the messages and whitelist, so no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (637 tests), PostgreSQL suites, a `dist/` boot.
+
+### 4.13 certificate routes
+
+`api/certificates/routes.ts` exports `router`. `@types/multer` is a new dev dependency (it types `req.files` and `req.file`).
+
+- The upload route reads `req.files` once, as `{ certificate?, privateKey? }`, and narrows it after the existing check, instead of reading it through the `File[] | { [field]: File[] }` union six times.
+- `cleanupUploadedFiles` and `validatePemFile` are typed; the ACME stubs keep answering 501.
+- Nothing required this router in a test before, so `tests/integration/certificates.routes.test.js` (9 tests) covers the lists, the 404, the ACME 501s and the upload's three rejections, including that a rejected upload leaves no temp file in `uploads/`.
+- The body checks keep their messages, so there is no zod schema here.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), PostgreSQL suites, a `dist/` boot.
+
+### 4.14 Git routes (and a flaky upload test)
+
+`api/git/routes.ts` exports `router`; `importRoutes.errors.test.js` reads `{ router }`.
+
+- The repository's `access_token` and `ssh_key` are dropped from the response by destructuring (`const { access_token, ssh_key, ...repoData } = repo.toJSON()`) instead of `delete` on the object `toJSON()` returned.
+- The rollback response is `{ ...result, success: true, message }`: the spread of the service result used to come after `success: true` and overwrite it with the result's own `success` (always true), which the strict config rightly flags. `commit_sha.substr` became `slice`.
+- The body checks (express-validator for the repository fields, the SHA format for rollback and diff) keep their messages, so no zod schema here.
+- Test fix for 4.13: `certificates.routes.test.js` counted the files in `uploads/` against a baseline taken just before the request, but the previous request's temp files are removed in a `finally` after its response, so the count could drop below the baseline (it failed about one run in three). It now takes the baseline once at the start and waits for the count to settle.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests, three runs in a row), PostgreSQL suites.
+
+### 4.15 the API router
+
+`api/index.ts`: every route module exports `router`, so the transitional `loaded.router ?? loaded` of 4.2 is gone and the routers are imported statically. `ROUTES` is a typed list of `[path, router, ...area markers]`; `buildApiRouter()` mounts them in the same order as before, with `adminScopeArea` in front of the same areas (users, backups, audit, git, alerts, keys).
+
+Verification: typecheck (loose and strict), build, full suite (646 tests, `apiKeyAuth.test.js` exercises the mounts), a `dist/` boot.
+
+### 4.16 the Express app
+
+`app.ts` exports `app` and `startServer` by name (it already did); the tests that read `{ app }` need no change.
+
+- `import 'dotenv/config'` is the first import, so the environment is loaded before the modules below it read it (the old file called `dotenv.config()` first for the same reason). The `require`s that sat in the middle of the file (`rateLimiter`, `cookie-parser`, `csrf-csrf`, the lazy `config/database` in the shutdown handler) are ordinary imports at the top now.
+- The error handlers take a typed `HttpError` (`Error` plus `code` and `status`); `sanitizeRequestUrl` and the CSRF token handler are typed; the shutdown handler uses `errorMessage`.
+- Behaviour is unchanged: same middleware order, same CSRF setup, same routes.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), a `dist/` boot (health, ready and the API docs answer).
+
+### 4.17 the entry point
+
+`index.ts`: the services it started lazily (`caddyService`, `dockerDiscoveryService`, `gitService`, `alertService`, `certificateService`) are plain imports now. They were already loaded when the app module was, through the routes, so nothing starts earlier than before; the Docker service still only connects when `ENABLE_DOCKER_DISCOVERY=true`. The unused `app` import is gone.
+
+Verification: typecheck (loose and strict), build, a `dist/` boot with a real Caddy (the leader tasks run: 10 migrations, config init).
+
+### 4.18 the cluster entry points
+
+`cluster.ts` and `clusterSupervisor.ts`. `superviseCluster` is a named export typed with the Node `Cluster` and `Worker` types and a `SuperviseOptions` interface (the clock and the fatal handler stay injectable for the tests). `cluster.ts` still loads `./index` only in a worker or a single process, with `require`, because loading it starts the app.
+
+- `cluster.workers` is optional in the types: the shutdown loop reads `cluster.workers ?? {}`.
+- No behaviour change. `dist/cluster.js` was booted with two workers against a real Caddy: the primary starts the leader, the leader reports ready, the second worker starts and serves requests only, `/health` and `/ready` answer 200, and SIGTERM leaves no process behind.
+
+**Phase 4 is complete.** Every file under `src` is TypeScript except the four database migrations, which stay JavaScript on purpose (they are loaded by file name at runtime). Where a route validates its body by hand with messages that clients and tests depend on, the checks stay as they were; zod is used where nothing depended on the old behaviour (4.1 the middleware, 4.11 the discovery filters).
+
+Verification: typecheck (loose and strict), build, full suite (646 tests), the `dist/` cluster boot above.
+
+### 4.19 one errorMessage
+
+Seven files (`proxyValidation`, `backupService`, `certificateService`, `caddyService`, `dockerDiscoveryService`, `gitService`, `metricsService`) each carried the one-line `errorMessage` of the Phase 2 and 3 conversions. They import `utils/errorMessage` (4.12) now. The difference is the case the 3.12-3.14 review noted: a rejection that is a `{ message }` object but not an `Error` (some libraries and test doubles do that) gave `[object Object]`; it gives its message again, as the old `error.message` did.
+
+This step also rewrites "Current status": Phase 4 is complete, Phase 5 (ESM) is deliberately not done, and the open items are collected in one list.
+
+Verification: typecheck (loose and strict), build, full suite (646 tests).
+
+## End-to-end tests against a real Caddy (E.1 - E.3)
+
+Why: CaddyManager exists because NGINX Proxy Manager could not front a Ceph radosgw S3 endpoint (strict SigV4:
+the signature covers Host and the signed headers, so any rewrite breaks it). The unit tests only looked at the
+JSON sent to Caddy; nothing proved what an origin actually receives. `npm run test:e2e` now starts a real Caddy
+(`CADDY_BIN`, or `CADDY_IMAGE` via docker with `--network host`, or `caddy` on PATH), drives it through the
+real models, `caddyService` and `templateService`, and puts origin servers behind it. Without Caddy the suites
+skip; `CADDY_E2E_REQUIRED=true` (set in CI) makes that an error. They are excluded from the default `npm test`.
+
+Helpers (`backend/tests/e2e/helpers`): an AWS SigV4 signer and strict verifier (checked against the AWS
+documentation vectors in `tests/unit/sigv4.test.js`); an in-memory S3 origin as strict as radosgw (verifies the
+signature from what arrives, Content-MD5, x-amz-acl, payload hash and aws-chunked bodies; path and virtual-hosted
+style, multipart, Range, presigned URLs); an echo origin that records the raw request; a client that sends exactly
+what it is told.
+
+Suites: `s3.sigv4` (29 scenarios x 4 proxy setups x 2 Host styles), `templates` (all 7 default templates),
+`headers` (request/response rules, forwarding headers, security headers, passthrough, compression),
+`behaviors` (round robin, weights, ip_hash, health checks, path routing, basic auth, IP allow/deny, HTTPS
+upstream, 502, WebSocket, bodies up to 3 MiB, rebuild from the database, delete). 294 tests, about 11 s.
+
+### E.1 The S3 problem, found and fixed
+
+A plain proxy passed every SigV4 scenario: Caddy keeps Host and every header untouched. The bundled
+"Amazon S3" template broke all of them against a strict origin:
+
+- `Host: {http.request.host}` drops the port the client signed (`SignatureDoesNotMatch`).
+- `Content-MD5: {http.request.header.Content-MD5}` and the other self-passthrough rules set an empty header when
+  the client did not send it; radosgw answers `InvalidDigest` for an empty Content-MD5.
+- Compression (on by default) gzips signed GETs: the ETag becomes `"<md5>-gzip"` and a gzip HEAD reports the
+  wrong Content-Length, which breaks SDKs that verify them.
+
+Fixes: the template has no header rules (its description says so); `headerRules` never emits `X: {http.request.header.X}`
+for any proxy; the `encode` handler is wrapped in a `subroute` that skips HEAD and S3-signed requests
+(Authorization `AWS4-HMAC-SHA256*` / `AWS *`, presigned query parameters). Migration
+`20261014-repair-amazon-s3-template` empties the stored template and removes the legacy rules from proxies that carry
+the complete legacy set; customised templates and proxies are left alone. Existing routes in Caddy change on the
+next rebuild or proxy change (`initializeConfig` loads the backup file when there is one).
+
+### E.2 Templates and headers
+
+- Grafana: without basic auth the origin received the literal text `{http.auth.user.id}` as the user, and a
+  client-supplied `X-WebAuth-User` passed through, so a client could name its own user at an origin that trusts
+  the header. Rules using `{http.auth.*}` are applied only when basic auth is on; otherwise the header is deleted.
+- Header rules were dropped for path-routed requests (the per-path handlers had no headers). They carry the rules now.
+- Checked and fine: a spoofed X-Forwarded-For / -Proto is replaced; Authelia, Keycloak, Nextcloud, Cloudflare Tunnel
+  and Kibana (root redirect) headers arrive as documented; Set-Cookie, ETag, Content-Range pass through; a HEAD
+  response keeps the true Content-Length with compression on.
+
+### E.3 Behaviours
+
+`skip_tls_verify` was read by the route builder but no column, API field or migration existed, so a self-signed HTTPS
+upstream (Proxmox, Unifi...) could never be trusted. Added the column (migration `20261014-add-skip-tls-verify-to-proxies`),
+the model attribute and the API field. The proxy form has a checkbox for it.
+
+Behaviour changes for existing installs: header rules now also apply to path-routed proxies; compression is skipped
+for HEAD and S3-signed/presigned requests on every proxy; the repair migration only removes the legacy S3 rules from
+proxies that still carry all eight (a proxy where the user deleted some keeps the rest; a leftover `Host` rule still
+drops the signed port and should be removed by hand). A header rule using `{http.auth.*}` on a proxy without basic
+auth now deletes the client's header.
+
+Verification: typecheck (loose and strict), build, full suite (667 tests), contract tests (22), e2e (294).
+
+## Follow-ups after the e2e work (F.1 - F.9)
+
+Each item was written test first; the full suite (729 tests), the e2e suite (297), the contract tests (22) and the
+PostgreSQL suites (224) pass.
+
+- **F.1 Stale S3 routes.** A migration can export `rebuildsCaddyConfig = true`; `runMigrations` reports it and startup
+  then calls `initializeConfig({ forceRebuild: true })`, which regenerates the routes from the database instead of
+  loading the saved config. Migrations now receive the runner's transaction as a third argument. The repair also
+  removes the legacy rules from proxies that kept the `Host` rewrite plus a signing header.
+- **F.2 ip_filtering.** The builder applied only the first 10 entries, so a longer deny list silently stopped
+  blocking. All entries are applied now. (The Docker label stays at 10 entries by design.)
+- **F.3 Templates.** If Caddy refuses the route after a template was applied, the proxy's previous headers and
+  middlewares are restored. The `caddymanager.template` label matches case-insensitively.
+- **F.4 Configuration.** `DB_SSL_REJECT_UNAUTHORIZED=true` or `DB_SSL_CA=/path` verify the PostgreSQL certificate; the
+  unverified default stays (existing private-CA setups) but logs a warning. `docker-compose.prod.yml` refuses to
+  start without `DB_PASSWORD`, `JWT_SECRET`, `CSRF_SECRET` and `GIT_SECRET_KEY`.
+- **F.5 Rate limit key.** It keyed on the peer address, so every visitor behind Cloudflare or another proxy shared one
+  bucket. It uses `{http.vars.client_ip}` now (the peer address unless the server trusts proxies).
+  `CADDY_TRUSTED_PROXIES` and `CADDY_CLIENT_IP_HEADERS` configure that in the bundled Caddyfile (loopback only by
+  default), with `trusted_proxies_strict` so an address the visitor wrote into `X-Forwarded-For` cannot pose as the
+  client. Covered end to end (`rateLimit*.e2e.test.js`), including the forged-left-entry case.
+  The fix only helps once Caddy trusts the proxy in front of it, which CaddyManager cannot detect, so `.env.template` and
+  `.env.prod.example` carry paste-ready presets: `private_ranges` (a proxy on the same Docker/private network) and
+  Cloudflare's published ranges with `CF-Connecting-IP` (taken 2026-10-15; both validated with `caddy validate`).
+- **F.6 Cluster.** Git auto-sync was an interval per create/update call (never stopped, stale copy of the repository,
+  possible in a follower). One idempotent loop owned by the leader reads the repositories from the database on every
+  tick. Caddy config writes take a database lock (`ConfigLock`, expiring, owner-checked) in addition to the in-process
+  mutex when `CLUSTER_MODE=true`, so two workers cannot interleave their read-modify-write of the routes.
+- **F.7 Docker on followers.** `ensureInitialized()` connects on demand for `/discovery/status`, scan and sync; the
+  watcher stays with the leader.
+- **F.8 Build.** CI starts the backend image next to the project Caddy and waits for `/ready`; source maps carry the
+  sources (stack traces are readable in the image); `npm start` builds only when `dist/` is missing.
+- **F.9 Backups.** `POST /api/backups/upload` (multipart field `file`) was a 501. It validates like a restore, stores
+  under a generated name (re-encrypted with the local key), limit `BACKUP_UPLOAD_MAX_MB` (50), own rate limit. A
+  security review of it found that the `templates` section was never validated: a template header such as
+  `{env.CF_API_TOKEN}` would have been restored and then handed to every visitor. Templates now pass the templates
+  API validation in the upload and in restore, before anything is deleted.
+
+### F.10 Kubernetes removed
+
+Decision: CaddyManager manages a Caddy for people who run their own proxy; it is not an ingress controller and will
+not become one. Everything that pointed at Kubernetes is gone: the `kubernetes` source type (model, list filter,
+sync, scan and status endpoints, OpenAPI), the `ENABLE_K8S_DISCOVERY` setting (compose, README) and the "planned"
+notes (README roadmap, the discovery page, the commented-out startup code). Discovery is Docker only. A request for
+`source_type=kubernetes` is a 400 like any unknown value. Existing PostgreSQL databases keep the unused value in
+their enum type; nothing can create such a row, so no migration is needed.
+
+### F.11 README and the JWT setting
+
+The README was brought in line with the code: a project-status block, the S3/SigV4 and trusted-proxy guides, the
+templates, backup upload, the TypeScript and test stack, the roadmap (Kubernetes under "Not planned"), the testing
+commands (`test:e2e`) and every environment variable the backend reads (an automated comparison of `process.env`
+uses against the README found 18 undocumented). That comparison also found that `JWT_EXPIRES_IN`, the name the README,
+the compose files and the `.env` templates all use, was never read: the code only knew `JWT_EXPIRATION`, so token
+lifetime could not be set with the documented name. Both names work now (`JWT_EXPIRATION` wins when both are set).
+
+### F.12 Installing from the published images
+
+Question asked: is there a clear, short installation, and are the images on ghcr? The release workflow does push
+`caddymanager-backend`, `-frontend` and `-caddy` to ghcr.io (on each release that Cocogitto cuts from conventional
+commits on `main`, amd64 only), but nothing used them: every compose file built from source, and the Quick Start was
+wrong. Found by following it:
+
+- `docker-compose.yml` has `env_file: .env`, which the README never said to create (compose fails without it); the README
+  promised a `changeme123` password in every section, but none of the compose files sets it (a random password is
+  generated and printed once in the backend log); the prod and dev compose files did not even pass `ADMIN_*` through.
+- The `caddymanager-caddy` image did not contain the Caddyfile (it was bind-mounted), so a published image alone would
+  have run Caddy's stock config with the admin API closed to the backend. It is baked in now.
+- The release workflow builds the frontend with no build argument, and the Dockerfile's `ARG VITE_API_URL` was empty, so
+  parts of the UI (login context, proxy form) fell back to `http://localhost:3000/api`: the published frontend image
+  could not work off localhost. The default is `/api` now.
+- In production the login and CSRF cookies are `Secure` (and `__Host-`), which browsers discard on plain HTTP except on
+  localhost, so a normal self-hosted install opened at `http://server-ip:8080` could not log in. `COOKIE_SECURE`
+  (utils/cookiePolicy) sets it explicitly; the pre-built and default compose files default to `false`, the production
+  one to `true`.
+
+Added: `docker-compose.ghcr.yml` (pull-only, secrets required, Docker socket off by default),
+`scripts/smoke-install.sh` (the documented install end to end: compose file, generated `.env`, `up -d`, generated
+admin password from the log, a real login with the CSRF flow) and a CI step that builds the three images exactly like the
+release does and runs it. The README Quick Start is rewritten around it. Verified locally with locally built images
+standing in for ghcr.
+
+Still manual: the ghcr packages must be public (GitHub → Packages → Package settings) for `docker compose pull` to work
+without a login, and the images have only been proven locally until the first release builds them.
+
+## Current status
+
+Done: Phases 0, 0+, 1, 2, 3 and 4. Every file under `backend/src` is TypeScript (strict) except the four
+database migrations, which stay JavaScript: they are loaded by file name at runtime. The branch is
+`chore/modernization`; each item above is one commit (`git log --grep "(4.18)"`).
+
+Not done, on purpose: **Phase 5 (ESM)**. It was optional, it touches every import and every Jest mock for no
+runtime gain on Node 24 (the compiled CommonJS in `dist/` runs as it is), and nothing in Phases 0-4 needs it.
+The named exports used throughout Phase 3 and 4 are what an ESM move would need, so it stays a mechanical
+change if it is ever wanted.
+
+Validation, as it ended up: `validateBody` (zod) exists (4.1) and the discovery filters use zod (4.11). The
+other routes keep their hand-written checks or express-validator rules, because clients and tests depend on
+their exact messages, and the login and reset rules depend on `normalizeEmail`, which zod has no equivalent for.
+
+### Open items (documented, not fixed)
+
+- The Docker `domain` label accepts wildcards on purpose (the API does too: S3 virtual-hosted style needs them); a
+  discovered proxy is created disabled, so a duplicate domain is visible in review.
+- The e2e suites need Docker with host networking (Linux) or a `caddy` binary; macOS Docker Desktop is not supported.
+- With `DB_SSL=true` alone PostgreSQL still connects without verifying the certificate (kept for compatibility, logs a
+  warning; set `DB_SSL_CA` or `DB_SSL_REJECT_UNAUTHORIZED=true`). The TLS probe in `caddyService.verifyTlsForDomains`
+  does not verify the certificate it reads, which is its purpose (it inspects what Caddy serves).
+- Left from the 2.1 review (development only): the nodemon `--exec` chain can race on a restart, and a uid mismatch is
+  possible with the dev compose bind mount.
+- Spying on `caddyService.buildTlsTransport` or `shouldUseHTTPSTransport` no longer affects route generation
+  (the methods delegate to `utils/caddyRoute`); no test does that today.
+- `npm audit` still reports the `sqlite3` build chain (`tar`, `node-gyp`, `make-fetch-happen`) and `nodemon`'s
+  dev-only dependencies. These run at install time, not in the server. `sqlite3` 6 was declined in 0.28d (its binary
+  needs glibc 2.38, the image has 2.36); `npm audit`'s fix for `nodemon` is a downgrade.
+- A client can still send an `X-WebAuth-User`-style header that the origin trusts when no template rule overwrites it:
+  CaddyManager cannot know which headers an origin trusts. Templates that need one (Grafana) now overwrite or delete it.
+- A pull request has not been opened.

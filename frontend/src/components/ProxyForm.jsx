@@ -9,6 +9,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [upstreamUrl, setUpstreamUrl] = useState('');
   const [sslType, setSslType] = useState('acme');
   const [compressionEnabled, setCompressionEnabled] = useState(true);
+  const [skipTlsVerify, setSkipTlsVerify] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [loading, setLoading] = useState(false);
@@ -113,6 +114,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       setUpstreamUrl(proxy.upstream_url);
       setSslType(proxy.ssl_type);
       setCompressionEnabled(proxy.compression_enabled);
+      setSkipTlsVerify(proxy.skip_tls_verify === true);
       setSecurityHeadersEnabled(proxy.security_headers_enabled);
 
       // Populate rate limiting fields
@@ -192,6 +194,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         upstream_url: upstreamUrl,
         ssl_type: sslType,
         compression_enabled: compressionEnabled,
+        skip_tls_verify: skipTlsVerify,
         security_headers_enabled: securityHeadersEnabled,
         rate_limit: rateLimitEnabled ? {
           enabled: true,
@@ -350,7 +353,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               value={upstreamUrl}
               onChange={(e) => setUpstreamUrl(e.target.value)}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="localhost:8080 or server:80 or server:443"
+              placeholder="http://app:8080, https://api or app:3000"
               required
             />
           </div>
@@ -385,6 +388,26 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
             </div>
           )}
 
+
+          <div className="flex items-start">
+            <div className="flex items-center h-5">
+              <input
+                id="skip_tls_verify"
+                type="checkbox"
+                checked={skipTlsVerify}
+                onChange={(e) => setSkipTlsVerify(e.target.checked)}
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+              />
+            </div>
+            <div className="ml-3 text-sm">
+              <label htmlFor="skip_tls_verify" className="font-medium text-gray-700">
+                Skip upstream certificate verification
+              </label>
+              <p className="text-gray-500">
+                Trust a self-signed or internal certificate on an HTTPS upstream
+              </p>
+            </div>
+          </div>
 
           <div className="flex items-start">
             <div className="flex items-center h-5">
@@ -663,7 +686,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                       onChange={(e) => setLbPolicy(e.target.value)}
                       className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     >
-                      <option value="round_robin">Round Robin</option>
+                      <option value="round_robin">Round Robin (weighted when weights are set)</option>
+                      <option value="weighted_round_robin">Weighted Round Robin</option>
                       <option value="least_conn">Least Connections</option>
                       <option value="ip_hash">IP Hash</option>
                       <option value="random">Random</option>

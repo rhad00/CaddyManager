@@ -4,15 +4,17 @@ const fs = require('fs');
 jest.mock('axios');
 jest.mock('../../src/models', () => ({
   Proxy: { findAll: jest.fn() },
-  Header: { destroy: jest.fn(), create: jest.fn() },
-  Middleware: { destroy: jest.fn(), create: jest.fn() },
+  Header: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() },
+  Middleware: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() },
+  // loadConfig merges custom certificates from the database
+  Certificate: { findAll: jest.fn(async () => []) },
   sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
 }));
 
 jest.mock('fs', () => ({ promises: { writeFile: jest.fn(), mkdir: jest.fn() }, existsSync: jest.fn(), unlinkSync: jest.fn() }));
 
 const { Proxy, Header } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService', () => {
   afterEach(() => jest.clearAllMocks());
@@ -52,13 +54,94 @@ describe('CaddyService', () => {
     expect(proxy.update).toHaveBeenCalled();
   });
 
-  test('deleteProxy deletes route and adjusts indices', async () => {
+  // A skipped proxy must not keep pointing at a route that now belongs to another (0.18)
+  test('rebuildConfigFromDatabase clears the route index of proxies it leaves out', async () => {
+    axios.get.mockResolvedValue({ data: { apps: { http: { servers: { srv0: { routes: [] } } } } } });
+    axios.post.mockResolvedValue({});
+    const active = { domains: ['on.example.com'], upstream_url: 'http://a', status: 'active', caddy_route_index: 1, update: jest.fn() };
+    const disabled = { domains: ['off.example.com'], upstream_url: 'http://b', status: 'disabled', caddy_route_index: 0, update: jest.fn() };
+    Proxy.findAll.mockResolvedValue([disabled, active]);
+    try {
+      await caddyService.rebuildConfigFromDatabase();
+      expect(active.update).toHaveBeenCalledWith({ caddy_route_index: 0 });
+      expect(disabled.update).toHaveBeenCalledWith({ caddy_route_index: null });
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
+  // The route then rolls back the DB row, so the posted route must go too (0.15)
+  test('addProxy removes the route it posted when a later step fails', async () => {
+    const config = { apps: { http: { servers: { srv0: { routes: [{}, {}] } } } } };
+    axios.get.mockResolvedValue({ data: config });
+    axios.post.mockResolvedValue({});
     axios.delete.mockResolvedValue({});
-    Proxy.findAll.mockResolvedValue([{ id: 'p2', caddy_route_index: 3, update: jest.fn() }]);
-    const proxy = { caddy_route_index: 2, destroy: jest.fn() };
-    const res = await caddyService.deleteProxy(proxy);
+    try {
+      const proxy = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn().mockRejectedValue(new Error('database is locked')) };
+      await expect(caddyService.addProxy(proxy)).rejects.toThrow(/database is locked/);
+      expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/routes\/2$/));
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+      axios.delete.mockReset();
+    }
+  });
+
+  test('addProxy does not delete anything when the route POST itself fails', async () => {
+    axios.get.mockResolvedValue({ data: { apps: { http: { servers: { srv0: { routes: [] } } } } } });
+    axios.post.mockRejectedValue(new Error('400 invalid handler'));
+    try {
+      const proxy = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.addProxy(proxy)).rejects.toThrow(/invalid handler/);
+      expect(axios.delete).not.toHaveBeenCalled();
+    } finally {
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
+  // Caddy already runs the change at that point; failing would roll back the DB (0.15)
+  test('a failed config backup does not fail addProxy or updateProxy', async () => {
+    const config = { apps: { http: { servers: { srv0: { routes: [{}] } } } } };
+    axios.get.mockResolvedValue({ data: config });
+    axios.post.mockResolvedValue({});
+    Proxy.findAll.mockResolvedValue([]);
+    fs.promises.writeFile.mockRejectedValue(new Error('EROFS: read-only file system'));
+
+    try {
+      const added = { domains: ['new.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.addProxy(added)).resolves.toMatchObject({ success: true });
+
+      const updated = { id: 'p', caddy_route_index: 0, domains: ['a.example.com'], upstream_url: 'http://u', update: jest.fn() };
+      await expect(caddyService.updateProxy(updated)).resolves.toMatchObject({ success: true });
+    } finally {
+      fs.promises.writeFile.mockReset();
+      axios.get.mockReset();
+      axios.post.mockReset();
+    }
+  });
+
+  // The route deletes the row and passes the proxy's plain data (MODERNIZATION.md 0.15)
+  test('deleteProxy removes the route and shifts later indices for an already-deleted proxy', async () => {
+    axios.delete.mockResolvedValue({});
+    const later = { id: 'p2', caddy_route_index: 3, update: jest.fn() };
+    Proxy.findAll.mockResolvedValue([later]);
+    const proxyData = { id: 'p1', caddy_route_index: 2, ssl_type: 'acme' };
+    const res = await caddyService.deleteProxy(proxyData);
     expect(res.success).toBe(true);
-    expect(proxy.destroy).toHaveBeenCalled();
+    expect(axios.delete).toHaveBeenCalledWith(expect.stringMatching(/\/routes\/2$/));
+    expect(later.update).toHaveBeenCalledWith({ caddy_route_index: 2 });
+  });
+
+  test('deleteProxy recomputes the DNS-01 policy when a Cloudflare proxy is removed', async () => {
+    axios.delete.mockResolvedValue({});
+    axios.get.mockResolvedValue({ data: caddyService.setCloudflarePolicy({}, ['gone.example.com']) });
+    axios.post.mockResolvedValue({});
+    Proxy.findAll.mockResolvedValue([]);
+    await caddyService.deleteProxy({ id: 'p1', caddy_route_index: 0, ssl_type: 'cloudflare' });
+    const load = axios.post.mock.calls.find((c) => String(c[0]).includes('/load'));
+    expect(load[1].apps.tls.automation.policies).toEqual([]);
   });
 
   test('applyTemplate removes headers and creates new ones then updates proxy', async () => {
@@ -149,11 +232,14 @@ describe('CaddyService', () => {
     // Should have a subroute handler
     expect(route.handle.some(h => h.handler === 'subroute')).toBe(true);
     const sub = route.handle.find(h => h.handler === 'subroute');
-    expect(sub.routes.length).toBe(2);
+    // Two path routes, then a catch-all 404: without it a path that matches no route
+    // would get Caddy's empty 200
+    expect(sub.routes.length).toBe(3);
     expect(sub.routes[0].match[0].path).toEqual(['/api']);
+    expect(sub.routes[2]).toEqual({ handle: [{ handler: 'static_response', status_code: 404 }] });
   });
 
-  test('createRouteFromProxy includes basic_auth handler when enabled', () => {
+  test('createRouteFromProxy includes an http_basic authentication handler when enabled', () => {
     const proxy = {
       domains: ['auth.example.com'],
       upstream_url: 'http://u',
@@ -161,9 +247,8 @@ describe('CaddyService', () => {
     };
 
     const route = caddyService.createRouteFromProxy(proxy);
-    expect(route.handle.some(h => h.handler === 'basic_auth')).toBe(true);
-    const auth = route.handle.find(h => h.handler === 'basic_auth');
-    expect(auth.users).toHaveProperty('alice', 'hashed');
+    const auth = route.handle.find(h => h.handler === 'authentication');
+    expect(auth.providers.http_basic.accounts).toEqual([{ username: 'alice', password: 'hashed' }]);
   });
 
   test('createRouteFromProxy includes rate_limit handler when enabled', () => {
@@ -238,13 +323,14 @@ describe('CaddyService', () => {
     // Inspect the route that would have been created
     const route = caddyService.createRouteFromProxy(combinedProxy);
 
-    // Handler order: rate_limit, subroute (ip_filtering), basic_auth, encode (compression), subroute (path_routing)
+    // Handler order: rate_limit, subroute (ip_filtering), authentication, encode (compression), subroute (path_routing)
     const handlers = route.handle;
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
-    expect(handlers[2].handler).toBe('basic_auth');
-    // compression encode may appear before reverse_proxy/subroute
-    expect(handlers.some(h => h.handler === 'encode')).toBe(true);
+    expect(handlers[2].handler).toBe('authentication');
+    // compression is an encode handler wrapped in a subroute (it skips HEAD and S3-signed requests)
+    const encodeWrapper = handlers.find(h => h.handler === 'subroute' && h.routes[0].handle[0].handler === 'encode');
+    expect(encodeWrapper).toBeDefined();
     // subroute must exist for path routing (there will be 2 subroutes: one for IP filtering, one for path routing)
     const subroutes = handlers.filter(h => h.handler === 'subroute');
     expect(subroutes.length).toBeGreaterThanOrEqual(1);
@@ -287,11 +373,12 @@ describe('CaddyService', () => {
     const route = routes[routes.length - 1];
     const handlers = route.handle;
 
-    // Exact order expected: rate_limit, subroute (ip_filtering), basic_auth, encode, reverse_proxy
+    // Exact order expected: rate_limit, subroute (ip_filtering), authentication, encode, reverse_proxy
     expect(handlers[0].handler).toBe('rate_limit');
     expect(handlers[1].handler).toBe('subroute'); // IP filtering now uses subroute
-    expect(handlers[2].handler).toBe('basic_auth');
-    expect(handlers[3].handler).toBe('encode');
+    expect(handlers[2].handler).toBe('authentication');
+    expect(handlers[3].handler).toBe('subroute');
+    expect(handlers[3].routes[0].handle[0].handler).toBe('encode');
     const rp = handlers[4];
     expect(rp.handler).toBe('reverse_proxy');
 

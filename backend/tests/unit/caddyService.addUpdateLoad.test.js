@@ -5,13 +5,15 @@ jest.mock('fs', () => ({ promises: { writeFile: jest.fn(), mkdir: jest.fn() } })
 
 jest.mock('../../src/models', () => ({
   Proxy: { findAll: jest.fn() },
-  Header: { destroy: jest.fn(), create: jest.fn() },
-  Middleware: { destroy: jest.fn(), create: jest.fn() },
+  Header: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() },
+  Middleware: { destroy: jest.fn(), create: jest.fn(), findAll: jest.fn(async () => []), bulkCreate: jest.fn() },
+  // loadConfig merges custom certificates from the database
+  Certificate: { findAll: jest.fn(async () => []) },
   sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
 }));
 
 const { Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService add/update load payload assertions', () => {
   const originalToken = process.env.CF_API_TOKEN;
@@ -32,6 +34,7 @@ describe('CaddyService add/update load payload assertions', () => {
     caddyService.verifyTlsForDomains = jest.fn().mockResolvedValue({ ok: true, results: [] });
 
     const proxy = { domains: ['add.example.com'], upstream_url: 'http://u', ssl_type: 'cloudflare', update: jest.fn().mockResolvedValue(true) };
+    Proxy.findAll.mockResolvedValue([proxy]); // DB state: the proxy is a Cloudflare proxy
     const res = await caddyService.addProxy(proxy);
     expect(res.success).toBe(true);
 
@@ -53,6 +56,7 @@ describe('CaddyService add/update load payload assertions', () => {
     caddyService.verifyTlsForDomains = jest.fn().mockResolvedValue({ ok: true, results: [] });
 
     const proxy = { id: 'p', caddy_route_index: 1, domains: ['update-load.example.com'], upstream_url: 'http://u', ssl_type: 'cloudflare', update: jest.fn().mockResolvedValue(true) };
+    Proxy.findAll.mockResolvedValue([proxy]);
     const res = await caddyService.updateProxy(proxy);
     expect(res).toHaveProperty('success');
 

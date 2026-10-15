@@ -33,7 +33,7 @@ describe('CaddyService backup/restore and complex rebuild', () => {
     await Proxy.create({ name: 'c1', domains: ['c1.example.com'], upstream_url: 'http://c1:7000', rate_limit: { enabled: true, requests_per_second: 1, burst: 2 }, basic_auth: { enabled: true, username: 'b', hashed_password: 'h' }, ip_filtering: { enabled: true, mode: 'allow', ip_list: ['10.0.0.0/8'] }, compression_enabled: true, created_by: u.id });
     await Proxy.create({ name: 'c2', domains: ['c2.example.com'], upstream_url: 'https://c2:443', path_routing: { enabled: true, routes: [{ path: '/x', upstream_url: 'http://x:1' }] }, created_by: u.id });
 
-    caddyService = require('../../src/services/caddyService');
+    ({ caddyService } = require('../../src/services/caddyService'));
   });
 
   afterAll(async () => {

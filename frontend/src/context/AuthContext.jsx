@@ -3,6 +3,7 @@ import { createContext, useState, useEffect, useContext } from 'react';
 
 // Create the authentication context
 const AuthContext = createContext();
+const CSRF_STORAGE_KEY = 'caddymanager.csrfToken';
 
 // Custom hook to use the auth context
 export const useAuth = () => {
@@ -31,6 +32,7 @@ export const AuthProvider = ({ children }) => {
         if (response.ok) {
           const data = await response.json();
           setCsrfToken(data.csrfToken);
+          window.sessionStorage.setItem(CSRF_STORAGE_KEY, data.csrfToken);
         }
       } catch (error) {
         console.error('Failed to fetch CSRF token:', error);
@@ -122,6 +124,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       // Always clear local state regardless of API response
       setCurrentUser(null);
+      setToken(null);
+      setCsrfToken(null);
+      window.sessionStorage.removeItem(CSRF_STORAGE_KEY);
     }
   };
 

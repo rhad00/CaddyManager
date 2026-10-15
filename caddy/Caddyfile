@@ -11,6 +11,16 @@
 	storage file_system {
 		root /data
 	}
+
+	# Clients behind a front proxy (Cloudflare, another Caddy): list its address ranges in
+	# CADDY_TRUSTED_PROXIES (space separated CIDRs) so rate limits, IP filters and
+	# X-Forwarded-For use the real visitor. Only loopback is trusted by default.
+	servers {
+		trusted_proxies static {$CADDY_TRUSTED_PROXIES:127.0.0.1/32}
+		# right-to-left: the entry added by the nearest trusted proxy wins, not one the client wrote
+		trusted_proxies_strict
+		client_ip_headers {$CADDY_CLIENT_IP_HEADERS:X-Forwarded-For}
+	}
 }
 
 :80 {

@@ -19,3 +19,8 @@ FROM caddy:${CADDY_VERSION}
 
 # Copy the custom-built Caddy binary if present
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+
+# The Caddyfile the backend expects (admin API on the container network, access log, trusted
+# proxies). Baked in so the image works without a bind mount; the development compose files
+# still mount their own copy over it.
+COPY Caddyfile /etc/caddy/Caddyfile

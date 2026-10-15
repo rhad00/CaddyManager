@@ -17,6 +17,7 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.prod
 
 # Editor directories and files
 .idea/
@@ -62,7 +63,19 @@ temp/
 backend/config_backups/
 backend/config/
 backend/backups/
-*.sh
-docs
-CLAUDE.md
+backend/uploads/
 FEATURE_IMPLEMENTATION.md
+
+# Local tooling and AI assistant files: never part of the repository
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.tokensave/
+.cursor/
+.cursorrules
+.aider*
+.windsurf/
+.continue/
+.github/copilot-instructions.md
+

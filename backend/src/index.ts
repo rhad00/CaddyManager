@@ -1,0 +1,116 @@
+import { sequelize } from './config/database';
+import { initializeAdmin } from './services/setupService';
+import { templateService } from './services/templateService';
+import { backupService } from './services/backupService';
+import { metricsService } from './services/metricsService';
+import { migrationService } from './services/migrationService';
+import { caddyService } from './services/caddyService';
+import { dockerDiscoveryService } from './services/dockerDiscoveryService';
+import { gitService } from './services/gitService';
+import { startAlertScheduler } from './services/alertService';
+import { certificateService } from './services/certificateService';
+import { isLeader } from './utils/clusterRole';
+import { startServer } from './app';
+
+// Routes are registered in app.ts
+
+/**
+ * One-time and background work. Runs in a single process, or in the leader worker in
+ * cluster mode: other workers would repeat the migrations and run every scheduler,
+ * Docker watcher and Git auto-sync again (MODERNIZATION.md 0.25).
+ */
+const runLeaderTasks = async (): Promise<void> => {
+  // Sync database models - only create tables if they don't exist
+  // Use migrations for schema changes instead of alter: true
+  await sequelize.sync();
+  console.log('Database synchronized');
+
+  // Run any pending migrations
+  const migrations = await migrationService.runMigrations();
+
+  // Initialize admin user
+  const adminInitialized = await initializeAdmin();
+  if (adminInitialized) {
+    console.log('Admin user initialized successfully');
+  }
+
+  // Initialize default templates
+  const templatesInitialized = await templateService.initializeDefaultTemplates();
+  if (templatesInitialized) {
+    console.log('Default templates initialized successfully');
+  }
+
+  // Schedule automatic backups (every 24 hours)
+  backupService.scheduleAutoBackups(24);
+
+  // Initialize metrics snapshots (every hour)
+  metricsService.scheduleMetricsSnapshots(60);
+
+  // Synchronize proxy route indices
+  await caddyService.initializeConfig({ forceRebuild: migrations.rebuildCaddyConfig === true });
+
+  // Initialize Docker discovery service if enabled
+  if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {
+    console.log('Docker discovery enabled, initializing...');
+    const dockerInitialized = await dockerDiscoveryService.initialize();
+    if (dockerInitialized) {
+      await dockerDiscoveryService.startWatching();
+      console.log('Docker discovery service started successfully');
+    } else {
+      console.warn('Docker discovery service failed to initialize');
+    }
+  } else {
+    console.log('Docker discovery is disabled (set ENABLE_DOCKER_DISCOVERY=true to enable)');
+  }
+
+  // Initialize Git service for GitOps and version control
+  console.log('Initializing Git service...');
+  await gitService.initialize();
+  console.log('Git service initialized successfully');
+
+  // Start alert scheduler
+  startAlertScheduler(15); // check every 15 minutes
+
+  // Keep the certificate list and expiry dates current
+  certificateService.scheduleCertificateSync(6);
+};
+
+// Initialize the environment, the leader's background work, and the server
+const initialize = async (): Promise<void> => {
+  try {
+    // Validate required environment variables
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      const required = ['JWT_SECRET'];
+      const missing = required.filter(v => !process.env[v]);
+      if (missing.length > 0) {
+        console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+        process.exit(1);
+      }
+    }
+
+    if (!process.env.CADDY_API_URL) {
+      console.warn('WARNING: CADDY_API_URL not set, defaulting to http://caddy:2019');
+    }
+
+    if (isLeader()) {
+      await runLeaderTasks();
+    } else {
+      console.log(`Worker ${process.pid} serves requests only; the leader runs migrations and background jobs`);
+    }
+
+    // Start the server
+    await startServer();
+
+    // Tell the cluster primary that the database is ready for the other workers
+    if (process.send) {
+      process.send({ type: 'ready' });
+    }
+  } catch (error) {
+    console.error('Initialization error:', error);
+    process.exit(1);
+  }
+};
+
+// Run initialization
+initialize();

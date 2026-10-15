@@ -1,0 +1,279 @@
+import express, { type Request, type Response } from 'express';
+import crypto from 'crypto';
+import { ApiKey, User } from '../../models';
+import { currentUser } from '../../utils/requestUser';
+import { authMiddleware, requireApiKeyPermission } from '../../middleware/auth';
+import { logAction } from '../../services/auditService';
+
+export const router = express.Router();
+
+/** Hash the raw API key for storage. */
+const hashKey = (raw: string): string => crypto.createHash('sha256').update(raw).digest('hex');
+
+/** Generate a new key: `cm_<random32hex>` */
+const generateRawKey = () => `cm_${crypto.randomBytes(20).toString('hex')}`;
+
+/**
+ * @swagger
+ * tags:
+ *   name: API Keys
+ *   description: Programmatic access key management
+ *
+ * /keys:
+ *   get:
+ *     summary: List API keys
+ *     description: "Returns keys for the current user. Admins see all keys."
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of API key objects (key_hash excluded)
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request, res: Response) => {
+  try {
+    const where = currentUser(req).role === 'admin' ? {} : { created_by: currentUser(req).id };
+    const keys = await ApiKey.findAll({
+      where,
+      include: [{ model: User, as: 'owner', attributes: ['id', 'email'] }],
+      order: [['createdAt', 'DESC']],
+    });
+    // Never return key_hash
+    const safe = keys.map(k => {
+      const { key_hash: _keyHash, ...rest } = k.toJSON();
+      return rest;
+    });
+    res.json({ success: true, keys: safe });
+  } catch (err) {
+    console.error('List API keys error:', err);
+    res.status(500).json({ success: false, message: 'Failed to list API keys' });
+  }
+});
+
+/**
+ * @swagger
+ * /keys:
+ *   post:
+ *     summary: Create a new API key
+ *     description: "Returns the raw key ONCE — it is not stored and cannot be retrieved again."
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, example: "CI/CD pipeline" }
+ *               permissions:
+ *                 type: array
+ *                 items: { type: string, enum: [read, write, admin] }
+ *                 default: [read]
+ *               expires_at: { type: string, format: date-time }
+ *     responses:
+ *       201:
+ *         description: API key created — raw_key shown once
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 key: { type: object }
+ *                 raw_key: { type: string, example: "cm_abc123..." }
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.post('/', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request, res: Response) => {
+  try {
+    const { name, permissions = ['read'], expires_at } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ success: false, message: 'name is required' });
+    }
+
+    const trimmedName = name.trim();
+    if (trimmedName.length < 1 || trimmedName.length > 100) {
+      return res.status(400).json({ success: false, message: 'name must be between 1 and 100 characters' });
+    }
+    // Only allow printable ASCII characters in key names
+    if (!/^[\x20-\x7E]+$/.test(trimmedName)) {
+      return res.status(400).json({ success: false, message: 'name must contain only printable ASCII characters' });
+    }
+
+    const validPerms = ['read', 'write', 'admin'];
+    const perms = Array.isArray(permissions) ? permissions : [permissions];
+    if (perms.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one permission is required' });
+    }
+    if (!perms.every(p => validPerms.includes(p))) {
+      return res.status(400).json({ success: false, message: `permissions must be a subset of: ${validPerms.join(', ')}` });
+    }
+
+    // Non-admins cannot create admin-level keys
+    if (perms.includes('admin') && currentUser(req).role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Only admins can create admin-level keys' });
+    }
+
+    // Validate expires_at if provided
+    let expiresAt = null;
+    if (expires_at !== undefined && expires_at !== null) {
+      expiresAt = new Date(expires_at);
+      if (isNaN(expiresAt.getTime())) {
+        return res.status(400).json({ success: false, message: 'expires_at must be a valid date' });
+      }
+      if (expiresAt <= new Date()) {
+        return res.status(400).json({ success: false, message: 'expires_at must be a future date' });
+      }
+    }
+
+    const rawKey = generateRawKey();
+    const key = await ApiKey.create({
+      name: trimmedName,
+      key_hash: hashKey(rawKey),
+      key_prefix: rawKey.substring(0, 8),
+      permissions: perms,
+      created_by: currentUser(req).id as string,
+      expires_at: expiresAt,
+    });
+
+    await logAction({
+      userId: currentUser(req).id, action: 'API_KEY_CREATED',
+      resource: 'api_key', resourceId: key.id,
+      details: { name, permissions: perms }, status: 'success',
+    }, req);
+
+    res.status(201).json({
+      success: true,
+      key: { id: key.id, name: key.name, key_prefix: key.key_prefix, permissions: key.permissions, expires_at: key.expires_at },
+      raw_key: rawKey, // Only shown once
+    });
+  } catch (err) {
+    console.error('Create API key error:', err);
+    res.status(500).json({ success: false, message: 'Failed to create API key' });
+  }
+});
+
+/**
+ * @swagger
+ * /keys/{id}:
+ *   delete:
+ *     summary: Revoke an API key
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: API key revoked
+ *       403:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.delete('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
+  try {
+    const key = await ApiKey.findByPk(req.params.id);
+    if (!key) return res.status(404).json({ success: false, message: 'Key not found' });
+    if (currentUser(req).role !== 'admin' && key.created_by !== currentUser(req).id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await logAction({
+      userId: currentUser(req).id, action: 'API_KEY_REVOKED',
+      resource: 'api_key', resourceId: key.id,
+      details: { name: key.name }, status: 'success',
+    }, req);
+
+    await key.destroy();
+    res.json({ success: true, message: 'API key revoked' });
+  } catch (err) {
+    console.error('Delete API key error:', err);
+    res.status(500).json({ success: false, message: 'Failed to revoke API key' });
+  }
+});
+
+/**
+ * @swagger
+ * /keys/{id}:
+ *   put:
+ *     summary: Update API key name or enabled status
+ *     tags: [API Keys]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               enabled: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: API key updated
+ *       403:
+ *         $ref: '#/components/schemas/Error'
+ *       404:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.put('/:id', [authMiddleware, requireApiKeyPermission('admin')], async (req: Request<{ id: string }>, res: Response) => {
+  try {
+    const key = await ApiKey.findByPk(req.params.id);
+    if (!key) return res.status(404).json({ success: false, message: 'Key not found' });
+    if (currentUser(req).role !== 'admin' && key.created_by !== currentUser(req).id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const { name, enabled } = req.body;
+    if (name !== undefined) {
+      if (typeof name !== 'string') {
+        return res.status(400).json({ success: false, message: 'name must be a string' });
+      }
+      const trimmedName = name.trim();
+      if (trimmedName.length < 1 || trimmedName.length > 100) {
+        return res.status(400).json({ success: false, message: 'name must be between 1 and 100 characters' });
+      }
+      if (!/^[\x20-\x7E]+$/.test(trimmedName)) {
+        return res.status(400).json({ success: false, message: 'name must contain only printable ASCII characters' });
+      }
+      key.name = trimmedName;
+    }
+    if (enabled !== undefined) key.enabled = Boolean(enabled);
+    await key.save();
+
+    await logAction({
+      userId: currentUser(req).id, action: 'API_KEY_UPDATED',
+      resource: 'api_key', resourceId: key.id,
+      details: {
+        name: key.name,
+        enabled: key.enabled,
+        changedFields: Object.keys(req.body).filter(f => ['name', 'enabled'].includes(f))
+      },
+      status: 'success',
+    }, req);
+
+    const { key_hash: _keyHash, ...safe } = key.toJSON();
+    res.json({ success: true, key: safe });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to update API key' });
+  }
+});

@@ -13,8 +13,18 @@ const PasswordResetForm = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [tokenValid, setTokenValid] = useState(false);
-  
-  const token = searchParams.get('token');
+
+  // Extract the token from the URL into state immediately, then strip it from
+  // the URL so it does not persist in browser history or leak via Referer
+  // headers when the user navigates away from this page.
+  const [token] = useState(() => searchParams.get('token'));
+
+  useEffect(() => {
+    if (searchParams.get('token')) {
+      navigate(window.location.pathname, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Verify token on component mount
   useEffect(() => {

@@ -14,12 +14,15 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_access_logs:/var/log/caddy
     networks:
       - caddy_net
     env_file:
       - .env
     environment:
       - CF_API_TOKEN=${CF_API_TOKEN}
+      - CADDY_TRUSTED_PROXIES=${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+      - CADDY_CLIENT_IP_HEADERS=${CADDY_CLIENT_IP_HEADERS:-X-Forwarded-For}
 
   backend:
     build:
@@ -35,19 +38,23 @@ services:
       - DB_TYPE=${DB_TYPE:-sqlite}
       - SQLITE_PATH=${SQLITE_PATH:-/app/data/caddymanager.db}
       - CADDY_API_URL=${CADDY_API_URL:-http://caddy:2019}
+      - CADDY_ACCESS_LOG=/var/log/caddy/access.log
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      # Secure cookies need HTTPS (browsers drop them on plain HTTP except on localhost); set
+      # COOKIE_SECURE=true in .env to change this
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ENABLE_DOCKER_DISCOVERY=${ENABLE_DOCKER_DISCOVERY:-false}
-      - ENABLE_K8S_DISCOVERY=${ENABLE_K8S_DISCOVERY:-false}
       - DOCKER_LABEL_PREFIX=${DOCKER_LABEL_PREFIX:-caddymanager}
       - AUTO_REMOVE_STOPPED=${AUTO_REMOVE_STOPPED:-false}
     volumes:
       - backend_data:/app/data
       - backend_logs:/app/logs
+      - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -69,6 +76,8 @@ networks:
   caddy_net:
 
 volumes:
+  caddy_access_logs:
+    name: caddymanager_caddy_access_logs
   caddy_data:
     name: caddymanager_caddy_data
   caddy_config:

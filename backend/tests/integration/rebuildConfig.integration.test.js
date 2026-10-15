@@ -41,7 +41,7 @@ describe('CaddyService integration with SQLite', () => {
     await Proxy.create({ name: 'p2', domains: ['two.example.com'], upstream_url: 'http://two:8000', created_by: user.id });
 
     // Now require the caddyService so it picks up the in-memory DB models
-    caddyService = require('../../src/services/caddyService');
+    ({ caddyService } = require('../../src/services/caddyService'));
   });
 
   afterAll(async () => {

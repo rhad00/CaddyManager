@@ -1,8 +1,10 @@
 # Build stage
-FROM node:20-alpine as builder
+FROM node:24-alpine AS builder
 
-# Build arguments
-ARG VITE_API_URL
+# Build arguments. Same-origin by default: the nginx in this image proxies /api to the backend.
+# (The release workflow builds without arguments; an empty value used to fall back to
+# http://localhost:3000/api in parts of the UI.)
+ARG VITE_API_URL=/api
 ENV VITE_API_URL=${VITE_API_URL}
 
 WORKDIR /app

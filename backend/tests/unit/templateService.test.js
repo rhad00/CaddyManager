@@ -1,7 +1,7 @@
 let templateService;
 try {
   // eslint-disable-next-line global-require
-  templateService = require('../../src/services/templateService');
+  ({ templateService } = require('../../src/services/templateService'));
 } catch (e) {
   templateService = null;
 }

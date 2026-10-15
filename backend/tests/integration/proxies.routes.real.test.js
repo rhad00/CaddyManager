@@ -3,14 +3,16 @@ const express = require('express');
 
 // Mock models and services used by routes
 jest.mock('../../src/models/proxy', () => ({
-  findAll: jest.fn(),
-  findByPk: jest.fn(),
-  create: jest.fn(),
-  sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
+  Proxy: {
+    findAll: jest.fn(),
+    findByPk: jest.fn(),
+    create: jest.fn(),
+    sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
+  }
 }));
 
-jest.mock('../../src/models/header', () => ({ create: jest.fn(), destroy: jest.fn() }));
-jest.mock('../../src/models/middleware', () => ({ create: jest.fn(), destroy: jest.fn() }));
+jest.mock('../../src/models/header', () => ({ Header: { create: jest.fn(), destroy: jest.fn() } }));
+jest.mock('../../src/models/middleware', () => ({ Middleware: { create: jest.fn(), destroy: jest.fn() } }));
 
 // Mock the models index to prevent setupAssociations from running
 jest.mock('../../src/models', () => ({
@@ -22,20 +24,21 @@ jest.mock('../../src/models', () => ({
   sequelize: {}
 }));
 
-jest.mock('../../src/services/caddyService', () => ({ addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) }));
+jest.mock('../../src/services/caddyService', () => ({ caddyService: { addProxy: jest.fn().mockResolvedValue({ ok: true }), updateProxy: jest.fn().mockResolvedValue({ ok: true }), deleteProxy: jest.fn().mockResolvedValue({ ok: true }) } }));
 jest.mock('../../src/services/securityHeadersService', () => ({ applySecurityHeaders: jest.fn(), removeSecurityHeaders: jest.fn() }));
 jest.mock('../../src/services/auditService', () => ({ logAction: jest.fn() }));
-jest.mock('../../src/services/gitService', () => ({ commitConfigChange: jest.fn().mockResolvedValue(null) }));
+jest.mock('../../src/services/gitService', () => ({ gitService: { commitConfigChange: jest.fn().mockResolvedValue(null) } }));
 
-const Proxy = require('../../src/models/proxy');
-const Header = require('../../src/models/header');
-const Middleware = require('../../src/models/middleware');
-const proxiesRouter = require('../../src/api/proxies/routes');
+const { Proxy } = require('../../src/models/proxy');
+const { Header } = require('../../src/models/header');
+const { Middleware } = require('../../src/models/middleware');
+const { router: proxiesRouter } = require('../../src/api/proxies/routes');
 
 // Simple auth middleware bypass for tests
 jest.mock('../../src/middleware/auth', () => ({
   authMiddleware: (req, res, next) => { req.user = { id: 'test-user', role: 'admin' }; return next(); },
-  roleMiddleware: () => (req, res, next) => next()
+  roleMiddleware: () => (req, res, next) => next(),
+  requireApiKeyPermission: () => (req, res, next) => next()
 }));
 
 describe('Proxies routes (integration-style with mocks)', () => {
@@ -50,8 +53,7 @@ describe('Proxies routes (integration-style with mocks)', () => {
   beforeEach(() => jest.clearAllMocks());
 
   test('GET /api/proxies returns proxies list', async () => {
-    Proxy.findAll.mockResolvedValueOnce([{ id: 'p1' }]);
-    Proxy.findAll.mockResolvedValueOnce([{ id: 'p1', name: 'one', domains: ['a'], upstream_url: 'http://up' }]);
+    Proxy.findAll.mockResolvedValueOnce([{ id: 'p1', name: 'one', domains: ['a.example.com'], upstream_url: 'http://up' }]);
 
     const res = await request(app).get('/api/proxies');
     expect(res.status).toBe(200);
@@ -60,14 +62,40 @@ describe('Proxies routes (integration-style with mocks)', () => {
   });
 
   test('POST /api/proxies creates a proxy and calls caddyService', async () => {
-    const fakeProxy = { id: 'newp', name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000', toJSON: () => ({ id: 'newp', name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' }) };
+    const fakeProxy = { id: 'newp', name: 'new-proxy', domains: ['test.example.com'], upstream_url: 'http://upstream:3000', toJSON: () => ({ id: 'newp', name: 'new-proxy', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' }) };
     Proxy.findAll.mockResolvedValueOnce([]); // for conflict check
     // create returns proxy instance
     Proxy.create.mockResolvedValueOnce(fakeProxy);
     Proxy.findByPk.mockResolvedValueOnce(fakeProxy);
 
-    const res = await request(app).post('/api/proxies').send({ name: 'n', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' });
+    const res = await request(app).post('/api/proxies').send({ name: 'new-proxy', domains: ['test.example.com'], upstream_url: 'http://upstream:3000' });
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
+  });
+
+  test.each([
+    'http://169.254.169.254/latest/meta-data',
+    'http://100.64.10.10:8080',
+    'http://192.168.1.4:8080',
+    'http://[fe80::1]:8080',
+    'http://[fd00::1]:8080',
+    'http://[::1]:8080',
+    // Regressions for MODERNIZATION.md 0.8 (IPv4-mapped IPv6, trailing dot, bare form)
+    'http://[::ffff:127.0.0.1]:8080',
+    'http://[::ffff:a9fe:a9fe]/',
+    'http://localhost.:8080',
+    'app.localhost:3000',
+    '169.254.169.254:80',
+    'http://2130706433:8080',
+  ])('POST /api/proxies rejects restricted upstream URL: %s', async (upstreamUrl) => {
+    const res = await request(app).post('/api/proxies').send({
+      name: 'restricted-upstream-check',
+      domains: ['safe.example.com'],
+      upstream_url: upstreamUrl,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/restricted address/i);
   });
 });

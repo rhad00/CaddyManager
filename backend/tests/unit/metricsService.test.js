@@ -1,7 +1,7 @@
 let metricsService;
 try {
   // eslint-disable-next-line global-require
-  metricsService = require('../../src/services/metricsService');
+  ({ metricsService } = require('../../src/services/metricsService'));
 } catch (e) {
   metricsService = null;
 }

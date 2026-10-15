@@ -1,8 +1,8 @@
 const request = require('supertest');
 const express = require('express');
 
-// Mock User model
-jest.mock('../../src/models/user', () => {
+// Mock the models the route uses (User, plus ApiKey and a transaction for deletes)
+jest.mock('../../src/models', () => {
   const mockUser = {
     findAll: jest.fn(),
     findByPk: jest.fn(),
@@ -11,7 +11,11 @@ jest.mock('../../src/models/user', () => {
     count: jest.fn(),
     findAndCountAll: jest.fn(),
   };
-  return mockUser;
+  return {
+    User: mockUser,
+    ApiKey: { destroy: jest.fn() },
+    sequelize: { transaction: (work) => work({}) },
+  };
 });
 
 jest.mock('../../src/services/authService', () => ({ generateToken: jest.fn().mockReturnValue('tok') }));
@@ -19,10 +23,11 @@ jest.mock('../../src/middleware/validation', () => ({ userValidation: (req, res,
 jest.mock('../../src/middleware/auth', () => ({
   authMiddleware: (req, res, next) => { req.user = { id: 'admin-1', role: 'admin' }; next(); },
   roleMiddleware: () => (req, res, next) => next(),
+  requireApiKeyPermission: () => (req, res, next) => next(),
 }));
 
-const User = require('../../src/models/user');
-const usersRouter = require('../../src/api/users/routes');
+const { User } = require('../../src/models');
+const { router: usersRouter } = require('../../src/api/users/routes');
 
 describe('Users routes', () => {
   let app;
@@ -88,7 +93,7 @@ describe('Users routes', () => {
       .put('/api/users/u2')
       .send({ role: 'admin' });
     expect(res.status).toBe(200);
-    expect(mockUser.update).toHaveBeenCalledWith(expect.objectContaining({ role: 'admin' }));
+    expect(mockUser.update.mock.calls[0][0]).toEqual(expect.objectContaining({ role: 'admin' }));
   });
 
   test('PUT /api/users/:id unlocks a locked account', async () => {
@@ -99,7 +104,7 @@ describe('Users routes', () => {
       .put('/api/users/u3')
       .send({ status: 'active' });
     expect(res.status).toBe(200);
-    expect(mockUser.update).toHaveBeenCalledWith(
+    expect(mockUser.update.mock.calls[0][0]).toEqual(
       expect.objectContaining({ status: 'active', failed_login_attempts: 0, lockout_until: null })
     );
   });
@@ -120,13 +125,13 @@ describe('Users routes', () => {
   });
 
   test('DELETE /api/users/:id prevents deleting last admin', async () => {
-    const mockUser = { id: 'u5', role: 'admin', destroy: jest.fn().mockResolvedValue() };
+    const mockUser = { id: 'u5', role: 'admin', status: 'active', destroy: jest.fn().mockResolvedValue() };
     User.findByPk.mockResolvedValueOnce(mockUser);
-    User.count.mockResolvedValueOnce(1);
+    User.findAll.mockResolvedValueOnce([{ id: 'u5' }]); // the only active admin
 
     const res = await request(app).delete('/api/users/u5');
-    expect(User.count).toHaveBeenCalled();
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/last admin/i);
+    expect(res.body.message).toMatch(/no active admin/i);
+    expect(mockUser.destroy).not.toHaveBeenCalled();
   });
 });

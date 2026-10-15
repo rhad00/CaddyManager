@@ -1,0 +1,168 @@
+import express, { type Request, type Response } from 'express';
+import { authenticateUser } from '../../services/authService';
+import { authMiddleware, noApiKeyArea } from '../../middleware/auth';
+import { logAction } from '../../services/auditService';
+import { router as passwordResetRoutes } from './passwordReset';
+import { router as twoFactorRoutes } from './twoFactor';
+import { loginLimiter } from '../../middleware/rateLimiter';
+import { loginValidation } from '../../middleware/validation';
+import { cookiePolicy } from '../../utils/cookiePolicy';
+
+export const router = express.Router();
+
+/**
+ * @route POST /api/auth/login
+ * @desc Authenticate user and get token
+ * @access Public
+ */
+/**
+ * @route POST /api/auth/login
+ * @desc Authenticate user and get token
+ * @access Public
+ */
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: Authentication endpoints
+ *
+ * /auth/login:
+ *   post:
+ *     summary: Log in with email and password
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *     responses:
+ *       200:
+ *         description: Login successful or 2FA required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   properties:
+ *                     success: { type: boolean }
+ *                     token: { type: string }
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                 - type: object
+ *                   properties:
+ *                     success: { type: boolean }
+ *                     require_2fa: { type: boolean }
+ *                     totp_session: { type: string }
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.post('/login', loginLimiter, loginValidation, async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email and password'
+      });
+    }
+
+    // Authenticate user
+    const result = await authenticateUser(email, password);
+
+    if (result.success === false) {
+      await logAction({
+        action: 'LOGIN_FAILED',
+        resource: 'auth',
+        details: { email, reason: result.message },
+        status: 'failure'
+      }, req);
+
+      return res.status(401).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    // If 2FA is required, return a challenge ticket (no full token yet)
+    if ('totp_session' in result) {
+      return res.status(200).json({ success: true, require_2fa: true, totp_session: result.totp_session });
+    }
+
+    // Log successful login
+    await logAction({
+      userId: result.user.id,
+      action: 'LOGIN',
+      resource: 'auth',
+      details: { email },
+      status: 'success'
+    }, req);
+
+    // Set JWT as httpOnly cookie
+    const { secure, sameSite } = cookiePolicy(process.env);
+    res.cookie('auth_token', result.token, {
+      httpOnly: true,
+      secure,
+      sameSite,
+      path: '/',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    // Return user info (token still in body for backward compatibility with API clients)
+    res.status(200).json({
+      success: true,
+      user: result.user,
+      token: result.token
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during authentication'
+    });
+  }
+});
+
+/**
+ * @route POST /api/auth/logout
+ * @desc Logout user (client-side only, invalidate token on client)
+ * @access Public
+ */
+router.post('/logout', (_req, res) => {
+  // Clear the httpOnly auth cookie
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: cookiePolicy(process.env).secure,
+    sameSite: cookiePolicy(process.env).sameSite,
+    path: '/'
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Logout successful'
+  });
+});
+
+/**
+ * @route GET /api/auth/me
+ * @desc Get current user info
+ * @access Private (will be protected by auth middleware)
+ */
+router.get('/me', authMiddleware, (req, res) => {
+  res.status(200).json({
+    success: true,
+    user: req.user
+  });
+});
+
+// Password reset routes
+router.use('/password-reset', passwordResetRoutes);
+
+// 2FA routes
+router.use('/2fa', noApiKeyArea, twoFactorRoutes);

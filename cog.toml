@@ -7,8 +7,9 @@ branch_whitelist = ["main"]
 # Tag prefix for releases
 tag_prefix = "v"
 
-# Ignore merge commits in changelog
-ignore_merge_commits = false
+# GitHub merge commits ("Merge pull request #N ...") are not conventional commits: skip them in the
+# release job's `cog check` and in the changelog, so any merge strategy can be used
+ignore_merge_commits = true
 
 # Pre-bump hooks (run before version bump)
 # pre_bump_hooks = [

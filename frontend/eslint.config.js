@@ -30,4 +30,11 @@ export default [
       ],
     },
   },
+  {
+    // Tooling and E2E config files run in Node, not the browser
+    files: ['e2e/**/*.js', '*.config.{js,mjs}'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
 ]

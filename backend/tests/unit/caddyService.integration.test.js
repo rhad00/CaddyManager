@@ -7,11 +7,13 @@ jest.mock('../../src/models', () => ({
   Proxy: { findAll: jest.fn() },
   Header: { destroy: jest.fn(), create: jest.fn() },
   Middleware: { destroy: jest.fn(), create: jest.fn() },
+  // loadConfig merges custom certificates from the database
+  Certificate: { findAll: jest.fn(async () => []) },
   sequelize: { transaction: jest.fn().mockResolvedValue({ commit: jest.fn(), rollback: jest.fn() }) }
 }));
 
 const { Proxy } = require('../../src/models');
-const caddyService = require('../../src/services/caddyService');
+const { caddyService } = require('../../src/services/caddyService');
 
 describe('CaddyService integration - Cloudflare policy injection on add/update', () => {
   const originalToken = process.env.CF_API_TOKEN;
@@ -44,15 +46,16 @@ describe('CaddyService integration - Cloudflare policy injection on add/update',
       update: jest.fn().mockResolvedValue(true)
     };
 
+    Proxy.findAll.mockResolvedValue([proxy]); // DB state: the new proxy uses Cloudflare
+
     const res = await caddyService.addProxy(proxy);
     expect(res.success).toBe(true);
 
-    // Ensure that the policy can be injected when called directly
-    const cfg = caddyService.ensureCloudflarePolicy(JSON.parse(JSON.stringify(baseConfig)), ['integ.example.com']);
-    expect(cfg.apps).toBeDefined();
-    expect(cfg.apps.tls).toBeDefined();
+    // The config pushed to Caddy carries the DNS-01 policy for this proxy
+    const cfg = axios.post.mock.calls.find(c => String(c[0]).includes('/load'))[1];
     expect(cfg.apps.tls.automation.policies.length).toBeGreaterThan(0);
     const policy = cfg.apps.tls.automation.policies[0];
+    expect(policy.subjects).toEqual(['integ.example.com']);
     expect(policy.issuers).toBeDefined();
     expect(Array.isArray(policy.issuers)).toBe(true);
     const issuer = policy.issuers[0];
@@ -79,6 +82,8 @@ describe('CaddyService integration - Cloudflare policy injection on add/update',
       ssl_type: 'cloudflare',
       update: jest.fn().mockResolvedValue(true)
     };
+
+    Proxy.findAll.mockResolvedValue([proxy]);
 
     // Call updateProxy
     const res = await caddyService.updateProxy(proxy);

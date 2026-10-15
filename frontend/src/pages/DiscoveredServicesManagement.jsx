@@ -192,8 +192,6 @@ const DiscoveredServicesManagement = () => {
     switch (sourceType) {
       case 'docker':
         return 'bg-blue-100 text-blue-800';
-      case 'kubernetes':
-        return 'bg-purple-100 text-purple-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -280,7 +278,7 @@ const DiscoveredServicesManagement = () => {
             Auto-Discovered Services
           </h3>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Services automatically discovered from Docker containers and Kubernetes services.
+            Services automatically discovered from Docker containers.
           </p>
         </div>
 

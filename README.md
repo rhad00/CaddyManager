@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub issues](https://img.shields.io/github/issues/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/issues)
 [![GitHub stars](https://img.shields.io/github/stars/rhad00/CaddyManager)](https://github.com/rhad00/CaddyManager/stargazers)
-[![Docker Pulls](https://img.shields.io/docker/pulls/rhad00/CaddyManager)](https://ghcr.io/rhad00/caddymanager-backend)
+[![Container images](https://img.shields.io/badge/images-ghcr.io-blue)](https://github.com/rhad00?tab=packages&repo_name=CaddyManager)
 
 **CaddyManager** is the modern, hassle-free way to manage your reverse proxy. Built on the powerful **Caddy Server**, it gives you a beautiful UI to manage domains, SSL certificates, and complex headers without touching a single config file.
 
@@ -13,6 +13,18 @@
 
 > [!NOTE]
 > This project is currently in **Alpha**. While we use it daily, please test thoroughly in your environment.
+
+### Project status
+
+- **Code base**: the backend is strict TypeScript (compiled to `dist/`), on Node 24 LTS and Express 5.
+- **Tested against a real Caddy**: besides the unit and integration tests (SQLite and PostgreSQL), an end-to-end suite
+  puts a real Caddy in front of test origin servers and checks what the origin receives: every bundled template, the
+  header rules, load balancing, auth, IP filtering, HTTPS and WebSocket upstreams, and AWS SigV4 (S3) requests against an
+  origin as strict as Ceph RadosGW. See [Testing](#-testing).
+- **Scope**: CaddyManager manages *your* Caddy reverse proxy. It is not an ingress controller and has no Kubernetes
+  integration. Discovery is Docker only.
+- **Change history**: [docs/MODERNIZATION.md](./docs/MODERNIZATION.md) records every change of the recent overhaul, the bugs found
+  and the items that are still open.
 
 ## ✨ Why CaddyManager?
 
@@ -70,15 +82,16 @@ docker run -d \
 | **API Key Authentication** | Long-lived API keys with scoped permissions for CI/CD and automation. |
 | **Proxy Management** | Multi-domain support, auto-SSL (Let's Encrypt), custom certs, HTTP→HTTPS redirects. |
 | **Load Balancing** | Multiple upstreams per proxy with round-robin, least-connections, IP-hash, weighted strategies. |
-| **Health Checks** | Active TCP/HTTP upstream health monitoring with automatic failover. |
+| **Health Checks** | Active HTTP upstream health checks; unhealthy upstreams are removed from the pool. |
 | **Access Log Viewer** | Live SSE log tail + historical search with domain/status code filters. |
 | **Alerting & Notifications** | Certificate expiry, upstream failure, and error-rate alerts via email, Slack, Discord, or webhook. |
 | **Security Headers** | One-click HSTS, CSP, X-Frame-Options, IP filtering, rate limiting. |
-| **Service Templates** | Battle-tested header/middleware templates for Authelia, Keycloak, Nextcloud, Grafana, and more. |
+| **Service Templates** | Header/middleware templates for Authelia, Keycloak, Nextcloud, Grafana, Kibana, Cloudflare Tunnel and S3-compatible storage. |
+| **S3 / SigV4 safe** | Proxies S3-compatible storage (Ceph RadosGW, MinIO, AWS) without touching `Host` or the signed headers, so strict SigV4 verification passes. |
 | **Custom Template Creator** | Visual template builder — add headers by row, pick from presets, edit middleware JSON. |
 | **Docker Auto-Discovery** | Automatic proxy creation from container labels. Zero-config deployments. |
 | **Git Integration & GitOps** | Auto-commit config changes to Git; pull-from-Git GitOps mode. AES-256 token encryption. |
-| **Backups** | Scheduled backups, one-click restore, AES-256-GCM encryption, configurable retention policy. |
+| **Backups** | Scheduled backups, upload, one-click restore, AES-256-GCM encryption, configurable retention policy. |
 | **OpenAPI Docs** | Interactive Swagger UI at `/api/docs`. |
 | **Metrics & Audit Logs** | Metrics snapshots, full audit trail for all admin actions. |
 
@@ -179,17 +192,18 @@ Example header configurations:
   - Cloudflare DNS-01 challenge (wildcard certs, internal services)
   - Custom SSL certificate management
   - HTTP → HTTPS redirection
-  - Compression options (gzip/zstd)
+  - Compression options (gzip/zstd); never applied to HEAD or S3-signed requests, whose ETag and Content-Length must stay true
+  - HTTPS upstreams, including self-signed certificates ("Skip upstream certificate verification")
   - WebSocket support
 
 - **Load Balancing & Health Checks** ✨
   - Multiple upstream URLs per proxy
-  - Strategies: `round_robin`, `least_conn`, `ip_hash`, `random`, `weighted`
-  - Active HTTP/TCP health checks with configurable interval, timeout, thresholds
+  - Strategies: `round_robin`, `weighted_round_robin`, `least_conn`, `ip_hash`, `random`, `first`
+  - Active HTTP health checks with configurable path, interval, timeout and failure threshold
   - Automatic failover to healthy upstreams
 
 - **Header & Middleware Configuration**
-  - Custom header injection (request/response)
+  - Custom header injection (request/response); Caddy placeholders such as `{http.request.uri.path}` work, `{env.*}` and `{file.*}` are refused
   - One-click security headers:
     - Strict-Transport-Security (HSTS)
     - X-Content-Type-Options
@@ -197,8 +211,8 @@ Example header configurations:
     - Content-Security-Policy
     - Referrer-Policy
     - Permissions-Policy
-  - Rate limiting middleware
-  - IP filtering (allow/block lists)
+  - Rate limiting middleware, per real client address (see [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy))
+  - IP filtering (allow/block lists, any number of entries)
   - Basic authentication
   - Path-based routing
 
@@ -224,17 +238,18 @@ Example header configurations:
   - Predefined templates:
     - Authelia (authentication server)
     - Keycloak (identity management)
-    - Amazon S3-compatible storage (MinIO, Ceph RadosGW)
+    - Amazon S3-compatible storage (MinIO, Ceph RadosGW): no header rewrites, see [S3-compatible storage](#s3-compatible-storage-ceph-radosgw-minio-aws-s3)
     - Nextcloud (self-hosted productivity)
     - Cloudflare Tunnel
     - Grafana (monitoring platform)
     - Kibana/Elastic (dashboards)
   - **Custom Template Creator** ✨ — visual builder with per-row headers, preset dropdown, and middleware JSON editor
   - Create, edit, and delete templates from the UI (admin-only)
+  - Applying a template that Caddy refuses leaves the proxy as it was
   - *(Planned: import/export templates as portable JSON files)*
 
 - **Docker Auto-Discovery** ✨
-  - Automatic service detection from Docker containers
+  - Automatic service detection from Docker containers (Docker only; there is no Kubernetes integration)
   - Label-based proxy configuration
   - Auto-create/destroy proxies on container start/stop
   - Template auto-application via labels
@@ -254,6 +269,7 @@ Example header configurations:
 - **Backup & Restore**
   - Scheduled automatic backups (every 24h)
   - One-click restore from any backup
+  - **Upload** a backup file from another installation (`POST /api/backups/upload`, up to `BACKUP_UPLOAD_MAX_MB`); it is validated like a restore, including the templates, before it is stored
   - **AES-256-GCM encrypted backups** ✨ — set `BACKUP_ENCRYPTION_KEY` to encrypt all backup files at rest
   - **Retention policy** ✨ — `BACKUP_RETENTION_DAYS` auto-deletes old auto-backups (default: 30 days)
   - Caddy config backup before every change for instant rollback
@@ -289,9 +305,16 @@ Example header configurations:
 ### Template Implementation
 Templates simplify service configuration through:
 1. Predefined header sets for common services
-2. Middleware configurations (rate limiting, auth, etc.)
-3. Path-based routing rules
-4. SSL and compression settings
+2. Middlewares, applied to the proxy's Caddy route:
+   - `rate_limit` — `{ "rate": 100, "unit": "second" | "minute" | "hour" }`, per client address;
+     placed before authentication, and ignored when the proxy's own rate limit setting is on
+   - `redirect` — `{ "from": "/", "to": "/app/kibana", "code": 302 }`, answered for that
+     exact path (`from` may use `*`), after the access controls; `code` is 301, 302, 303,
+     307 or 308
+
+IP filtering, basic authentication, path routing and SSL are settings of the proxy itself,
+not of templates or middlewares. Applying a template replaces the proxy's headers and
+middlewares.
 
 Example template usage in code:
 ```javascript
@@ -303,13 +326,14 @@ await caddyService.applyTemplate(proxy, template);
 ## 🛠 Technology Stack
 
 ### Backend
-- **Runtime**: Node.js 20.x LTS
+- **Runtime**: Node.js 24.x LTS
+- **Language**: TypeScript 7 (strict), compiled to `dist/`; zod for request validation
 - **Framework**: Express.js 5
 - **Database**: SQLite (default) or PostgreSQL via Sequelize ORM
 - **Authentication**: JWT + httpOnly cookies, bcrypt, speakeasy (TOTP)
 - **API Documentation**: swagger-jsdoc + swagger-ui-express at `/api/docs`
 - **Email**: nodemailer (password reset, alert notifications)
-- **Testing**: Jest 30 + Supertest
+- **Testing**: Jest 30 + Supertest, Caddy config contract tests, real-Caddy end-to-end tests
 
 ### Frontend
 - **Framework**: React 19
@@ -318,39 +342,71 @@ await caddyService.applyTemplate(proxy, template);
 - **Routing**: React Router v7
 - **Notifications**: react-hot-toast
 - **Charts**: Chart.js
-- **Testing**: Vitest + React Testing Library
+- **Testing**: Vitest + React Testing Library, Playwright browser tests
 
 ### Infrastructure
 - **Container**: Docker & Docker Compose
 - **Reverse Proxy**: Caddy 2.x (custom build with `caddy-dns/cloudflare`)
 - **Web Server**: NGINX (serves SPA + proxies `/api` to backend)
-- **CI/CD**: GitHub Actions (Node 20, unit tests, build artifacts, coverage upload)
+- **CI/CD**: GitHub Actions (Node 24; unit, PostgreSQL, contract and end-to-end tests; the backend image is built and started next to Caddy; coverage upload)
 
 ## 🚀 Quick Start
 
-CaddyManager offers three deployment configurations to suit different needs:
+### Quick install (pre-built images, nothing to build)
+
+You need Docker with the Compose plugin and `openssl`. The images are pulled from GitHub Container Registry
+(`ghcr.io/rhad00/caddymanager-caddy`, `-backend`, `-frontend`), so the first start takes a minute, not a build.
+
+```bash
+mkdir caddymanager && cd caddymanager
+curl -fsSLO https://raw.githubusercontent.com/rhad00/CaddyManager/main/docker-compose.ghcr.yml
+
+# secrets for this installation (the backend refuses to start in production without them)
+printf 'JWT_SECRET=%s\nCSRF_SECRET=%s\nGIT_SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
+
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Then open **http://localhost:8080** (or `http://<server-ip>:8080`). The first admin account is
+`admin@caddymanager.local`; its password is generated and printed **once** in the backend log:
+
+```bash
+docker compose -f docker-compose.ghcr.yml logs backend | grep -A2 "AUTO-GENERATED"
+```
+
+Prefer to choose it? Add `ADMIN_EMAIL=...` and `ADMIN_PASSWORD=...` to `.env` **before** the first start. Change the
+password after logging in.
+
+Good to know:
+
+- **Updating**: `docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d`.
+  Pin a release with `CADDYMANAGER_VERSION=1.2.3` in `.env` (default `latest`). Your data lives in Docker volumes
+  (`caddymanager_*`) and survives updates.
+- **Ports**: 8080 is the web UI, 80/443 are the proxy Caddy runs for your services. The Caddy admin API is not published.
+- **HTTP vs HTTPS for the UI**: the pre-built compose sets `COOKIE_SECURE=false` so you can log in over plain
+  `http://server-ip:8080` (browsers refuse Secure cookies there). Once you serve the UI over HTTPS, for example by adding a
+  proxy for it in CaddyManager itself, set `COOKIE_SECURE=true` in `.env`.
+- **Back up** `.env`: `ENCRYPTION_KEY` and `GIT_SECRET_KEY` are needed to read the secrets stored in the database.
+- **Docker auto-discovery** is off; enabling it needs the Docker socket, see the comment in the compose file.
+- The images are `linux/amd64`.
+
+### Other ways to run it
+
+CaddyManager has three compose files that build the images from this repository:
 
 ### Deployment Options Overview
 
 | Configuration | Database | Use Case | Ports | Command |
 |--------------|----------|----------|-------|---------|
-| **Default** (`docker-compose.yml`) | SQLite | Small deployments, testing | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose up -d` |
-| **Development** (`docker-compose.dev.yaml`) | SQLite | Development, debugging | Caddy: 80/443/2019, Backend: 3000, Frontend: 8080 | `docker-compose -f docker-compose.dev.yaml up -d` |
-| **Production** (`docker-compose.prod.yml`) | PostgreSQL | Production, high-traffic | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d` |
+| **Pre-built images** (`docker-compose.ghcr.yml`) | SQLite | Most installs: no build, updates by `pull` | Caddy: 80/443, UI: 8080 | see above |
+| **Default** (`docker-compose.yml`) | SQLite | Build from source | Caddy: 80/443, Backend: 3000, Frontend: 8080 | `docker compose up -d` |
+| **Development** (`docker-compose.dev.yaml`) | SQLite | Development, debugging | Caddy: 80/443/2019, Backend: 3000, Frontend: 8080 | `docker compose -f docker-compose.dev.yaml up -d` |
+| **Production** (`docker-compose.prod.yml`) | PostgreSQL | Production, high-traffic | Caddy: 80/443, Frontend: 8080 | `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d` |
 
-### 1. Default Deployment (SQLite - Recommended for Small Scale)
+### 1. Default Deployment (build from source, SQLite)
 
-**Best for:** Personal use, small teams, testing, low-traffic sites
-
-**Features:**
-- SQLite database (no separate DB container needed)
-- Simple setup with minimal configuration
-- All data stored in Docker volumes
-- Caddy handles SSL/TLS on ports 80/443
-- Frontend accessible on port 8080
-- Backend API on port 3000
-
-**Quick Start:**
+**Best for:** trying local changes, or when you cannot pull from ghcr.io.
 
 1. Clone the repository:
 ```bash
@@ -358,139 +414,75 @@ git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
 ```
 
-2. (Optional) Set JWT secret:
+2. Create the `.env` file the compose file reads (it is required) with fresh secrets:
 ```bash
-export JWT_SECRET=your_secure_random_string_here
+printf 'JWT_SECRET=%s\nCSRF_SECRET=%s\nGIT_SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
 ```
+   `.env.template` lists every setting if you want to see them all.
 
-3. Start the application:
+3. Build and start:
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-4. Access the application:
-   - **Frontend UI**: http://localhost:8080
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Backend API**: http://localhost:3000
-
-5. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
-
-**Customizing Admin Credentials:**
-
-To set custom admin credentials on first startup, set these environment variables:
-
-```bash
-export ADMIN_EMAIL=your-email@example.com
-export ADMIN_PASSWORD=your-secure-password
-docker-compose up -d
-```
-
-Or add them to your docker-compose.yml:
-```yaml
-backend:
-  environment:
-    - ADMIN_EMAIL=your-email@example.com
-    - ADMIN_PASSWORD=your-secure-password
-```
+4. Open **http://localhost:8080** and log in as `admin@caddymanager.local` with the password printed once in the log
+   (`docker compose logs backend | grep -A2 AUTO-GENERATED`), or set `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env` before
+   the first start.
 
 ### 2. Development Deployment (SQLite)
 
-**Best for:** Active development, debugging, testing new features
+**Best for:** active development and debugging: source mounted for live reload, debug logging, the Caddy Admin API on
+port 2019, all ports exposed.
 
-**Features:**
-- SQLite database for simplicity
-- Source code mounted for live reload
-- Caddy Admin API exposed on port 2019
-- Debug logging enabled
-- All ports exposed for direct access
-
-**Quick Start:**
-
-1. Clone and navigate:
 ```bash
 git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
+docker compose -f docker-compose.dev.yaml up -d
 ```
 
-2. Start development environment:
-```bash
-docker-compose -f docker-compose.dev.yaml up -d
-```
+- **Frontend UI**: http://localhost:8080, **Backend API**: http://localhost:3000, **Caddy Admin API**: http://localhost:2019
+- **Login**: `admin@caddymanager.local` with the password printed once in the backend log, or set `ADMIN_PASSWORD`
+  in the environment first (`ADMIN_PASSWORD=... docker compose -f docker-compose.dev.yaml up -d`).
 
-3. Access the application:
-   - **Frontend UI**: http://localhost:8080
-   - **Backend API**: http://localhost:3000
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Caddy Admin API**: http://localhost:2019
+### 3. Production Deployment (PostgreSQL, built from source)
 
-4. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+**Best for:** production environments and high-traffic sites. PostgreSQL, secure cookies (so serve the UI over HTTPS, or
+set `COOKIE_SECURE=false`), required secrets that fail fast when missing.
 
-### 3. Production Deployment (PostgreSQL - Recommended for Scale)
-
-**Best for:** Production environments, high-traffic sites, enterprise deployments
-
-**Features:**
-- PostgreSQL database for reliability and performance
-- Optimized for production workloads
-- Environment-based configuration
-- Secure defaults
-- Caddy handles SSL/TLS on ports 80/443
-
-**Quick Start:**
-
-1. Clone the repository:
+1. Clone the repository and create the environment file:
 ```bash
 git clone https://github.com/rhad00/CaddyManager.git
 cd CaddyManager
-```
-
-2. Create production environment file:
-```bash
 cp .env.prod.example .env.prod
 ```
 
-3. Edit `.env.prod` with your production values:
+2. Edit `.env.prod`. These four are required (the backend refuses to start in production without `JWT_SECRET`,
+   `CSRF_SECRET` and `GIT_SECRET_KEY`); generate the secrets with `openssl rand -hex 32`:
 ```bash
-# Required: Database password
-DB_PASSWORD=your_secure_production_password
+DB_PASSWORD=<a strong database password>
+JWT_SECRET=<openssl rand -hex 32>
+CSRF_SECRET=<openssl rand -hex 32>
+GIT_SECRET_KEY=<openssl rand -hex 32>
+```
+   `.env.prod.example` also lists the recommended and optional settings (`ENCRYPTION_KEY`, `CF_API_TOKEN`,
+   `CORS_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DB_NAME`, `DB_USER`, `JWT_EXPIRES_IN`, `LOG_LEVEL`).
 
-# Required: JWT secret (use a long random string)
-JWT_SECRET=your_production_jwt_secret_change_this_in_production_12345678901234567890
-
-# Optional: Customize these if needed
-DB_NAME=caddymanager
-DB_USER=caddyuser
-JWT_EXPIRES_IN=24h
-LOG_LEVEL=info
+3. Start:
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
-4. Start the application:
-```bash
-docker-compose --env-file .env.prod -f docker-compose.prod.yml up -d
-```
-
-5. Access the application:
-   - **Frontend UI**: http://localhost:8080
-   - **Caddy Proxy**: http://localhost (ports 80/443)
-   - **Backend API**: http://localhost:3000
-
-6. **Login with default credentials:**
-   - **Email**: `admin@caddymanager.local`
-   - **Password**: `changeme123`
-   - ⚠️ **IMPORTANT**: Change the default password immediately after first login!
+4. Open **http://localhost:8080** (it also serves the API under `/api`; the backend port is not published). Log in as
+   `admin@caddymanager.local` with the password printed once in the backend log, or the `ADMIN_PASSWORD` you set.
 
 ### Port Reference
 
 All deployment configurations use consistent port mappings:
 
 - **80/443**: Caddy reverse proxy (handles your proxied services)
-- **3000**: Backend API (CaddyManager API)
+- **3000**: Backend API (CaddyManager API); published to the host in development, only
+  reachable through the UI's `/api` in production
 - **8080**: Frontend UI (CaddyManager web interface)
 - **2019**: Caddy Admin API (development only, internal use)
 - **5432**: PostgreSQL (production only, not exposed by default)
@@ -513,7 +505,9 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `DB_USER` | `caddyuser` | Database username | Yes (PostgreSQL) |
 | `DB_PASSWORD` | - | Database password | Yes (PostgreSQL) |
 | `DB_SSL` | `false` | Enable SSL for database connection | No |
-| `DB_URL` | - | Full database connection URL (overrides individual settings) | No |
+| `DB_SSL_REJECT_UNAUTHORIZED` | `false` | With `DB_SSL=true`, also verify the PostgreSQL server certificate | No |
+| `DB_SSL_CA` | - | Path to a CA file to verify the PostgreSQL certificate against (implies verification) | No |
+| `DB_URL` | - | Full database connection URL (overrides individual settings); `DATABASE_URL` is also read | No |
 
 #### Application Configuration
 
@@ -522,15 +516,23 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `NODE_ENV` | `development` | Environment: `development`, `production`, or `test` | No |
 | `PORT` | `3000` | Backend server port | No |
 | `LOG_LEVEL` | `info` | Logging level: `error`, `warn`, `info`, `debug` | No |
+| `CORS_ORIGINS` | - | Comma-separated origins allowed to call the API from a browser | No |
+| `APP_URL` | `http://localhost:8080` | Public URL of the web UI, used in password-reset emails | No |
+| `CLUSTER_MODE` | `false` | With `npm run start:cluster`, run several workers; one leader runs migrations and background jobs, Caddy config writes are serialized across workers by a database lock | No |
+| `CLUSTER_WORKERS` | CPU count | Number of workers in cluster mode | No |
+| `TEMP_DIR` | `./temp` | Scratch directory for certificate handling | No |
 
 #### Authentication Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `JWT_SECRET` | - | Secret key for JWT token signing (use long random string) | **Yes** |
-| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`) | No |
+| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`); the older name `JWT_EXPIRATION` also works and wins if both are set | No |
+| `CSRF_SECRET` | - | Secret for CSRF tokens (use a long random string) | **Yes (Production)** |
+| `ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) that encrypts secrets stored in the database (2FA secrets, certificate private keys, Git credentials). Generate with `openssl rand -hex 32`; keep it, losing it makes those values unreadable | Recommended |
 | `ADMIN_EMAIL` | `admin@caddymanager.local` | Initial admin user email (created on first startup if no users exist) | No |
-| `ADMIN_PASSWORD` | `changeme123` | Initial admin user password (created on first startup if no users exist) | No |
+| `ADMIN_PASSWORD` | generated | Initial admin password. When unset a random one is generated and printed once in the backend log | No |
+| `COOKIE_SECURE` | `true` in production, else `false` | Issue Secure login/CSRF cookies. Browsers keep those only over HTTPS (or on localhost), so set `false` to log in over plain `http://server-ip`. The pre-built and default compose files default to `false` | No |
 | `APP_NAME` | `CaddyManager` | Application name shown in TOTP QR codes | No |
 
 #### Caddy Configuration
@@ -538,15 +540,18 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
-| `CADDY_ACCESS_LOG` | `/app/logs/access.log` | Path to Caddy structured JSON access log file | No |
+| `CADDY_SERVER_NAME` | `srv0` | Name of the Caddy HTTP server that CaddyManager manages | No |
+| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup is kept (mount it as a volume) | No |
+| `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
+| `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Who Caddy believes about the visitor's address. Behind a proxy on the same Docker/private network set `private_ranges`; behind Cloudflare set its published ranges (ready to paste in `.env.template`). Without it every visitor behind that proxy shares one rate-limit bucket | No |
+| `CADDY_CLIENT_IP_HEADERS` | `X-Forwarded-For` | Headers a trusted proxy puts the visitor address in; for Cloudflare use `CF-Connecting-IP X-Forwarded-For` | No |
 
 #### Docker Auto-Discovery Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `ENABLE_DOCKER_DISCOVERY` | `false` | Enable automatic Docker container discovery and proxy creation | No |
-| `ENABLE_K8S_DISCOVERY` | `false` | Enable Kubernetes service discovery (not yet implemented) | No |
 | `DOCKER_LABEL_PREFIX` | `caddymanager` | Prefix for Docker labels used in discovery | No |
 | `AUTO_REMOVE_STOPPED` | `false` | Automatically remove proxies when containers stop | No |
 | `DOCKER_POLL_INTERVAL` | `30000` | Reconciliation interval in milliseconds | No |
@@ -556,7 +561,20 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `BACKUP_ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) for AES-256-GCM backup encryption. Generate with `openssl rand -hex 32`. If not set, backups are stored unencrypted. | No |
+| `BACKUP_DIR` | `./backups` | Directory the backup files are stored in | No |
+| `BACKUP_UPLOAD_MAX_MB` | `50` | Largest backup file `POST /api/backups/upload` accepts | No |
 | `BACKUP_RETENTION_DAYS` | `30` | Number of days to keep auto-generated backups. Older auto-backups are deleted after each scheduled backup run. | No |
+
+#### Email & Alerts Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `SMTP_HOST` | - | SMTP server for alert emails; without it email alerts are skipped | No |
+| `SMTP_PORT` | `587` | SMTP port | No |
+| `SMTP_SECURE` | `false` | `true` for implicit TLS (port 465) | No |
+| `SMTP_USER` / `SMTP_PASS` | - | SMTP credentials | No |
+| `SMTP_FROM` | `noreply@caddymanager.local` | Sender address of alert emails | No |
+| `ALERT_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow alert webhooks to private addresses (an internal receiver). Off by default so a webhook cannot be aimed at your network | No |
 
 #### Git Integration & GitOps Configuration
 
@@ -741,6 +759,46 @@ After setting up the API token:
 - API Tokens are more secure than Global API Keys as they have scoped permissions and can be revoked independently
 
 ---
+
+### S3-Compatible Storage (Ceph RadosGW, MinIO, AWS S3)
+
+S3 clients sign each request (AWS Signature V4) over the `Host` header, the path, the query and a list of signed
+headers. The server recomputes that signature from what *it* receives, so a proxy that changes any signed part makes
+every request fail with `SignatureDoesNotMatch`. This is what breaks strict servers such as Ceph RadosGW behind proxies
+that rewrite `Host` or normalise paths.
+
+CaddyManager keeps requests intact:
+
+- Create a proxy for the S3 endpoint and apply the **Amazon S3** template (or none: the template has no header rules
+  on purpose). Caddy forwards `Host` with its port, the path exactly as sent (encoded characters, `//`, trailing
+  slash), the query string and every `x-amz-*` header untouched.
+- Header rules of the form `X: {http.request.header.X}` are never emitted (they would set an empty header when the
+  client did not send one, which RadosGW rejects, for example an empty `Content-MD5`).
+- Compression is skipped for HEAD requests and for signed or presigned requests, so ETags and `Content-Length` stay
+  true.
+- Path-style (`https://s3.example.com/bucket/key`) and virtual-hosted style (`bucket.s3.example.com`, use a wildcard
+  domain such as `*.s3.example.com`) both work. Large uploads, multipart, `aws-chunked` streaming and
+  `Expect: 100-continue` are covered by the end-to-end tests.
+- Upgrading from an older version: a migration empties the old template and removes its rules from proxies that still
+  have them, and the Caddy routes are rebuilt at startup.
+
+### Behind Cloudflare or another proxy
+
+Caddy only believes a visitor address from a proxy it trusts. Without that every visitor behind your front proxy has
+the proxy's address, so they share one rate-limit allowance and IP filters see the proxy. Tell Caddy who to trust
+(see the commented presets in `.env.template`):
+
+```bash
+# A proxy on the same Docker or private network (nginx, Traefik, another Caddy)
+CADDY_TRUSTED_PROXIES=private_ranges
+
+# Cloudflare: its published ranges plus its client-address header
+CADDY_TRUSTED_PROXIES=<ranges from https://www.cloudflare.com/ips-v4 and /ips-v6>
+CADDY_CLIENT_IP_HEADERS=CF-Connecting-IP X-Forwarded-For
+```
+
+Only list proxies you control: whatever they put in the header is believed. `X-Forwarded-For` is read from the right,
+so an address a visitor wrote into the header cannot pose as the client.
 
 ### Docker Auto-Discovery (NEW!)
 
@@ -1271,7 +1329,7 @@ When creating or editing a proxy, add multiple upstream URLs and choose a balanc
 | `least_conn` | Route to the upstream with fewest active connections |
 | `ip_hash` | Sticky sessions — same client IP always hits same upstream |
 | `random` | Random upstream selection |
-| `weighted` | Weighted distribution (specify weight per upstream) |
+| `weighted_round_robin` | Weighted distribution (specify weight per upstream; setting weights with `round_robin` also enables it) |
 
 #### Configure Health Checks
 
@@ -1319,7 +1377,7 @@ View and search Caddy's structured access logs directly from the Dashboard.
 
 #### Setup
 
-Caddy access logging is configured automatically when CaddyManager initializes. Logs are written to `CADDY_ACCESS_LOG` (default: `/app/logs/access.log`) in JSON format.
+Caddy access logging is configured automatically when CaddyManager initializes. Logs are written to `CADDY_ACCESS_LOG` in JSON format. The compose files set it to `/var/log/caddy/access.log` on the `caddy_access_logs` volume, mounted read-write in Caddy and read-only in the backend.
 
 #### Features
 
@@ -1477,72 +1535,46 @@ The spec covers all endpoints with request/response schemas, authentication meth
 
 ## 🧪 Testing
 
-CaddyManager includes comprehensive integration tests for all features:
+### Automated tests
 
-### Available Test Scripts
-
-**Core Features:**
 ```bash
-./test.sh all          # Run all tests
-./test.sh auth         # Test authentication
-./test.sh proxy        # Test proxy management
-./test.sh template     # Test template functionality
-./test.sh backup       # Test backup and restore
-./test.sh caddy        # Test Caddy integration
+cd backend
+npm test                # unit + integration tests (SQLite in memory)
+npm run test:unit       # unit tests only
+npm run test:integration
+npm run test:ci         # everything once, with the coverage threshold CI enforces
+
+# Integration tests on PostgreSQL (production's database)
+DB_TYPE=postgres DB_URL=postgres://user:pass@localhost:5432/db \
+  npm run test:integration -- --runInBand
+
+# Check the generated Caddy config against a real Caddy build
+CADDY_IMAGE=caddymanager-caddy npm run test:contract
+
+# End to end: a real Caddy in front of test origin servers (templates, headers, load balancing,
+# auth, IP filtering, HTTPS/WebSocket upstreams, S3 SigV4). Needs Docker with host networking
+# (Linux) or a caddy binary (CADDY_BIN). Skipped when neither is available; set
+# CADDY_E2E_REQUIRED=true to make that an error. Use the project's image for the rate_limit module.
+CADDY_IMAGE=caddymanager-caddy npm run test:e2e
+
+cd ../frontend
+npm test                # unit tests (Vitest)
+npm run e2e             # browser tests (Playwright; run `npx playwright install chromium` once)
 ```
 
-**Docker Auto-Discovery:**
-```bash
-./discovery_test.sh    # Test Docker discovery features
-```
-Tests include:
-- Discovery service status checks
-- Manual container scanning
-- Service management operations (sync, enable/disable)
-- Automatic container detection
-- Label-based configuration
+GitHub Actions runs all of these on every pull request (see `.github/workflows/ci.yml`).
 
-**Git Integration & GitOps:**
-```bash
-./git_integration_test.sh    # Test Git integration features
-```
-Tests include:
-- Repository connection management
-- Configuration export to Git
-- Commit history tracking
-- Repository connection testing
+### Install smoke test
 
-**Full Integration Tests:**
-```bash
-./integration_test.sh           # Complete integration test suite
-./persistence_validation.sh     # Test data persistence
-./certificate_validation.sh     # Validate TLS certificates
-./metrics_test.sh               # Test metrics collection
-```
-
-### Running Tests with Docker
-
-Make sure the backend is running before executing tests:
-```bash
-docker-compose up -d
-./test.sh all
-```
-
-For Git integration tests with real repositories:
-```bash
-export TEST_GIT_URL="https://github.com/user/test-repo"
-export TEST_GIT_TOKEN="ghp_xxxxxxxxxxxxx"
-export GIT_SECRET_KEY=$(openssl rand -hex 32)
-./git_integration_test.sh
-```
+`scripts/smoke-install.sh` runs the documented quick install (compose file, generated `.env`, `up -d`) and logs in
+through the UI; CI runs it with freshly built images. See the header of the script for its options.
 
 ---
 
 ## 📚 Documentation
 
-- [CLAUDE.md](./CLAUDE.md) — Architecture deep-dive, service descriptions, and development guide
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — Contributing guidelines
-- [FEATURE_IMPLEMENTATION.md](./FEATURE_IMPLEMENTATION.md) — Detailed implementation notes
+- [.github/workflows/README.md](./.github/workflows/README.md) — CI and release workflows
 - **Swagger / OpenAPI**: `http://localhost:3000/api/docs` (live instance required)
 
 ## 🗺 Roadmap
@@ -1559,18 +1591,24 @@ export GIT_SECRET_KEY=$(openssl rand -hex 32)
 - CI/CD pipeline (GitHub Actions)
 - Docker Auto-Discovery
 - Git Integration & GitOps
+- S3/SigV4-safe proxying (Ceph RadosGW, MinIO), verified end to end
+- Backup upload
+- Cluster mode with a leader for background jobs
+- Strict TypeScript backend, real-Caddy end-to-end tests
 
 ### Planned
 - S3/cloud backup storage
 - LDAP / Active Directory authentication
-- Kubernetes service discovery
 - Advanced request routing (header/query/method conditions)
-- Multi-node clustering & high availability
+- Multi-host high availability (cluster mode today is several workers on one host)
 - WAF integration (CrowdSec)
 - Plugin/extension system
 - OAuth2 / SAML SSO
 - Prometheus metrics export endpoint
 - Dark/light theme toggle
+
+### Not planned
+- Kubernetes / ingress-controller integration: CaddyManager manages a Caddy you run yourself
 
 ## 👥 Contributing
 

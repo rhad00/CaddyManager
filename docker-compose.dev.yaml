@@ -13,6 +13,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_access_logs:/var/log/caddy
     environment:
       - CF_API_TOKEN=${CF_API_TOKEN}
     networks:
@@ -28,14 +29,20 @@ services:
       - DB_TYPE=sqlite
       - SQLITE_PATH=/app/data/caddymanager.db
       - CADDY_API_URL=http://caddy:2019
+      - CADDY_ACCESS_LOG=/var/log/caddy/access.log
       - CF_API_TOKEN=${CF_API_TOKEN}
       - JWT_SECRET=dev_secret_key_123_2316492642314
       - JWT_EXPIRES_IN=24h
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - LOG_LEVEL=debug
+    # Rebuilds dist/ and restarts when a file in src/ changes (needs `npm install` in ./backend on the host)
+    command: ["npm", "run", "dev"]
     volumes:
       - ./backend:/app  # Mount source code for development
       - backend_data:/app/data
       - backend_logs:/app/logs
+      - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
     ports:
@@ -61,6 +68,7 @@ networks:
   caddy_net:
 
 volumes:
+  caddy_access_logs:
   caddy_data:
     name: caddymanager_dev_caddy_data
   caddy_config:
