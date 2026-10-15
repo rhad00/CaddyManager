@@ -41,6 +41,14 @@ interface BackupUser {
   id?: string;
 }
 
+/** An uploaded backup that cannot be used (unreadable, wrong key, wrong format): the client's mistake */
+export class BackupFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BackupFormatError';
+  }
+}
+
 export interface CreateBackupResult {
   success: boolean;
   backup: Backup;
@@ -229,6 +237,47 @@ export class BackupService {
     }
   }
   
+  /**
+   * Store an uploaded backup as a backup of this installation. The content is checked the way a
+   * restore checks it (format, and every proxy against the API rules), so a file that would fail
+   * to restore is refused now. It is stored under a generated name and, if a key is set,
+   * encrypted with this installation's key.
+   * @param content - the uploaded file, plain JSON or an encrypted backup
+   * @throws BackupFormatError | ProxyImportError when the file is not usable
+   */
+  async importBackup(content: Buffer, user: BackupUser | null): Promise<CreateBackupResult> {
+    let backupData: BackupFile;
+    try {
+      backupData = JSON.parse(decryptBuffer(content).toString('utf8')) as BackupFile;
+    } catch (error) {
+      const message = errorMessage(error);
+      if (/BACKUP_ENCRYPTION_KEY/.test(message)) throw new BackupFormatError(message);
+      throw new BackupFormatError('The file is not a readable backup (not JSON, or encrypted with a different key)');
+    }
+    if (!backupData || typeof backupData !== 'object' || !backupData.version
+      || !Array.isArray(backupData.proxies) || !Array.isArray(backupData.templates)) {
+      throw new BackupFormatError('Invalid backup file format: version, proxies and templates are required');
+    }
+    await prepareImportedProxies(backupData.proxies);
+
+    await this.ensureBackupDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const { data } = encryptBuffer(Buffer.from(JSON.stringify(backupData, null, 2)));
+    const filename = `backup-${timestamp}-uploaded${getEncryptionKey() ? '.json.enc' : '.json'}`;
+    const filePath = path.join(this.backupDir, filename);
+    await writeFileAsync(filePath, data);
+
+    const dbUser = user && user.id ? await User.findByPk(user.id) : null;
+    const backup = await Backup.create({
+      filename,
+      size: data.length,
+      backup_type: 'manual',
+      status: 'complete',
+      created_by: dbUser ? dbUser.id : null
+    });
+    return { success: true, backup, filePath };
+  }
+
   /**
    * Restore configuration from a backup file
    * @param backupId - ID of the backup to restore

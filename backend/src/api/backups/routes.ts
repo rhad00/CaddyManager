@@ -1,7 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import fs from 'fs';
-import { backupService } from '../../services/backupService';
+import multer from 'multer';
+import { backupService, BackupFormatError } from '../../services/backupService';
 import { ProxyImportError } from '../../utils/proxyImport';
 import { authMiddleware, roleMiddleware, requireApiKeyPermission } from '../../middleware/auth';
 
@@ -18,6 +19,15 @@ const backupMutationRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many backup operations, please try again later' }
+});
+
+// Uploads are larger but not destructive: their own, looser allowance
+const backupUploadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many backup uploads, please try again later' }
 });
 
 /**
@@ -219,20 +229,65 @@ router.delete('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPer
  * @swagger
  * /backups/upload:
  *   post:
- *     summary: Upload a backup file (not yet implemented)
+ *     summary: Upload a backup file
+ *     description: >
+ *       Adds a backup made by this or another installation (multipart field "file", JSON or an
+ *       encrypted backup; the key must match BACKUP_ENCRYPTION_KEY). The content is validated like a
+ *       restore would, then stored; restore it with POST /backups/{id}/restore. The size limit is
+ *       BACKUP_UPLOAD_MAX_MB (default 50).
  *     tags: [Backups]
  *     security:
  *       - BearerAuth: []
  *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file: { type: string, format: binary }
  *     responses:
- *       501:
- *         description: Not implemented
+ *       201:
+ *         description: Backup stored
+ *       400:
+ *         description: Not a usable backup
+ *       413:
+ *         description: File too large
  */
-router.post('/upload', [authMiddleware, roleMiddleware('admin')], async (_req: Request, res: Response) => {
-  // This would require a file upload middleware like multer
-  // For now, we'll just return a not implemented response
-  res.status(501).json({
-    success: false,
-    message: 'Backup upload not implemented yet'
+const maxUploadBytes = (): number => (Number(process.env.BACKUP_UPLOAD_MAX_MB) || 50) * 1024 * 1024;
+
+router.post('/upload', [backupUploadRateLimit, authMiddleware, roleMiddleware('admin'), requireApiKeyPermission('admin')], (req: Request, res: Response) => {
+  const receive = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxUploadBytes(), files: 1, fields: 5 } }).single('file');
+
+  receive(req, res, async (uploadError?: unknown) => {
+    if (uploadError instanceof multer.MulterError) {
+      const tooLarge = uploadError.code === 'LIMIT_FILE_SIZE';
+      return res.status(tooLarge ? 413 : 400).json({
+        success: false,
+        message: tooLarge ? 'Backup file is too large' : `Upload rejected: ${uploadError.message}`
+      });
+    }
+    if (uploadError) {
+      console.error('Backup upload error:', uploadError);
+      return res.status(400).json({ success: false, message: 'Upload could not be read' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Send the backup as the multipart field "file"' });
+    }
+
+    try {
+      const result = await backupService.importBackup(req.file.buffer, currentUser(req));
+      res.status(201).json({ success: true, message: 'Backup uploaded', backup: result.backup });
+    } catch (error) {
+      if (error instanceof ProxyImportError) {
+        return res.status(400).json({ success: false, message: error.message, errors: error.errors });
+      }
+      if (error instanceof BackupFormatError) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
+      console.error('Backup upload error:', error);
+      res.status(500).json({ success: false, message: 'Server error during backup upload' });
+    }
   });
 });
