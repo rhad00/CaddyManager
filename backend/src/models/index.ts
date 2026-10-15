@@ -15,6 +15,7 @@ import { ConfigChange } from './configChange';
 import { AlertRule } from './alertRule';
 import { NotificationChannel } from './notificationChannel';
 import { ApiKey } from './apiKey';
+import { ConfigLock } from './configLock';
 
 // Define associations after all models are loaded
 const setupAssociations = () => {
@@ -78,4 +79,5 @@ export {
   AlertRule,
   NotificationChannel,
   ApiKey,
+  ConfigLock,
 };

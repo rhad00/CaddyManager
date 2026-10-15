@@ -13,7 +13,7 @@ import {
   Template,
   Backup
 } from '../models';
-import { prepareImportedProxies, ProxyImportError } from '../utils/proxyImport';
+import { prepareImportedProxies, prepareImportedTemplates, ProxyImportError } from '../utils/proxyImport';
 import type { TemplateHeader, TemplateMiddleware } from '../models/template';
 import { caddyService } from './caddyService';
 import { errorMessage } from '../utils/errorMessage';
@@ -259,6 +259,7 @@ export class BackupService {
       throw new BackupFormatError('Invalid backup file format: version, proxies and templates are required');
     }
     await prepareImportedProxies(backupData.proxies);
+    prepareImportedTemplates(backupData.templates);
 
     await this.ensureBackupDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -322,6 +323,7 @@ export class BackupService {
 
       // Same validation and field whitelist as the API, before anything is deleted
       const proxies = await prepareImportedProxies(backupData.proxies);
+      const templates = prepareImportedTemplates(backupData.templates);
 
       // Clear existing data
       await Promise.all([
@@ -332,13 +334,8 @@ export class BackupService {
       ]);
       
       // Restore templates
-      for (const templateData of backupData.templates) {
-        await Template.create({
-          name: templateData.name,
-          description: templateData.description,
-          headers: templateData.headers,
-          middleware: templateData.middleware
-        }, { transaction });
+      for (const templateData of templates) {
+        await Template.create(templateData, { transaction });
       }
       
       // Restore proxies and their related data

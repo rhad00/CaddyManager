@@ -4,7 +4,9 @@
  * the fields the API accepts are kept, so an import cannot set ids, owners, route
  * indexes or upstreams the API would refuse.
  */
-import { PROXY_ALLOWED_FIELDS, validateProxyInput } from './proxyValidation';
+import { PROXY_ALLOWED_FIELDS, validateProxyInput, validateHeadersConfig } from './proxyValidation';
+import { validateMiddlewares } from './proxyMiddlewares';
+import type { TemplateHeader, TemplateMiddleware } from '../models/template';
 import { prepareBasicAuth, type BasicAuth } from './basicAuth';
 
 const HEADER_FIELDS = ['header_type', 'header_name', 'header_value', 'enabled'];
@@ -25,8 +27,8 @@ export class ProxyImportError extends Error {
   errors: string[];
 
   /** @param errors - one message per invalid entry */
-  constructor(errors: string[]) {
-    super(`Import rejected, ${errors.length} invalid proxy definition(s): ${errors.join('; ')}`);
+  constructor(errors: string[], what = 'proxy') {
+    super(`Import rejected, ${errors.length} invalid ${what} definition(s): ${errors.join('; ')}`);
     this.name = 'ProxyImportError';
     this.errors = errors;
   }
@@ -120,4 +122,80 @@ export async function prepareImportedProxies(
   if (errors.length > 0) throw new ProxyImportError(errors);
 
   return results.map((result) => (result as PromiseFulfilledResult<PreparedProxy>).value);
+}
+
+/** A template ready to store */
+export interface PreparedTemplate {
+  name: string;
+  description: string | null;
+  headers: TemplateHeader[];
+  middleware: TemplateMiddleware[];
+}
+
+const TEMPLATE_HEADER_TYPES = ['request', 'response'];
+const MAX_TEMPLATE_NAME = 100;
+const MAX_TEMPLATE_DESCRIPTION = 1000;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Check the templates of a backup file the way the templates API checks them (header names and
+ * values, including the {env.*}/{file.*} placeholders that would hand secrets to visitors, and the
+ * middleware types) and keep only the known fields.
+ * @throws ProxyImportError listing every problem, before anything is stored
+ */
+export function prepareImportedTemplates(templates: unknown): PreparedTemplate[] {
+  if (!Array.isArray(templates)) throw new ProxyImportError(['templates must be a list'], 'template');
+
+  const errors: string[] = [];
+  const prepared: PreparedTemplate[] = [];
+
+  templates.forEach((entry: unknown, index) => {
+    const label = isRecord(entry) && typeof entry.name === 'string' && entry.name ? `"${entry.name}"` : `#${index + 1}`;
+    const problem = (message: string): void => { errors.push(`template ${label}: ${message}`); };
+
+    if (!isRecord(entry)) return problem('must be an object');
+    if (typeof entry.name !== 'string' || entry.name.trim() === '' || entry.name.length > MAX_TEMPLATE_NAME) {
+      return problem(`name must be text of 1 to ${MAX_TEMPLATE_NAME} characters`);
+    }
+    if (entry.description != null && (typeof entry.description !== 'string' || entry.description.length > MAX_TEMPLATE_DESCRIPTION)) {
+      return problem('description must be text');
+    }
+
+    const headers = entry.headers ?? [];
+    const middleware = entry.middleware ?? [];
+    if (!Array.isArray(headers)) return problem('headers must be a list');
+    if (!Array.isArray(middleware)) return problem('middleware must be a list');
+
+    for (const header of headers) {
+      if (!isRecord(header) || !TEMPLATE_HEADER_TYPES.includes(String(header.header_type))
+        || typeof header.header_name !== 'string' || header.header_name === '' || typeof header.header_value !== 'string') {
+        return problem('each header needs header_type (request or response), header_name and header_value as text');
+      }
+    }
+    const headerCheck = validateHeadersConfig(headers);
+    if (!headerCheck.valid) return problem(headerCheck.message ?? 'invalid headers');
+    const middlewareCheck = validateMiddlewares(middleware);
+    if (!middlewareCheck.valid) return problem(middlewareCheck.message ?? 'invalid middleware');
+
+    prepared.push({
+      name: entry.name,
+      description: typeof entry.description === 'string' ? entry.description : null,
+      headers: (headers as Record<string, unknown>[]).map((h) => ({
+        header_type: h.header_type as TemplateHeader['header_type'],
+        header_name: h.header_name as string,
+        header_value: h.header_value as string,
+      })),
+      middleware: (middleware as Record<string, unknown>[]).map((m) => ({
+        middleware_type: m.middleware_type as TemplateMiddleware['middleware_type'],
+        configuration: m.configuration as Record<string, unknown>,
+        ...(typeof m.order === 'number' ? { order: m.order } : {}),
+        ...(typeof m.enabled === 'boolean' ? { enabled: m.enabled } : {}),
+      })),
+    });
+  });
+
+  if (errors.length > 0) throw new ProxyImportError(errors, 'template');
+  return prepared;
 }

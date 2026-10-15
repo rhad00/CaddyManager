@@ -27,6 +27,7 @@ import {
   type TlsApp,
 } from '../utils/caddyTls';
 import { errorMessage } from '../utils/errorMessage';
+import { acquireDbLock } from '../utils/dbLock';
 dotenv.config();
 
 /** A route as Caddy returns it (the ones CaddyManager did not write are only inspected) */
@@ -260,6 +261,28 @@ export class CaddyService {
   }
 
   /**
+   * Take the lock for a read-modify-write of the Caddy config: the in-process mutex, and in
+   * cluster mode also a database lock, because the workers are separate processes.
+   * @returns release function to call in a finally block
+   */
+  async acquireConfigLock(): Promise<() => void> {
+    const releaseLocal = await this._configMutex.acquire();
+    if (process.env.CLUSTER_MODE !== 'true') return releaseLocal;
+
+    try {
+      const releaseDb = await acquireDbLock('caddy-config');
+      return () => {
+        releaseDb()
+          .catch((error) => console.error('Failed to release the Caddy config lock (it expires by itself):', errorMessage(error)))
+          .finally(releaseLocal);
+      };
+    } catch (error) {
+      releaseLocal();
+      throw error;
+    }
+  }
+
+  /**
    * Initialize Caddy configuration on startup
    * This should be called when the application starts
    * @param options.forceRebuild - regenerate every route from the database instead of loading the backup
@@ -329,7 +352,7 @@ export class CaddyService {
    * at startup and after bulk changes (GitOps sync, Docker discovery).
    */
   async rebuildConfigFromDatabase(): Promise<void> {
-    const release = await this._configMutex.acquire();
+    const release = await this.acquireConfigLock();
     try {
       // Get current config as a starting point
       const currentConfig = await this.getConfig();
@@ -448,7 +471,7 @@ export class CaddyService {
    * Re-push the running config so Caddy picks up added or removed custom certificates
    */
   async syncCustomCertificates(): Promise<void> {
-    const release = await this._configMutex.acquire();
+    const release = await this.acquireConfigLock();
     try {
       const config = await this.getConfig();
       await this.loadConfig(config);
@@ -552,7 +575,7 @@ export class CaddyService {
    * @returns The result of the operation
    */
   async addProxy(proxy: Proxy): Promise<ProxyOperationResult> {
-    const release = await this._configMutex.acquire();
+    const release = await this.acquireConfigLock();
     let newRouteIndex: number | null = null;
     let routePosted = false;
     try {
@@ -670,7 +693,7 @@ export class CaddyService {
    */
   async updateProxy(proxy: Proxy): Promise<ProxyOperationResult> {
     let released = false;
-    const release = await this._configMutex.acquire();
+    const release = await this.acquireConfigLock();
     const safeRelease = () => { if (!released) { released = true; release(); } };
     try {
       // Check if we have a route index for this proxy
@@ -736,7 +759,7 @@ export class CaddyService {
    * @returns The result of the operation
    */
   async deleteProxy(proxy: DeletedProxyData): Promise<{ success: boolean; message: string }> {
-    const release = await this._configMutex.acquire();
+    const release = await this.acquireConfigLock();
     try {
       // Delete from Caddy configuration if it exists there
       if (proxy.caddy_route_index !== null && proxy.caddy_route_index !== undefined) {

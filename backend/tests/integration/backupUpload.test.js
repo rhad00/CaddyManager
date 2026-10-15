@@ -26,7 +26,7 @@ jest.mock('../../src/middleware/auth', () => ({
 
 const express = require('express');
 const request = require('supertest');
-const { sequelize, Proxy, Backup } = require('../../src/models');
+const { sequelize, Proxy, Backup, Template } = require('../../src/models');
 const { backupService } = require('../../src/services/backupService');
 const { router } = require('../../src/api/backups/routes');
 
@@ -46,6 +46,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await Backup.destroy({ where: {} });
   await Proxy.destroy({ where: {} });
+  await Template.destroy({ where: {} });
   for (const f of fs.readdirSync(process.env.BACKUP_DIR)) fs.rmSync(path.join(process.env.BACKUP_DIR, f));
   delete process.env.BACKUP_ENCRYPTION_KEY;
 });
@@ -99,6 +100,58 @@ test('answers 400 when no file is sent', async () => {
 test('answers 413 when the file is larger than the limit', async () => {
   const res = await upload('x'.repeat(2 * 1024 * 1024));
   expect(res.status).toBe(413);
+});
+
+describe('templates in the file', () => {
+  const template = (over = {}) => ({
+    name: 'My template', description: 'd',
+    headers: [{ header_type: 'request', header_name: 'X-A', header_value: '1' }],
+    middleware: [{ middleware_type: 'rate_limit', configuration: { rate: 5, unit: 'second' }, order: 0 }],
+    ...over,
+  });
+
+  test('a valid template is accepted and restored', async () => {
+    const res = await upload(backupJson({ templates: [template()] }));
+    expect(res.status).toBe(201);
+    await backupService.restoreBackup(res.body.backup.id, { id: null });
+    expect((await Template.findAll()).map((t) => t.name)).toEqual(['My template']);
+  });
+
+  test.each([
+    ['a header that reads the environment', { headers: [{ header_type: 'request', header_name: 'X-Leak', header_value: '{env.CF_API_TOKEN}' }] }],
+    ['a header that reads a file', { headers: [{ header_type: 'response', header_name: 'X-Leak', header_value: '{file./etc/passwd}' }] }],
+    ['a header name with a line break', { headers: [{ header_type: 'request', header_name: 'X-A\r\nX-B', header_value: '1' }] }],
+    ['an unknown header type', { headers: [{ header_type: 'bogus', header_name: 'X-A', header_value: '1' }] }],
+    ['headers that are not a list', { headers: 'nope' }],
+    ['an unsupported middleware', { middleware: [{ middleware_type: 'exec', configuration: {} }] }],
+    ['an invalid rate limit', { middleware: [{ middleware_type: 'rate_limit', configuration: { rate: -1 } }] }],
+    ['no name', { name: '' }],
+    ['a name that is not text', { name: 42 }],
+  ])('rejects a template with %s', async (_name, over) => {
+    const res = await upload(backupJson({ templates: [template(over)] }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toBeDefined();
+    expect(await Backup.count()).toBe(0);
+  });
+
+  test('a template list that is not a list is rejected', async () => {
+    const res = await upload(backupJson({ templates: { name: 'x' } }));
+    expect(res.status).toBe(400);
+  });
+
+  test('restoring a file that was placed by hand checks the templates too, before deleting anything', async () => {
+    await Proxy.create({ name: 'keep-me', domains: ['keep.example.com'], upstream_url: 'http://app:80', ssl_type: 'none' });
+    const filename = 'backup-by-hand.json';
+    fs.writeFileSync(path.join(process.env.BACKUP_DIR, filename), backupJson({
+      templates: [template({ headers: [{ header_type: 'request', header_name: 'X-Leak', header_value: '{env.SECRET}' }] })],
+    }));
+    const backup = await Backup.create({ filename, size: 1, backup_type: 'manual', status: 'complete' });
+
+    await expect(backupService.restoreBackup(backup.id, { id: null })).rejects.toThrow(/invalid/i);
+
+    expect((await Proxy.findAll()).map((p) => p.name)).toEqual(['keep-me']);
+  });
 });
 
 describe('encrypted backups', () => {
