@@ -11,6 +11,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The release is computed from commit messages (see cog.toml): a squash-merge takes the pull request
+  # title, a rebase-merge keeps the commits. Both must be conventional commits ("type(scope): subject").
+  conventional-commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the pull request title and commits
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert)(\([a-zA-Z0-9._/ -]+\))?!?: .+'
+          status=0
+          if ! [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "::error title=Pull request title::'$PR_TITLE' is not a conventional commit (type(scope): subject)"
+            status=1
+          fi
+          while IFS= read -r line; do
+            sha="${line%% *}"; subject="${line#* }"
+            if ! [[ "$subject" =~ $pattern ]]; then
+              # Only a warning: a squash-merge discards the individual commits, a rebase-merge keeps them
+              echo "::warning title=Commit $sha::'$subject' is not a conventional commit (matters with Rebase and merge)"
+            fi
+          done < <(git log --no-merges --format='%h %s' "$BASE_SHA..$HEAD_SHA")
+          if [[ $status -ne 0 ]]; then
+            echo "Allowed types: feat fix perf refactor docs style test build ci chore revert. Use 'chore' for changes that must not trigger a release."
+          fi
+          exit $status
+
   lint-and-test:
     runs-on: ubuntu-latest
     strategy:

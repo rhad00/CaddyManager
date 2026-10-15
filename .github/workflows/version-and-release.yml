@@ -79,8 +79,15 @@ jobs:
           git-user: 'github-actions[bot]'
           git-user-email: 'github-actions[bot]@users.noreply.github.com'
 
+      # Informational, not a gate: `cog bump` ignores commits that are not conventional (they are left out of the
+      # version calculation and the changelog), and a commit pushed straight to main (the GitHub web editor's
+      # "Add files via upload", for example) must not block every later release. Pull requests are checked
+      # in ci.yml before they can be merged.
       - name: Check commits since the latest release
-        run: cog check --from-latest-tag
+        run: |
+          if ! cog check --from-latest-tag; then
+            echo "::warning title=Non-conventional commits on main::They are ignored by the release (not in the version bump or the changelog). Use 'type(scope): subject' messages."
+          fi
 
       # main is protected, so the bump commit (CHANGELOG.md + package versions) is only tagged, never merged.
       # Each release's CHANGELOG.md therefore lives on its tag; bring the newest one back so the new
