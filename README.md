@@ -9,7 +9,7 @@
 
 **Stop debugging Nginx syntax. Start deploying services.**
 
-![CaddyManager Dashboard](.github/images/dashboard.png)
+![CaddyManager Dashboard](.github/images/caddymanager-readme-q85.jpg)
 
 > [!NOTE]
 > This project is currently in **Alpha**. While we use it daily, please test thoroughly in your environment.
