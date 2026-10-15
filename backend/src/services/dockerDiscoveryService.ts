@@ -1,6 +1,6 @@
 import type { Readable } from 'stream';
 import Docker from 'dockerode';
-import { Op, type CreationAttributes } from 'sequelize';
+import { Op, fn, col, where, type CreationAttributes } from 'sequelize';
 import winston from 'winston';
 import { DiscoveredService, Proxy, Template, Header, Middleware } from '../models';
 import { SSL_TYPES, isValidDomain } from '../utils/proxyValidation';
@@ -482,7 +482,10 @@ export class DockerDiscoveryService {
    * Copy a template's headers and middlewares onto a proxy.
    */
   async applyTemplate(proxyId: string, templateName: string, containerName: string): Promise<void> {
-    const template = await Template.findOne({ where: { name: templateName } });
+    // Labels are typed by hand: "grafana" finds "Grafana"
+    const template = await Template.findOne({
+      where: where(fn('lower', col('name')), templateName.trim().toLowerCase()),
+    });
     if (!template) {
       logger.warn(`[DockerDiscovery] Template '${templateName}' not found`);
       return;
