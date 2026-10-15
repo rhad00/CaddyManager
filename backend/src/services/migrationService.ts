@@ -1,11 +1,13 @@
 import path from 'path';
 import { promises as fs } from 'fs';
-import { Sequelize, type QueryInterface } from 'sequelize';
+import { Sequelize, type QueryInterface, type Transaction } from 'sequelize';
 import { sequelize } from '../config/database';
 
 /** A file in src/migrations */
 interface Migration {
-  up(queryInterface: QueryInterface, sequelize: typeof Sequelize): Promise<unknown>;
+  up(queryInterface: QueryInterface, sequelize: typeof Sequelize, transaction?: Transaction): Promise<unknown>;
+  /** Set by a migration that changes the routes generated for existing proxies */
+  rebuildsCaddyConfig?: boolean;
   down(queryInterface: QueryInterface, sequelize: typeof Sequelize): Promise<unknown>;
 }
 
@@ -13,6 +15,8 @@ export interface MigrationRunResult {
   success: boolean;
   migrationsRun: number;
   migrations?: string[];
+  /** A migration changed how routes are generated: the saved Caddy config is stale */
+  rebuildCaddyConfig?: boolean;
 }
 
 export interface MigrationRollbackResult {
@@ -99,6 +103,8 @@ export class MigrationService {
 
       console.log(`Found ${pendingMigrations.length} pending migration(s)`);
 
+      let rebuildCaddyConfig = false;
+
       // Run each pending migration
       for (const migrationFile of pendingMigrations) {
         console.log(`Running migration: ${migrationFile}`);
@@ -111,7 +117,7 @@ export class MigrationService {
 
         try {
           // Run the migration
-          await migration.up(sequelize.getQueryInterface(), Sequelize);
+          await migration.up(sequelize.getQueryInterface(), Sequelize, transaction);
 
           // Record migration as executed
           await sequelize.query(
@@ -123,6 +129,7 @@ export class MigrationService {
           );
 
           await transaction.commit();
+          rebuildCaddyConfig = rebuildCaddyConfig || migration.rebuildsCaddyConfig === true;
           console.log(`Migration ${migrationFile} completed successfully`);
         } catch (error) {
           await transaction.rollback();
@@ -134,7 +141,8 @@ export class MigrationService {
       return {
         success: true,
         migrationsRun: pendingMigrations.length,
-        migrations: pendingMigrations
+        migrations: pendingMigrations,
+        rebuildCaddyConfig
       };
     } catch (error) {
       console.error('Migration error:', error);

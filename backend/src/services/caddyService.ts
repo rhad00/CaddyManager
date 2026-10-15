@@ -262,8 +262,9 @@ export class CaddyService {
   /**
    * Initialize Caddy configuration on startup
    * This should be called when the application starts
+   * @param options.forceRebuild - regenerate every route from the database instead of loading the backup
    */
-  async initializeConfig(): Promise<void> {
+  async initializeConfig(options: { forceRebuild?: boolean } = {}): Promise<void> {
     try {
       // Ensure config backup directory exists before doing file operations
       await this.ensureConfigBackupDir();
@@ -278,7 +279,13 @@ export class CaddyService {
         // File doesn't exist, will use default config
       }
 
-      if (configExists) {
+      // A migration that changed how routes are generated must not be shadowed by the saved config
+      const rebuildNow = options.forceRebuild === true && configExists
+        && (await Proxy.findAll({ attributes: ['id'] })).length > 0;
+      if (rebuildNow) {
+        console.log('Route generation changed in a migration, rebuilding configuration from the database...');
+        await this.rebuildConfigFromDatabase();
+      } else if (configExists) {
         // Load configuration from backup file
         console.log('Loading configuration from backup file...');
         const configData = await fs.readFile(this.configBackupFile, 'utf8');

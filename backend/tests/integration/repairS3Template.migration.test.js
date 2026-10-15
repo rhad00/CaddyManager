@@ -59,13 +59,30 @@ test('removes the legacy rules from proxies that got all of them', async () => {
   expect(left.map((h) => h.header_name)).toEqual(['X-Mine']);
 });
 
-test('leaves proxies that only share some of the rules', async () => {
+test('leaves proxies that only share a few ordinary rules', async () => {
   const proxy = await Proxy.create(proxyData('partial'));
-  await Header.bulkCreate(legacyRows(proxy.id).slice(0, 3));
+  await Header.bulkCreate(legacyRows(proxy.id).slice(2, 4)); // Content-Type, Content-Length
 
   await migration.up();
 
-  expect(await Header.count({ where: { proxy_id: proxy.id } })).toBe(3);
+  expect(await Header.count({ where: { proxy_id: proxy.id } })).toBe(2);
+});
+
+test('cleans a partly edited S3 proxy that still has the Host rewrite and a signing header', async () => {
+  const proxy = await Proxy.create(proxyData('half'));
+  await Header.bulkCreate([
+    ...legacyRows(proxy.id).slice(0, 2), // Host, Authorization
+    { proxy_id: proxy.id, header_type: 'request', header_name: 'X-Mine', header_value: '1', enabled: true },
+  ]);
+
+  await migration.up();
+
+  const left = await Header.findAll({ where: { proxy_id: proxy.id } });
+  expect(left.map((h) => h.header_name)).toEqual(['X-Mine']);
+});
+
+test('asks for the Caddy config to be rebuilt', () => {
+  expect(migration.rebuildsCaddyConfig).toBe(true);
 });
 
 test('is safe to run twice', async () => {

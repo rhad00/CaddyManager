@@ -26,7 +26,7 @@ const runLeaderTasks = async (): Promise<void> => {
   console.log('Database synchronized');
 
   // Run any pending migrations
-  await migrationService.runMigrations();
+  const migrations = await migrationService.runMigrations();
 
   // Initialize admin user
   const adminInitialized = await initializeAdmin();
@@ -47,7 +47,7 @@ const runLeaderTasks = async (): Promise<void> => {
   metricsService.scheduleMetricsSnapshots(60);
 
   // Synchronize proxy route indices
-  await caddyService.initializeConfig();
+  await caddyService.initializeConfig({ forceRebuild: migrations.rebuildCaddyConfig === true });
 
   // Initialize Docker discovery service if enabled
   if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {
