@@ -108,7 +108,8 @@ const rateLimitHandler = (config: Config, zone: string): CaddyHandler => ({
   handler: 'rate_limit',
   rate_limits: {
     [zone]: {
-      key: '{http.request.remote.host}',
+      // the real client: honours the server's trusted_proxies, the peer address otherwise
+      key: '{http.vars.client_ip}',
       window: RATE_WINDOWS[(config.unit as string | undefined) || DEFAULT_RATE_UNIT],
       max_events: config.rate,
     },

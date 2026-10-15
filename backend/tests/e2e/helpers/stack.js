@@ -23,10 +23,10 @@ if (!available && process.env.CADDY_E2E_REQUIRED === 'true') {
   throw new Error(`e2e tests are required but ${runner.describeRunner(e2eRunner)}`);
 }
 
-async function startStack({ tls = false } = {}) {
+async function startStack({ tls = false, trustedProxies = false } = {}) {
   process.env.CADDY_ACCESS_LOG = process.env.CADDY_ACCESS_LOG || '/tmp/cm-e2e-access.log';
   const modules = runner.listModules(e2eRunner);
-  const caddy = await runner.startCaddy(e2eRunner, { tls });
+  const caddy = await runner.startCaddy(e2eRunner, { tls, trustedProxies });
 
   const { sequelize, Proxy, Header, Middleware, Template } = require('../../../src/models');
   const { caddyService } = require('../../../src/services/caddyService');

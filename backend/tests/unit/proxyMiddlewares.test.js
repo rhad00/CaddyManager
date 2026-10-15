@@ -87,7 +87,7 @@ describe('middlewareHandlers', () => {
   test('a rate limit becomes a rate_limit handler for its window', () => {
     expect(middlewareHandlers([rateLimit({ rate: 100, unit: 'minute' })])).toEqual([{
       handler: 'rate_limit',
-      rate_limits: { middleware_0: { key: '{http.request.remote.host}', window: '1m', max_events: 100 } },
+      rate_limits: { middleware_0: { key: '{http.vars.client_ip}', window: '1m', max_events: 100 } },
     }]);
   });
 

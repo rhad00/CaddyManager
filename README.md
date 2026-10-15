@@ -548,6 +548,8 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
 | `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
+| `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Space-separated CIDR ranges of the proxies in front of Caddy (Cloudflare, another Caddy). Rate limits, IP filters and `X-Forwarded-For` then use the real visitor address | No |
+| `CADDY_CLIENT_IP_HEADERS` | `X-Forwarded-For` | Headers carrying the visitor address from a trusted proxy (e.g. `CF-Connecting-IP X-Forwarded-For`) | No |
 
 #### Docker Auto-Discovery Configuration
 

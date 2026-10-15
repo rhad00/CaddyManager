@@ -21,6 +21,8 @@ services:
       - .env
     environment:
       - CF_API_TOKEN=${CF_API_TOKEN}
+      - CADDY_TRUSTED_PROXIES=${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+      - CADDY_CLIENT_IP_HEADERS=${CADDY_CLIENT_IP_HEADERS:-X-Forwarded-For}
 
   backend:
     build:

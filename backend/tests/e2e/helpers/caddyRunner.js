@@ -67,10 +67,11 @@ const getJson = (port, route) => new Promise((resolve, reject) => {
 });
 
 /**
+ * @param options.trustedProxies  trust X-Forwarded-For from 127.0.0.1 (the tests are the proxy in front)
  * @param options.tls  serve HTTPS with Caddy's internal CA (certificates for the route hosts)
  * @returns {{ adminPort, httpPort, adminUrl, stop, logs }}
  */
-async function startCaddy(runner, { tls = false } = {}) {
+async function startCaddy(runner, { tls = false, trustedProxies = false } = {}) {
   const adminPort = await freePort();
   const httpPort = await freePort();
   const redirectPort = await freePort();
@@ -79,6 +80,10 @@ async function startCaddy(runner, { tls = false } = {}) {
 
   const server = { listen: [`:${httpPort}`], routes: [] };
   const http = { servers: { srv0: server } };
+  if (trustedProxies) {
+    server.trusted_proxies = { source: 'static', ranges: ['127.0.0.1/32'] };
+    server.client_ip_headers = ['X-Forwarded-For'];
+  }
   const apps = { http };
   if (tls) {
     server.automatic_https = { disable_redirects: true };

@@ -288,7 +288,7 @@ export function createRouteFromProxy(proxy: ProxyRouteInput): CaddyRoute {
       handler: 'rate_limit',
       rate_limits: {
         default: {
-          key: '{http.request.remote.host}',
+          key: '{http.vars.client_ip}',
           window: '1s',
           max_events: proxy.rate_limit.burst || proxy.rate_limit.requests_per_second,
         },
