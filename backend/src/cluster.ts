@@ -10,8 +10,8 @@
  * Override with CLUSTER_WORKERS=<n>.
  *
  * One worker (the leader) runs migrations, the schedulers, Docker discovery and Git
- * init; see clusterSupervisor.ts. Caddy configuration writes are serialized per process
- * only, so concurrent writes through different workers are not coordinated.
+ * init; see clusterSupervisor.ts. Caddy configuration writes take a database lock (see
+ * utils/dbLock.ts) on top of the in-process mutex, so workers do not interleave them.
  */
 import cluster from 'node:cluster';
 import crypto from 'node:crypto';

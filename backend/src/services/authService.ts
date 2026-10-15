@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { User } from '../models';
+import { jwtExpiration } from '../utils/jwtExpiration';
 
 dotenv.config();
 
@@ -15,7 +16,7 @@ if (!JWT_SECRET) {
   }
 }
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-do-not-use-in-production';
-const JWT_EXPIRATION = process.env.JWT_EXPIRATION || '24h';
+const JWT_EXPIRATION = jwtExpiration(process.env);
 
 /** What a login token carries */
 export type TokenUser = Pick<User, 'id' | 'email' | 'role'>;

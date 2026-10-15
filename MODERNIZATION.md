@@ -61,6 +61,7 @@ so `git log --grep "(0.5)"` finds the change for any entry.
 | 1.1b | Phase 1: `tsc` with `checkJs` over `src`, zero errors, enforced in CI | done |
 | 2.1 | Phase 2: build pipeline (tsc → dist, Babel for Jest, Docker, CI); first `.ts` file | done |
 | 2.1b | Review follow-up: Babel only transforms `.ts`, so `.js` tests run in the same mode as production | done |
+| F.11 | README aligned with the project; `JWT_EXPIRES_IN` (the documented name) now actually works | done |
 | F.10 | Kubernetes discovery removed: CaddyManager is not an ingress controller | done |
 | F.9 | Follow-up: backup upload implemented; templates of an uploaded or restored backup validated | done |
 | F.8 | Follow-up: CI starts the backend image; sources in source maps; `npm start` no longer rebuilds | done |
@@ -2151,6 +2152,15 @@ sync, scan and status endpoints, OpenAPI), the `ENABLE_K8S_DISCOVERY` setting (c
 notes (README roadmap, the discovery page, the commented-out startup code). Discovery is Docker only. A request for
 `source_type=kubernetes` is a 400 like any unknown value. Existing PostgreSQL databases keep the unused value in
 their enum type; nothing can create such a row, so no migration is needed.
+
+### F.11 README and the JWT setting
+
+The README was brought in line with the code: a project-status block, the S3/SigV4 and trusted-proxy guides, the
+templates, backup upload, the TypeScript and test stack, the roadmap (Kubernetes under "Not planned"), the testing
+commands (`test:e2e`) and every environment variable the backend reads (an automated comparison of `process.env`
+uses against the README found 18 undocumented). That comparison also found that `JWT_EXPIRES_IN`, the name the README,
+the compose files and the `.env` templates all use, was never read: the code only knew `JWT_EXPIRATION`, so token
+lifetime could not be set with the documented name. Both names work now (`JWT_EXPIRATION` wins when both are set).
 
 ## Where this session stopped
 

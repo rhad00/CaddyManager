@@ -14,6 +14,18 @@
 > [!NOTE]
 > This project is currently in **Alpha**. While we use it daily, please test thoroughly in your environment.
 
+### Project status
+
+- **Code base**: the backend is strict TypeScript (compiled to `dist/`), on Node 24 LTS and Express 5.
+- **Tested against a real Caddy**: besides the unit and integration tests (SQLite and PostgreSQL), an end-to-end suite
+  puts a real Caddy in front of test origin servers and checks what the origin receives: every bundled template, the
+  header rules, load balancing, auth, IP filtering, HTTPS and WebSocket upstreams, and AWS SigV4 (S3) requests against an
+  origin as strict as Ceph RadosGW. See [Testing](#-testing).
+- **Scope**: CaddyManager manages *your* Caddy reverse proxy. It is not an ingress controller and has no Kubernetes
+  integration. Discovery is Docker only.
+- **Change history**: [MODERNIZATION.md](./MODERNIZATION.md) records every change of the recent overhaul, the bugs found
+  and the items that are still open.
+
 ## ✨ Why CaddyManager?
 
 ### 🔌 "One-Click" Service Templates
@@ -74,11 +86,12 @@ docker run -d \
 | **Access Log Viewer** | Live SSE log tail + historical search with domain/status code filters. |
 | **Alerting & Notifications** | Certificate expiry, upstream failure, and error-rate alerts via email, Slack, Discord, or webhook. |
 | **Security Headers** | One-click HSTS, CSP, X-Frame-Options, IP filtering, rate limiting. |
-| **Service Templates** | Battle-tested header/middleware templates for Authelia, Keycloak, Nextcloud, Grafana, and more. |
+| **Service Templates** | Header/middleware templates for Authelia, Keycloak, Nextcloud, Grafana, Kibana, Cloudflare Tunnel and S3-compatible storage. |
+| **S3 / SigV4 safe** | Proxies S3-compatible storage (Ceph RadosGW, MinIO, AWS) without touching `Host` or the signed headers, so strict SigV4 verification passes. |
 | **Custom Template Creator** | Visual template builder — add headers by row, pick from presets, edit middleware JSON. |
 | **Docker Auto-Discovery** | Automatic proxy creation from container labels. Zero-config deployments. |
 | **Git Integration & GitOps** | Auto-commit config changes to Git; pull-from-Git GitOps mode. AES-256 token encryption. |
-| **Backups** | Scheduled backups, one-click restore, AES-256-GCM encryption, configurable retention policy. |
+| **Backups** | Scheduled backups, upload, one-click restore, AES-256-GCM encryption, configurable retention policy. |
 | **OpenAPI Docs** | Interactive Swagger UI at `/api/docs`. |
 | **Metrics & Audit Logs** | Metrics snapshots, full audit trail for all admin actions. |
 
@@ -179,7 +192,8 @@ Example header configurations:
   - Cloudflare DNS-01 challenge (wildcard certs, internal services)
   - Custom SSL certificate management
   - HTTP → HTTPS redirection
-  - Compression options (gzip/zstd)
+  - Compression options (gzip/zstd); never applied to HEAD or S3-signed requests, whose ETag and Content-Length must stay true
+  - HTTPS upstreams, including self-signed certificates ("Skip upstream certificate verification")
   - WebSocket support
 
 - **Load Balancing & Health Checks** ✨
@@ -189,7 +203,7 @@ Example header configurations:
   - Automatic failover to healthy upstreams
 
 - **Header & Middleware Configuration**
-  - Custom header injection (request/response)
+  - Custom header injection (request/response); Caddy placeholders such as `{http.request.uri.path}` work, `{env.*}` and `{file.*}` are refused
   - One-click security headers:
     - Strict-Transport-Security (HSTS)
     - X-Content-Type-Options
@@ -197,8 +211,8 @@ Example header configurations:
     - Content-Security-Policy
     - Referrer-Policy
     - Permissions-Policy
-  - Rate limiting middleware
-  - IP filtering (allow/block lists)
+  - Rate limiting middleware, per real client address (see [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy))
+  - IP filtering (allow/block lists, any number of entries)
   - Basic authentication
   - Path-based routing
 
@@ -224,17 +238,18 @@ Example header configurations:
   - Predefined templates:
     - Authelia (authentication server)
     - Keycloak (identity management)
-    - Amazon S3-compatible storage (MinIO, Ceph RadosGW)
+    - Amazon S3-compatible storage (MinIO, Ceph RadosGW): no header rewrites, see [S3-compatible storage](#s3-compatible-storage-ceph-radosgw-minio-aws-s3)
     - Nextcloud (self-hosted productivity)
     - Cloudflare Tunnel
     - Grafana (monitoring platform)
     - Kibana/Elastic (dashboards)
   - **Custom Template Creator** ✨ — visual builder with per-row headers, preset dropdown, and middleware JSON editor
   - Create, edit, and delete templates from the UI (admin-only)
+  - Applying a template that Caddy refuses leaves the proxy as it was
   - *(Planned: import/export templates as portable JSON files)*
 
 - **Docker Auto-Discovery** ✨
-  - Automatic service detection from Docker containers
+  - Automatic service detection from Docker containers (Docker only; there is no Kubernetes integration)
   - Label-based proxy configuration
   - Auto-create/destroy proxies on container start/stop
   - Template auto-application via labels
@@ -254,6 +269,7 @@ Example header configurations:
 - **Backup & Restore**
   - Scheduled automatic backups (every 24h)
   - One-click restore from any backup
+  - **Upload** a backup file from another installation (`POST /api/backups/upload`, up to `BACKUP_UPLOAD_MAX_MB`); it is validated like a restore, including the templates, before it is stored
   - **AES-256-GCM encrypted backups** ✨ — set `BACKUP_ENCRYPTION_KEY` to encrypt all backup files at rest
   - **Retention policy** ✨ — `BACKUP_RETENTION_DAYS` auto-deletes old auto-backups (default: 30 days)
   - Caddy config backup before every change for instant rollback
@@ -311,12 +327,13 @@ await caddyService.applyTemplate(proxy, template);
 
 ### Backend
 - **Runtime**: Node.js 24.x LTS
+- **Language**: TypeScript 7 (strict), compiled to `dist/`; zod for request validation
 - **Framework**: Express.js 5
 - **Database**: SQLite (default) or PostgreSQL via Sequelize ORM
 - **Authentication**: JWT + httpOnly cookies, bcrypt, speakeasy (TOTP)
 - **API Documentation**: swagger-jsdoc + swagger-ui-express at `/api/docs`
 - **Email**: nodemailer (password reset, alert notifications)
-- **Testing**: Jest 30 + Supertest
+- **Testing**: Jest 30 + Supertest, Caddy config contract tests, real-Caddy end-to-end tests
 
 ### Frontend
 - **Framework**: React 19
@@ -325,13 +342,13 @@ await caddyService.applyTemplate(proxy, template);
 - **Routing**: React Router v7
 - **Notifications**: react-hot-toast
 - **Charts**: Chart.js
-- **Testing**: Vitest + React Testing Library
+- **Testing**: Vitest + React Testing Library, Playwright browser tests
 
 ### Infrastructure
 - **Container**: Docker & Docker Compose
 - **Reverse Proxy**: Caddy 2.x (custom build with `caddy-dns/cloudflare`)
 - **Web Server**: NGINX (serves SPA + proxies `/api` to backend)
-- **CI/CD**: GitHub Actions (Node 24, unit tests, build artifacts, coverage upload)
+- **CI/CD**: GitHub Actions (Node 24; unit, PostgreSQL, contract and end-to-end tests; the backend image is built and started next to Caddy; coverage upload)
 
 ## 🚀 Quick Start
 
@@ -521,7 +538,7 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `DB_SSL` | `false` | Enable SSL for database connection | No |
 | `DB_SSL_REJECT_UNAUTHORIZED` | `false` | With `DB_SSL=true`, also verify the PostgreSQL server certificate | No |
 | `DB_SSL_CA` | - | Path to a CA file to verify the PostgreSQL certificate against (implies verification) | No |
-| `DB_URL` | - | Full database connection URL (overrides individual settings) | No |
+| `DB_URL` | - | Full database connection URL (overrides individual settings); `DATABASE_URL` is also read | No |
 
 #### Application Configuration
 
@@ -530,13 +547,20 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `NODE_ENV` | `development` | Environment: `development`, `production`, or `test` | No |
 | `PORT` | `3000` | Backend server port | No |
 | `LOG_LEVEL` | `info` | Logging level: `error`, `warn`, `info`, `debug` | No |
+| `CORS_ORIGINS` | - | Comma-separated origins allowed to call the API from a browser | No |
+| `APP_URL` | `http://localhost:8080` | Public URL of the web UI, used in password-reset emails | No |
+| `CLUSTER_MODE` | `false` | With `npm run start:cluster`, run several workers; one leader runs migrations and background jobs, Caddy config writes are serialized across workers by a database lock | No |
+| `CLUSTER_WORKERS` | CPU count | Number of workers in cluster mode | No |
+| `TEMP_DIR` | `./temp` | Scratch directory for certificate handling | No |
 
 #### Authentication Configuration
 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `JWT_SECRET` | - | Secret key for JWT token signing (use long random string) | **Yes** |
-| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`) | No |
+| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time (e.g., `24h`, `7d`, `30m`); the older name `JWT_EXPIRATION` also works and wins if both are set | No |
+| `CSRF_SECRET` | - | Secret for CSRF tokens (use a long random string) | **Yes (Production)** |
+| `ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) that encrypts secrets stored in the database (2FA secrets, certificate private keys, Git credentials). Generate with `openssl rand -hex 32`; keep it, losing it makes those values unreadable | Recommended |
 | `ADMIN_EMAIL` | `admin@caddymanager.local` | Initial admin user email (created on first startup if no users exist) | No |
 | `ADMIN_PASSWORD` | `changeme123` | Initial admin user password (created on first startup if no users exist) | No |
 | `APP_NAME` | `CaddyManager` | Application name shown in TOTP QR codes | No |
@@ -546,6 +570,8 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
+| `CADDY_SERVER_NAME` | `srv0` | Name of the Caddy HTTP server that CaddyManager manages | No |
+| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup is kept (mount it as a volume) | No |
 | `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
 | `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Who Caddy believes about the visitor's address. Behind a proxy on the same Docker/private network set `private_ranges`; behind Cloudflare set its published ranges (ready to paste in `.env.template`). Without it every visitor behind that proxy shares one rate-limit bucket | No |
@@ -565,7 +591,20 @@ All backend environment variables can be set in `.env` files or passed directly 
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `BACKUP_ENCRYPTION_KEY` | - | 64-char hex key (32 bytes) for AES-256-GCM backup encryption. Generate with `openssl rand -hex 32`. If not set, backups are stored unencrypted. | No |
+| `BACKUP_DIR` | `./backups` | Directory the backup files are stored in | No |
+| `BACKUP_UPLOAD_MAX_MB` | `50` | Largest backup file `POST /api/backups/upload` accepts | No |
 | `BACKUP_RETENTION_DAYS` | `30` | Number of days to keep auto-generated backups. Older auto-backups are deleted after each scheduled backup run. | No |
+
+#### Email & Alerts Configuration
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `SMTP_HOST` | - | SMTP server for alert emails; without it email alerts are skipped | No |
+| `SMTP_PORT` | `587` | SMTP port | No |
+| `SMTP_SECURE` | `false` | `true` for implicit TLS (port 465) | No |
+| `SMTP_USER` / `SMTP_PASS` | - | SMTP credentials | No |
+| `SMTP_FROM` | `noreply@caddymanager.local` | Sender address of alert emails | No |
+| `ALERT_WEBHOOK_ALLOW_PRIVATE` | `false` | Allow alert webhooks to private addresses (an internal receiver). Off by default so a webhook cannot be aimed at your network | No |
 
 #### Git Integration & GitOps Configuration
 
@@ -750,6 +789,46 @@ After setting up the API token:
 - API Tokens are more secure than Global API Keys as they have scoped permissions and can be revoked independently
 
 ---
+
+### S3-Compatible Storage (Ceph RadosGW, MinIO, AWS S3)
+
+S3 clients sign each request (AWS Signature V4) over the `Host` header, the path, the query and a list of signed
+headers. The server recomputes that signature from what *it* receives, so a proxy that changes any signed part makes
+every request fail with `SignatureDoesNotMatch`. This is what breaks strict servers such as Ceph RadosGW behind proxies
+that rewrite `Host` or normalise paths.
+
+CaddyManager keeps requests intact:
+
+- Create a proxy for the S3 endpoint and apply the **Amazon S3** template (or none: the template has no header rules
+  on purpose). Caddy forwards `Host` with its port, the path exactly as sent (encoded characters, `//`, trailing
+  slash), the query string and every `x-amz-*` header untouched.
+- Header rules of the form `X: {http.request.header.X}` are never emitted (they would set an empty header when the
+  client did not send one, which RadosGW rejects, for example an empty `Content-MD5`).
+- Compression is skipped for HEAD requests and for signed or presigned requests, so ETags and `Content-Length` stay
+  true.
+- Path-style (`https://s3.example.com/bucket/key`) and virtual-hosted style (`bucket.s3.example.com`, use a wildcard
+  domain such as `*.s3.example.com`) both work. Large uploads, multipart, `aws-chunked` streaming and
+  `Expect: 100-continue` are covered by the end-to-end tests.
+- Upgrading from an older version: a migration empties the old template and removes its rules from proxies that still
+  have them, and the Caddy routes are rebuilt at startup.
+
+### Behind Cloudflare or another proxy
+
+Caddy only believes a visitor address from a proxy it trusts. Without that every visitor behind your front proxy has
+the proxy's address, so they share one rate-limit allowance and IP filters see the proxy. Tell Caddy who to trust
+(see the commented presets in `.env.template`):
+
+```bash
+# A proxy on the same Docker or private network (nginx, Traefik, another Caddy)
+CADDY_TRUSTED_PROXIES=private_ranges
+
+# Cloudflare: its published ranges plus its client-address header
+CADDY_TRUSTED_PROXIES=<ranges from https://www.cloudflare.com/ips-v4 and /ips-v6>
+CADDY_CLIENT_IP_HEADERS=CF-Connecting-IP X-Forwarded-For
+```
+
+Only list proxies you control: whatever they put in the header is believed. `X-Forwarded-For` is read from the right,
+so an address a visitor wrote into the header cannot pose as the client.
 
 ### Docker Auto-Discovery (NEW!)
 
@@ -1502,6 +1581,12 @@ DB_TYPE=postgres DB_URL=postgres://user:pass@localhost:5432/db \
 # Check the generated Caddy config against a real Caddy build
 CADDY_IMAGE=caddymanager-caddy npm run test:contract
 
+# End to end: a real Caddy in front of test origin servers (templates, headers, load balancing,
+# auth, IP filtering, HTTPS/WebSocket upstreams, S3 SigV4). Needs Docker with host networking
+# (Linux) or a caddy binary (CADDY_BIN). Skipped when neither is available; set
+# CADDY_E2E_REQUIRED=true to make that an error. Use the project's image for the rate_limit module.
+CADDY_IMAGE=caddymanager-caddy npm run test:e2e
+
 cd ../frontend
 npm test                # unit tests (Vitest)
 npm run e2e             # browser tests (Playwright; run `npx playwright install chromium` once)
@@ -1540,17 +1625,24 @@ These need the application running (`docker compose up -d`):
 - CI/CD pipeline (GitHub Actions)
 - Docker Auto-Discovery
 - Git Integration & GitOps
+- S3/SigV4-safe proxying (Ceph RadosGW, MinIO), verified end to end
+- Backup upload
+- Cluster mode with a leader for background jobs
+- Strict TypeScript backend, real-Caddy end-to-end tests
 
 ### Planned
 - S3/cloud backup storage
 - LDAP / Active Directory authentication
 - Advanced request routing (header/query/method conditions)
-- Multi-node clustering & high availability
+- Multi-host high availability (cluster mode today is several workers on one host)
 - WAF integration (CrowdSec)
 - Plugin/extension system
 - OAuth2 / SAML SSO
 - Prometheus metrics export endpoint
 - Dark/light theme toggle
+
+### Not planned
+- Kubernetes / ingress-controller integration: CaddyManager manages a Caddy you run yourself
 
 ## 👥 Contributing
 
