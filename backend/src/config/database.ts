@@ -1,5 +1,6 @@
 import { Sequelize } from 'sequelize';
 import dotenv from 'dotenv';
+import { postgresSsl } from './dbSsl';
 
 dotenv.config();
 
@@ -21,10 +22,7 @@ function createSequelize(): Sequelize {
       dialect: 'postgres',
       logging,
       dialectOptions: {
-        ssl: process.env.DB_SSL === 'true' ? {
-          require: true,
-          rejectUnauthorized: false
-        } : false
+        ssl: postgresSsl(process.env)
       }
     });
   }

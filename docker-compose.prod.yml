@@ -32,7 +32,7 @@ services:
     environment:
       - POSTGRES_DB=${DB_NAME:-caddymanager}
       - POSTGRES_USER=${DB_USER:-caddyuser}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     logging:
@@ -66,15 +66,15 @@ services:
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-caddymanager}
       - DB_USER=${DB_USER:-caddyuser}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_URL=postgresql://${DB_USER:-caddyuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-caddymanager}
+      - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - DB_URL=postgresql://${DB_USER:-caddyuser}:${DB_PASSWORD:?set DB_PASSWORD in .env}@db:5432/${DB_NAME:-caddymanager}
       - CADDY_API_URL=http://caddy:2019
       - CADDY_ACCESS_LOG=/var/log/caddy/access.log
       - CF_API_TOKEN=${CF_API_TOKEN}
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
-      - CSRF_SECRET=${CSRF_SECRET}
-      - GIT_SECRET_KEY=${GIT_SECRET_KEY}
+      - CSRF_SECRET=${CSRF_SECRET:?set CSRF_SECRET in .env}
+      - GIT_SECRET_KEY=${GIT_SECRET_KEY:?set GIT_SECRET_KEY in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - LOG_LEVEL=${LOG_LEVEL:-info}

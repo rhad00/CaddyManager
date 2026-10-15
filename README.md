@@ -519,6 +519,8 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `DB_USER` | `caddyuser` | Database username | Yes (PostgreSQL) |
 | `DB_PASSWORD` | - | Database password | Yes (PostgreSQL) |
 | `DB_SSL` | `false` | Enable SSL for database connection | No |
+| `DB_SSL_REJECT_UNAUTHORIZED` | `false` | With `DB_SSL=true`, also verify the PostgreSQL server certificate | No |
+| `DB_SSL_CA` | - | Path to a CA file to verify the PostgreSQL certificate against (implies verification) | No |
 | `DB_URL` | - | Full database connection URL (overrides individual settings) | No |
 
 #### Application Configuration
