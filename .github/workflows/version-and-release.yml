@@ -71,13 +71,23 @@ jobs:
           # Falls back to GITHUB_TOKEN if PAT is not set (downstream won't re-trigger).
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      # Only installs cog and sets the git identity; the steps below run it so they can pass flags
-      # and report a version only when a release was really created.
+      # cog is installed directly, not through cocogitto-action: that action always runs `cog check` over the
+      # WHOLE history unless told otherwise (its `check` input defaults to true), which fails on every old
+      # non-conventional commit. The version is pinned and the download verified (checksum taken from the
+      # 6.3.0 release asset; upstream publishes none).
       - name: Install Cocogitto
-        uses: cocogitto/cocogitto-action@v3
-        with:
-          git-user: 'github-actions[bot]'
-          git-user-email: 'github-actions[bot]@users.noreply.github.com'
+        env:
+          COG_VERSION: '6.3.0'
+          COG_SHA256: '046dbc0ea190528f5a028a64ed761d605f4be85de3a6e469174139331eb058bb'
+        run: |
+          archive="cocogitto-${COG_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/cocogitto/cocogitto/releases/download/${COG_VERSION}/${archive}"
+          echo "${COG_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          "$RUNNER_TEMP/x86_64-unknown-linux-musl/cog" --version
 
       # Informational, not a gate: `cog bump` ignores commits that are not conventional (they are left out of the
       # version calculation and the changelog), and a commit pushed straight to main (the GitHub web editor's
