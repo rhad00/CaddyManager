@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.6.0](https://github.com/rhad00/CaddyManager/compare/81ce6eac4032de6d8e0e278c31b1c9d9ca390ff3..v0.6.0) - 2026-10-16
+#### Features
+- **(api)** add GET /api/v1/system/info with the running version (#98) - ([5f90199](https://github.com/rhad00/CaddyManager/commit/5f90199d131cf92cc945805d9da137231360b094)) - Radu
+
+- - -
+
 ## [v0.5.0](https://github.com/rhad00/CaddyManager/compare/7f30fb361d5112dab08735005aa416d4b7837b6a..v0.5.0) - 2026-10-15
 #### Features
 - modernize to TypeScript, make S3/SigV4 proxying work, add e2e tests and image-based install (#91) - ([7f30fb3](https://github.com/rhad00/CaddyManager/commit/7f30fb361d5112dab08735005aa416d4b7837b6a)) - Radu

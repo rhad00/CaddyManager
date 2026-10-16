@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "This directory contains the backend API server for CaddyManager, providing the core functionality for managing Caddy Server configurations, user authentication, and proxy management.",
   "main": "index.js",
   "directories": {
