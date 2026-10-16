@@ -1596,6 +1596,13 @@ Interactive API documentation is available at:
 
 The spec covers all endpoints with request/response schemas, authentication methods (Bearer JWT and X-API-Key), and example payloads. The Swagger UI is accessible without authentication.
 
+**Which version is running?** `GET /api/v1/system/info` (authenticated, any role) returns the CaddyManager version, the Node.js version, the database type and the uptime. Include it in bug reports:
+
+```bash
+curl -s -H "X-API-Key: $CADDYMANAGER_API_KEY" http://localhost:3000/api/v1/system/info
+# {"success":true,"info":{"version":"0.6.0","node":"v24.0.0","database":"sqlite","uptimeSeconds":812}}
+```
+
 ---
 
 ## 🧪 Testing

@@ -32,6 +32,11 @@ describe('Route module smoke coverage', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  test('GET /api/system/info requires auth (route is mounted)', async () => {
+    const res = await request(app).get('/api/system/info');
+    expect(res.statusCode).toBe(401);
+  });
+
   test('GET /api/features is reachable without auth', async () => {
     const res = await request(app).get('/api/features');
     expect([200, 500]).toContain(res.statusCode);

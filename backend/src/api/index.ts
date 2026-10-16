@@ -22,6 +22,7 @@ import { router as gitRouter } from './git/routes';
 import { router as logsRouter } from './logs/routes';
 import { router as alertsRouter } from './alerts/routes';
 import { router as keysRouter } from './keys/routes';
+import { router as systemRouter } from './system/routes';
 
 /** A mount path, the router behind it and the area markers that go in front of it */
 type Mount = [path: string, router: Router, ...marks: RequestHandler[]];
@@ -41,6 +42,7 @@ const ROUTES: Mount[] = [
   ['/logs', logsRouter],
   ['/alerts', alertsRouter, adminScopeArea],
   ['/keys', keysRouter, adminScopeArea],
+  ['/system', systemRouter],
 ];
 
 export function buildApiRouter(): Router {
