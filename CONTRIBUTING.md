@@ -4,7 +4,9 @@ First off, thank you for considering contributing to CaddyManager! It's people l
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code.
+This project and everyone participating in it is governed by our [Code of Conduct](./CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+Found a security problem? Do not open a public issue: follow the [Security Policy](./SECURITY.md).
 
 ## How Can I Contribute?
 
@@ -33,7 +35,8 @@ This section guides you through submitting an enhancement suggestion for CaddyMa
 
 ### Pull Requests
 
-* Fill in the required template
+* Fill in the pull request template
+* Use a [conventional commit](#git-commit-messages) as the PR title (`fix(proxy): ...`): it becomes the commit message on `main` and decides the next release, and CI rejects other titles
 * Do not include issue numbers in the PR title
 * Include screenshots and animated GIFs in your pull request whenever possible
 * Follow our [coding standards](#coding-standards)
@@ -78,36 +81,32 @@ This section guides you through submitting an enhancement suggestion for CaddyMa
 
 ## Git Commit Messages
 
-* Use semantic versioning wording:
-    * `feat:` for new features (triggers MINOR version bump)
-    * `fix:` for bug fixes (triggers PATCH version bump)
-    * `BREAKING CHANGE:` in the commit body for breaking changes (triggers MAJOR version bump)
-    * `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:` for other changes
-* Use the present tense ("Add feature" not "Added feature")
-* Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
+Releases are generated from commit messages ([Conventional Commits](https://www.conventionalcommits.org/), checked by
+[Cocogitto](https://docs.cocogitto.io/)), so every commit that lands on `main` must start with `type(scope): subject`.
+A message that does not follow the format is left out of the changelog and the version bump.
+
+* Types:
+    * `feat:` for new features (triggers a MINOR release)
+    * `fix:`, `perf:`, `refactor:`, `docs:`, `style:`, `test:`, `build:`, `ci:`, `revert:` (trigger a PATCH release)
+    * `chore:` for changes that must not trigger a release (dependency bumps, repository housekeeping)
+    * `feat!:` / `fix!:` (or a `BREAKING CHANGE:` footer in the commit body) for breaking changes (triggers a MAJOR release)
+* The optional scope names the area: `fix(proxy): ...`, `docs(readme): ...`
+* Use the imperative mood ("add feature", not "added feature") and lower case after the colon
 * Limit the first line to 72 characters or less
-* Reference issues and pull requests liberally after the first line
+* Reference issues and pull requests after the first line, in the body or footer
+* Do not put an emoji or any other text before the type: `🐛 fix: ...` is not a conventional commit
 
 Examples:
 ```
 feat: add user authentication system
-fix: resolve memory leak in proxy manager
-BREAKING CHANGE: refactor API endpoints to follow REST conventions
+fix(proxy): resolve memory leak in proxy manager
+feat!: change API endpoints to follow REST conventions
 docs: update installation instructions
-chore: update dependencies
+chore(deps): update dependencies
 ```
-* Consider starting the commit message with an applicable emoji:
-    * 🎨 `:art:` when improving the format/structure of the code
-    * 🐎 `:racehorse:` when improving performance
-    * 🚱 `:non-potable_water:` when plugging memory leaks
-    * 📝 `:memo:` when writing docs
-    * 🐛 `:bug:` when fixing a bug
-    * 🔥 `:fire:` when removing code or files
-    * 💚 `:green_heart:` when fixing the CI build
-    * ✅ `:white_check_mark:` when adding tests
-    * 🔒 `:lock:` when dealing with security
-    * ⬆️ `:arrow_up:` when upgrading dependencies
-    * ⬇️ `:arrow_down:` when downgrading dependencies
+
+The GitHub web editor proposes messages such as "Update README.md" or "Add files via upload": replace them with a
+conventional message (for example `docs(readme): update ...`) before committing.
 
 ## Additional Notes
 
