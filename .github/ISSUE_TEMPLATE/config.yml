@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/rhad00/CaddyManager/security/advisories/new
+    about: Report it privately. Please do not open a public issue for a vulnerability.
+  - name: Installation and configuration help
+    url: https://github.com/rhad00/CaddyManager#-quick-start
+    about: Quick start, environment variables and the Cloudflare, S3 and Docker discovery guides are in the README.

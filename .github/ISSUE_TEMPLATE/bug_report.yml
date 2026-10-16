@@ -1,0 +1,84 @@
+name: Bug report
+description: Something does not work as documented
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. **Do not report security vulnerabilities here**, use the
+        [private security report](https://github.com/rhad00/CaddyManager/security/advisories/new) instead.
+
+        Please remove passwords, API keys, tokens and private hostnames from everything you paste below.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched the existing issues and the README, and this is not a duplicate
+          required: true
+        - label: I removed secrets (passwords, API keys, tokens) from this report
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a proxy for ... with template ...
+        2. Request ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CaddyManager version
+      description: The image tag (for example `0.5.0`), or the commit if you build from source.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options:
+        - docker-compose.ghcr.yml (published images)
+        - docker-compose.yml / docker-compose.prod.yml (built from source)
+        - Manual install (Node.js + Caddy)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - SQLite
+        - PostgreSQL
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Host and browser
+      description: Operating system, Docker version, and the browser if it is a UI problem.
+      placeholder: Ubuntu 24.04, Docker 27.3, Firefox 130
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and configuration
+      description: |
+        Backend logs (`docker compose logs backend`), Caddy logs, and the relevant proxy settings.
+        For Caddy configuration problems, the output of `curl http://localhost:2019/config/` helps a lot.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, what you already tried, related issues.
