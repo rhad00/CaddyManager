@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get, post, del } from '../utils/api';
+import { get, post, del, apiError, describeError } from '../utils/api';
 
 const DiscoveredServicesManagement = () => {
   const [services, setServices] = useState([]);
@@ -21,14 +21,14 @@ const DiscoveredServicesManagement = () => {
       const response = await get(endpoint, token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch discovered services');
+        throw await apiError(response, 'load discovered services');
       }
 
       const data = await response.json();
       setServices(data.services || []);
     } catch (error) {
       console.error('Error fetching discovered services:', error);
-      setError('Failed to load discovered services. Please try again later.');
+      setError(describeError(error, 'load discovered services'));
     } finally {
       setLoading(false);
     }
@@ -39,7 +39,7 @@ const DiscoveredServicesManagement = () => {
       const response = await get('/discovery/status', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch status');
+        throw await apiError(response, 'load status');
       }
 
       const data = await response.json();
@@ -63,7 +63,7 @@ const DiscoveredServicesManagement = () => {
       const response = await post('/discovery/scan', {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to trigger scan');
+        throw await apiError(response, 'start the scan');
       }
 
       const data = await response.json();
@@ -71,7 +71,7 @@ const DiscoveredServicesManagement = () => {
       fetchServices();
     } catch (error) {
       console.error('Error triggering scan:', error);
-      setError('Failed to trigger scan. Please try again later.');
+      setError(describeError(error, 'start the scan'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -86,14 +86,14 @@ const DiscoveredServicesManagement = () => {
       const response = await post(`/discovery/${serviceId}/sync`, {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to sync service');
+        throw await apiError(response, 'sync the service');
       }
 
       setActionMessage('Service synced successfully');
       fetchServices();
     } catch (error) {
       console.error('Error syncing service:', error);
-      setError('Failed to sync service. Please try again later.');
+      setError(describeError(error, 'sync the service'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -108,14 +108,14 @@ const DiscoveredServicesManagement = () => {
       const response = await post(`/discovery/${serviceId}/disable`, {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to disable auto-management');
+        throw await apiError(response, 'disable auto-management');
       }
 
       setActionMessage('Auto-management disabled');
       fetchServices();
     } catch (error) {
       console.error('Error disabling auto-management:', error);
-      setError('Failed to disable auto-management. Please try again later.');
+      setError(describeError(error, 'disable auto-management'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -130,14 +130,14 @@ const DiscoveredServicesManagement = () => {
       const response = await post(`/discovery/${serviceId}/enable`, {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to enable auto-management');
+        throw await apiError(response, 'enable auto-management');
       }
 
       setActionMessage('Auto-management enabled');
       fetchServices();
     } catch (error) {
       console.error('Error enabling auto-management:', error);
-      setError('Failed to enable auto-management. Please try again later.');
+      setError(describeError(error, 'enable auto-management'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -156,14 +156,14 @@ const DiscoveredServicesManagement = () => {
       const response = await del(`/discovery/${serviceId}`, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to delete service');
+        throw await apiError(response, 'delete the service');
       }
 
       setActionMessage('Service deleted successfully');
       fetchServices();
     } catch (error) {
       console.error('Error deleting service:', error);
-      setError('Failed to delete service. Please try again later.');
+      setError(describeError(error, 'delete the service'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);

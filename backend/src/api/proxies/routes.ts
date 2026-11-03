@@ -268,17 +268,22 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
 
     // Find all proxies and check for per-domain overlaps
     const existingProxies = await Proxy.findAll();
-    const domainConflict = existingProxies.some(proxy => {
-      const domains = proxy.domains as string[] | string; // older rows may hold a single string
-      const proxyDomains = Array.isArray(domains) ? domains : [domains];
-      return newDomains.some(d => proxyDomains.includes(d));
-    });
+    let conflict: { domain: string; proxyName: string } | null = null;
+    for (const existing of existingProxies) {
+      const domains = existing.domains as string[] | string; // older rows may hold a single string
+      const existingDomains = Array.isArray(domains) ? domains : [domains];
+      const shared = newDomains.find(d => existingDomains.includes(d));
+      if (shared) {
+        conflict = { domain: shared, proxyName: existing.name };
+        break;
+      }
+    }
 
-    if (domainConflict) {
+    if (conflict) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'A proxy with this name and domains already exists'
+        message: `The domain ${conflict.domain} is already used by the proxy "${conflict.proxyName}". Remove it from one of the two proxies.`
       });
     }
 

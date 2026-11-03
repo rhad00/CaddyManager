@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { post } from '../utils/api';
+import { post, apiError, describeError } from '../utils/api';
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter';
 
 const PasswordResetForm = () => {
@@ -39,8 +39,7 @@ const PasswordResetForm = () => {
         const response = await post('/auth/password-reset/verify', { token }, null, null);
 
         if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.message || 'Invalid or expired reset token');
+          throw await apiError(response, 'check the reset link');
         }
 
         setTokenValid(true);
@@ -80,8 +79,7 @@ const PasswordResetForm = () => {
       }, null, null);
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to reset password');
+        throw await apiError(response, 'reset the password');
       }
 
       setSuccess(true);
@@ -92,7 +90,7 @@ const PasswordResetForm = () => {
       }, 3000);
     } catch (err) {
       console.error('Password reset error:', err);
-      setError(err.message || 'Failed to reset password. Please try again.');
+      setError(describeError(err, 'reset the password'));
     } finally {
       setLoading(false);
     }

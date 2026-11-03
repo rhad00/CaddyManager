@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useEffect, useContext } from 'react';
+import { describeError } from '../utils/api';
 
 // Create the authentication context
 const AuthContext = createContext();
@@ -93,13 +94,17 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(data.user);
         return { success: true };
       } else {
-        setError(data.message || 'Login failed');
-        return { success: false, message: data.message };
+        const message = data.message || (response.status === 429
+          ? 'Too many sign-in attempts. Wait a minute and try again.'
+          : 'Sign-in failed. Check your email and password.');
+        setError(message);
+        return { success: false, message };
       }
     } catch (error) {
       console.error('Login error:', error);
-      setError('Login failed. Please try again.');
-      return { success: false, message: 'Login failed. Please try again.' };
+      const message = describeError(error, 'sign in');
+      setError(message);
+      return { success: false, message };
     } finally {
       setLoading(false);
     }

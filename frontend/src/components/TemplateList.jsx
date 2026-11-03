@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get } from '../utils/api';
+import { get, apiError, describeError } from '../utils/api';
 
 const TemplateList = () => {
   const [templates, setTemplates] = useState([]);
@@ -15,14 +15,14 @@ const TemplateList = () => {
         const response = await get('/templates', token);
         
         if (!response.ok) {
-          throw new Error('Failed to fetch templates');
+          throw await apiError(response, 'load templates');
         }
         
         const data = await response.json();
         setTemplates(data.templates || []);
       } catch (error) {
         console.error('Error fetching templates:', error);
-        setError('Failed to load templates. Please try again later.');
+        setError(describeError(error, 'load templates'));
       } finally {
         setLoading(false);
       }

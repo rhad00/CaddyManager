@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { get, post, del } from '../utils/api';
+import { get, post, del, apiError, describeError } from '../utils/api';
 
 const ProxyList = ({ onEdit, onCreate }) => {
   const [proxies, setProxies] = useState([]);
@@ -14,14 +14,14 @@ const ProxyList = ({ onEdit, onCreate }) => {
       const response = await get('/proxies', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch proxies');
+        throw await apiError(response, 'load proxies');
       }
 
       const data = await response.json();
       setProxies(data.proxies || []);
     } catch (error) {
       console.error('Error fetching proxies:', error);
-      toast.error('Failed to load proxies');
+      toast.error(describeError(error, 'load proxies'));
     } finally {
       setLoading(false);
     }
@@ -102,14 +102,14 @@ const ProxyList = ({ onEdit, onCreate }) => {
       const response = await post(`/proxies/${proxyId}/recheck-tls`, {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to recheck TLS');
+        throw await apiError(response, 'recheck TLS');
       }
 
       // Refresh proxies list
       await fetchProxies();
     } catch (err) {
       console.error('Recheck TLS failed:', err);
-      toast.error('Failed to recheck TLS');
+      toast.error(describeError(err, 'recheck TLS'));
     } finally {
       setLoading(false);
     }
@@ -124,7 +124,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
       const response = await del(`/proxies/${proxyId}`, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to delete proxy');
+        throw await apiError(response, 'delete the proxy');
       }
 
       toast.success('Proxy deleted');
@@ -132,7 +132,7 @@ const ProxyList = ({ onEdit, onCreate }) => {
       fetchProxies();
     } catch (error) {
       console.error('Error deleting proxy:', error);
-      toast.error('Failed to delete proxy');
+      toast.error(describeError(error, 'delete the proxy'));
     }
   };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get, post, put, del } from '../utils/api';
+import { get, post, put, del, apiError, describeError } from '../utils/api';
 
 const GitIntegration = () => {
   const [activeSection, setActiveSection] = useState('repositories');
@@ -33,14 +33,14 @@ const GitIntegration = () => {
       const response = await get('/git/repositories', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch repositories');
+        throw await apiError(response, 'load repositories');
       }
 
       const data = await response.json();
       setRepositories(data.repositories || []);
     } catch (error) {
       console.error('Error fetching repositories:', error);
-      setError('Failed to load Git repositories. Please try again later.');
+      setError(describeError(error, 'load Git repositories'));
     } finally {
       setLoading(false);
     }
@@ -52,14 +52,14 @@ const GitIntegration = () => {
       const response = await get('/git/history', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch history');
+        throw await apiError(response, 'load history');
       }
 
       const data = await response.json();
       setHistory(data.changes || []);
     } catch (error) {
       console.error('Error fetching history:', error);
-      setError('Failed to load Git history. Please try again later.');
+      setError(describeError(error, 'load Git history'));
     } finally {
       setLoading(false);
     }
@@ -87,8 +87,7 @@ const GitIntegration = () => {
       const response = await method(endpoint, repoForm, token, csrfToken);
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to save repository');
+        throw await apiError(response, 'save the repository');
       }
 
       setActionMessage('Repository saved successfully');
@@ -109,7 +108,7 @@ const GitIntegration = () => {
       fetchRepositories();
     } catch (error) {
       console.error('Error saving repository:', error);
-      setError(error.message || 'Failed to save repository. Please try again later.');
+      setError(describeError(error, 'save the repository'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -145,14 +144,14 @@ const GitIntegration = () => {
       const response = await del(`/git/repositories/${repoId}`, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to delete repository');
+        throw await apiError(response, 'delete the repository');
       }
 
       setActionMessage('Repository removed successfully');
       fetchRepositories();
     } catch (error) {
       console.error('Error deleting repository:', error);
-      setError('Failed to delete repository. Please try again later.');
+      setError(describeError(error, 'delete the repository'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -167,14 +166,13 @@ const GitIntegration = () => {
       const response = await post(`/git/repositories/${repoId}/test`, {}, token, csrfToken);
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Connection test failed');
+        throw await apiError(response, 'test the connection');
       }
 
       setActionMessage('Connection test successful');
     } catch (error) {
       console.error('Error testing repository:', error);
-      setError(error.message || 'Connection test failed. Please check your credentials.');
+      setError(describeError(error, 'test the connection'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -193,14 +191,13 @@ const GitIntegration = () => {
       const response = await post(`/git/repositories/${repoId}/sync`, {}, token, csrfToken);
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Sync failed');
+        throw await apiError(response, 'sync the repository');
       }
 
       setActionMessage('Configuration synced successfully from Git');
     } catch (error) {
       console.error('Error syncing repository:', error);
-      setError(error.message || 'Failed to sync from Git. Please try again later.');
+      setError(describeError(error, 'sync from Git'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -215,13 +212,13 @@ const GitIntegration = () => {
       const response = await post(`/git/repositories/${repoId}/export`, {}, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Export failed');
+        throw await apiError(response, 'export the configuration');
       }
 
       setActionMessage('Configuration exported to Git successfully');
     } catch (error) {
       console.error('Error exporting:', error);
-      setError('Failed to export configuration. Please try again later.');
+      setError(describeError(error, 'export the configuration'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);

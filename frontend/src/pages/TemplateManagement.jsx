@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get } from '../utils/api';
+import { get, apiError, describeError, readJson } from '../utils/api';
 import TemplateCreator from '../components/TemplateCreator';
 import toast from 'react-hot-toast';
 
@@ -22,14 +22,14 @@ const TemplateManagement = () => {
       const response = await get('/templates', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch templates');
+        throw await apiError(response, 'load templates');
       }
       
       const data = await response.json();
       setTemplates(data.templates || []);
     } catch (error) {
       console.error('Error fetching templates:', error);
-      setError('Failed to load templates. Please try again later.');
+      setError(describeError(error, 'load templates'));
     } finally {
       setLoading(false);
     }
@@ -58,11 +58,10 @@ const TemplateManagement = () => {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, 'x-csrf-token': csrfToken },
       });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      await readJson(res, 'delete the template');
       toast.success('Template deleted');
       fetchTemplates();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(describeError(err, 'delete the template')); }
   };
 
   const handleSaved = () => {

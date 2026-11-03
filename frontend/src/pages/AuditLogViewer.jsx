@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get } from '../utils/api';
+import { get, apiError, describeError } from '../utils/api';
 
 const AuditLogViewer = () => {
   const [logs, setLogs] = useState([]);
@@ -46,7 +46,7 @@ const AuditLogViewer = () => {
       const response = await get(`/audit/logs?${params.toString()}`, token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch audit logs');
+        throw await apiError(response, 'load audit logs');
       }
       
       const data = await response.json();
@@ -59,7 +59,7 @@ const AuditLogViewer = () => {
       setError(null);
     } catch (error) {
       console.error('Error fetching audit logs:', error);
-      setError('Failed to load audit logs. Please try again later.');
+      setError(describeError(error, 'load audit logs'));
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ const AuditLogViewer = () => {
       const response = await get('/audit/stats', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch statistics');
+        throw await apiError(response, 'load statistics');
       }
       
       const data = await response.json();
@@ -87,7 +87,7 @@ const AuditLogViewer = () => {
       const response = await get('/audit/actions', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch actions');
+        throw await apiError(response, 'load actions');
       }
       
       const data = await response.json();
@@ -103,7 +103,7 @@ const AuditLogViewer = () => {
       const response = await get('/audit/resources', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch resources');
+        throw await apiError(response, 'load resources');
       }
       
       const data = await response.json();

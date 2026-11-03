@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { readJson, describeError } from '../utils/api';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -65,11 +66,10 @@ export default function TemplateCreator({ initial, onSave, onCancel }) {
           middleware_config: parsedMiddleware,
         }),
       });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      const d = await readJson(res, 'save the template');
       toast.success(initial ? 'Template updated' : 'Template created');
       onSave(d.template);
-    } catch (err) { toast.error(err.message); } finally { setSaving(false); }
+    } catch (err) { toast.error(describeError(err, 'save the template')); } finally { setSaving(false); }
   };
 
   return (

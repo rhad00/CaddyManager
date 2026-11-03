@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { get, post, put } from '../utils/api';
+import { get, post, put, apiError, describeError } from '../utils/api';
 
 const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [name, setName] = useState('');
@@ -58,13 +58,13 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       // The shared helper sends the CSRF token the API requires on every POST
       const response = await post(`/proxies/${proxy.id}/recheck-tls`, {}, token, csrfToken);
 
-      if (!response.ok) throw new Error('Failed to recheck TLS');
+      if (!response.ok) throw await apiError(response, 'recheck TLS');
 
       const data = await response.json();
       setTlsStatus(data.tlsStatus || null);
     } catch (err) {
       console.error('TLS recheck failed:', err);
-      setError('Failed to recheck TLS.');
+      setError(describeError(err, 'recheck TLS'));
     } finally {
       setTlsChecking(false);
     }
@@ -77,14 +77,14 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         const response = await get('/templates', token);
 
         if (!response.ok) {
-          throw new Error('Failed to fetch templates');
+          throw await apiError(response, 'load templates');
         }
 
         const data = await response.json();
         setTemplates(data.templates || []);
       } catch (error) {
         console.error('Error fetching templates:', error);
-        setError('Failed to load templates. Please try again later.');
+        setError(describeError(error, 'load templates'));
       }
     };
 
@@ -195,15 +195,20 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
     try {
       // Validate form
-      if (!name || !domains || !upstreamUrl) {
-        throw new Error('Please fill in all required fields');
+      const missing = [
+        !name.trim() && 'Name',
+        !domains.trim() && 'Domains',
+        !upstreamUrl.trim() && 'Upstream Server',
+      ].filter(Boolean);
+      if (missing.length > 0) {
+        throw new Error(`Fill in ${missing.join(', ')} before saving.`);
       }
 
       // Parse domains from comma-separated string to array
       const domainsArray = domains.split(',').map(domain => domain.trim()).filter(Boolean);
 
       if (domainsArray.length === 0) {
-        throw new Error('Please provide at least one domain');
+        throw new Error('Domains has no domain name in it. Enter one or more, separated by commas: example.com, www.example.com');
       }
 
       const proxyData = {
@@ -261,8 +266,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       }
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save proxy');
+        throw await apiError(response, 'save the proxy');
       }
 
       const responseData = await response.json();
@@ -279,7 +283,9 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
         );
 
         if (!templateResponse.ok) {
-          console.error('Failed to apply template, but proxy was saved');
+          // The proxy exists; only the template is missing, and the person has to know
+          const reason = await apiError(templateResponse, 'apply the template');
+          toast.error(`The proxy was saved, but ${reason.message.replace(/^Couldn't/, "couldn't")}`, { duration: 8000 });
         } else {
           // Show the configuration changes
           const templateResult = await templateResponse.json();
@@ -299,8 +305,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
       }
     } catch (error) {
       console.error('Error saving proxy:', error);
-      toast.error(error.message || 'Failed to save proxy');
-      setError(error.message || 'Failed to save proxy. Please try again.');
+      // The message stays in the form, next to the fields it is about; a toast would vanish
+      setError(describeError(error, 'save the proxy'));
     } finally {
       setLoading(false);
     }
