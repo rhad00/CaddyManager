@@ -23,6 +23,13 @@ jest.mock('../../src/models/proxy', () => ({
     create: jest.fn(), count: jest.fn(), findAndCountAll: jest.fn(),
   },
 }));
+jest.mock('../../src/models/trafficRollup', () => ({
+  TOTAL_SCOPE: 'total',
+  TrafficRollup: { findAll: jest.fn(), create: jest.fn(), bulkCreate: jest.fn(), max: jest.fn(), min: jest.fn(), destroy: jest.fn() },
+}));
+jest.mock('../../src/models/alertEvent', () => ({
+  AlertEvent: { findAll: jest.fn(), create: jest.fn(), destroy: jest.fn() },
+}));
 jest.mock('../../src/models/auditLog', () => ({
   AuditLog: { create: jest.fn(), findAll: jest.fn(), findAndCountAll: jest.fn() },
 }));

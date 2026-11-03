@@ -1,658 +1,347 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { get, apiError, describeError } from '../utils/api';
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import TrafficSection from '../components/metrics/TrafficSection';
+import ProxyTable from '../components/metrics/ProxyTable';
+import HistorySection from '../components/metrics/HistorySection';
+import LiveSection from '../components/metrics/LiveSection';
+import UpstreamsSection from '../components/metrics/UpstreamsSection';
+import CertificatesSection from '../components/metrics/CertificatesSection';
+import CaddyServerSection from '../components/metrics/CaddyServerSection';
+import { ageText, clockTime } from '../utils/metricsModel';
+import { daysForRange } from '../utils/alertModel';
+import { RANGES, DEFAULT_RANGE, OTHER_ID, isRange, scopeOf, proxyRows } from '../utils/trafficModel';
 
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-);
+const INTERVALS = [
+  { value: 10, label: '10 seconds' },
+  { value: 30, label: '30 seconds' },
+  { value: 60, label: '1 minute' },
+  { value: 300, label: '5 minutes' },
+];
+const INTERVAL_KEY = 'caddymanager.metrics.refresh';
+
+const readInterval = () => {
+  try {
+    const stored = Number(localStorage.getItem(INTERVAL_KEY));
+    return INTERVALS.some((i) => i.value === stored) ? stored : 30;
+  } catch {
+    return 30;
+  }
+};
+
+const intervalLabel = (seconds) => INTERVALS.find((i) => i.value === seconds)?.label;
+
+async function load(path, token, action) {
+  const response = await get(path, token);
+  if (!response.ok) throw await apiError(response, action);
+  return response.json();
+}
 
 const MetricsDashboard = () => {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [metrics, setMetrics] = useState(null);
-  const [historicalMetrics, setHistoricalMetrics] = useState([]);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [refreshInterval, setRefreshInterval] = useState(30); // seconds
   const { token } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const range = isRange(params.get('range')) ? params.get('range') : DEFAULT_RANGE;
+  const proxyId = params.get('proxy');
 
-  // Fetch metrics data
-  const fetchMetrics = async () => {
+  const [metrics, setMetrics] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [traffic, setTraffic] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [errors, setErrors] = useState({ metrics: null, history: null, traffic: null });
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [loadedAt, setLoadedAt] = useState(null);
+  const [interval, setIntervalSeconds] = useState(readInterval);
+  const [now, setNow] = useState(Date.now());
+  const inFlight = useRef(false);
+
+  // One refresh loads Caddy's figures, its history and the traffic, so the page never shows two ages
+  const refresh = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRefreshing(true);
+    const next = { metrics: null, history: null, traffic: null };
+    let ok = false;
+
     try {
-      setLoading(true);
-      const response = await get('/metrics', token);
-      
-      if (!response.ok) {
-        throw await apiError(response, 'load metrics');
-      }
-      
-      const data = await response.json();
-      setMetrics(data.metrics);
-      setError(null);
-    } catch (error) {
-      console.error('Error fetching metrics:', error);
-      setError(describeError(error, 'load the metrics'));
-    } finally {
-      setLoading(false);
+      const data = await load('/metrics', token, 'load metrics');
+      setMetrics(data.metrics ?? null);
+      ok = true;
+    } catch (err) {
+      console.error('Error fetching metrics:', err);
+      next.metrics = describeError(err, 'load the metrics');
     }
-  };
-
-  // Fetch historical metrics data
-  const fetchHistoricalMetrics = async () => {
     try {
-      const response = await get('/metrics/historical?limit=24', token);
-      
-      if (!response.ok) {
-        throw await apiError(response, 'load historical metrics');
-      }
-      
-      const data = await response.json();
-      setHistoricalMetrics(data.metrics);
-    } catch (error) {
-      console.error('Error fetching historical metrics:', error);
-      // Don't set error state here to avoid disrupting the main dashboard
+      const data = await load('/metrics/historical?limit=24', token, 'load the history');
+      setHistory(Array.isArray(data.metrics) ? data.metrics : []);
+    } catch (err) {
+      console.error('Error fetching historical metrics:', err);
+      next.history = describeError(err, 'load the history');
     }
-  };
+    try {
+      const scopeQuery = proxyId ? `&proxy=${encodeURIComponent(proxyId)}` : '';
+      const data = await load(`/metrics/traffic?range=${range}${scopeQuery}`, token, 'load the traffic');
+      setTraffic(data.traffic ?? null);
+      ok = true;
+    } catch (err) {
+      console.error('Error fetching traffic:', err);
+      next.traffic = describeError(err, 'load the traffic');
+    }
 
-  // Initial data fetch
+    try {
+      // Markers are an extra: without them the charts are still right
+      const only = proxyId && proxyId !== OTHER_ID ? `&proxy=${encodeURIComponent(proxyId)}` : '';
+      const data = proxyId === OTHER_ID ? { events: [] } : await load(`/metrics/alerts?days=${daysForRange(range)}${only}`, token, 'load the alerts');
+      setAlerts(Array.isArray(data.events) ? data.events : []);
+    } catch (err) {
+      console.error('Error fetching alert events:', err);
+      setAlerts([]);
+    }
+
+    setErrors(next);
+    if (ok) setLoadedAt(Date.now());
+    inFlight.current = false;
+    setRefreshing(false);
+    setLoadedOnce(true);
+  }, [token, range, proxyId]);
+
   useEffect(() => {
-    fetchMetrics();
-    fetchHistoricalMetrics();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+    refresh();
+  }, [refresh]);
 
-  // Set up periodic refresh
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      fetchMetrics();
-    }, refreshInterval * 1000);
-    
-    return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshInterval, token]);
+    const id = setInterval(refresh, interval * 1000);
+    return () => clearInterval(id);
+  }, [refresh, interval]);
 
-  // Format bytes to human-readable format
-  const formatBytes = (bytes, decimals = 2) => {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  };
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
 
-  // Prepare data for HTTP status chart
-  const prepareHttpStatusData = () => {
-    if (!metrics || !metrics.http || !metrics.http.responseStatus) {
-      return {
-        labels: ['2xx', '3xx', '4xx', '5xx'],
-        datasets: [{
-          data: [0, 0, 0, 0],
-          backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
-        }]
-      };
+  const chooseInterval = (seconds) => {
+    setIntervalSeconds(seconds);
+    try {
+      localStorage.setItem(INTERVAL_KEY, String(seconds));
+    } catch {
+      // the choice then only lasts for this visit
     }
-    
-    const { responseStatus } = metrics.http;
-    
-    return {
-      labels: ['2xx', '3xx', '4xx', '5xx'],
-      datasets: [{
-        data: [
-          responseStatus['2xx'] || 0,
-          responseStatus['3xx'] || 0,
-          responseStatus['4xx'] || 0,
-          responseStatus['5xx'] || 0
-        ],
-        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
-      }]
-    };
   };
 
-  // Prepare data for historical requests chart
-  const prepareHistoricalRequestsData = () => {
-    if (!historicalMetrics || historicalMetrics.length === 0) {
-      return {
-        labels: [],
-        datasets: [{
-          label: 'Total Requests',
-          data: [],
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.5)',
-        }]
-      };
-    }
-    
-    // Sort by timestamp
-    const sortedMetrics = [...historicalMetrics].sort((a, b) => 
-      new Date(a.timestamp) - new Date(b.timestamp)
-    );
-    
-    return {
-      labels: sortedMetrics.map(m => {
-        const date = new Date(m.timestamp);
-        return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
-      }),
-      datasets: [{
-        label: 'Total Requests',
-        data: sortedMetrics.map(m => m.metrics?.caddy_http_requests_total?.[0]?.value || 0),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.5)',
-        tension: 0.4
-      }]
-    };
-  };
-
-  // Prepare data for memory usage chart
-  const prepareMemoryUsageData = () => {
-    if (!historicalMetrics || historicalMetrics.length === 0) {
-      return {
-        labels: [],
-        datasets: [{
-          label: 'Memory Usage (MB)',
-          data: [],
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.5)',
-        }]
-      };
-    }
-    
-    // Sort by timestamp
-    const sortedMetrics = [...historicalMetrics].sort((a, b) => 
-      new Date(a.timestamp) - new Date(b.timestamp)
-    );
-    
-    return {
-      labels: sortedMetrics.map(m => {
-        const date = new Date(m.timestamp);
-        return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
-      }),
-      datasets: [{
-        label: 'Memory Usage (MB)',
-        data: sortedMetrics.map(m => {
-          const bytes = m.metrics?.process_resident_memory_bytes?.[0]?.value || 0;
-          return (bytes / (1024 * 1024)).toFixed(2);
-        }),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.5)',
-        tension: 0.4
-      }]
-    };
-  };
-
-  // Chart options
-  const lineChartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top',
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-      },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-      },
-    },
-    maintainAspectRatio: false,
-  };
-
-  const doughnutChartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top',
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            const label = context.label || '';
-            const value = context.raw || 0;
-            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-            return `${label}: ${value} (${percentage}%)`;
-          }
-        }
+  const update = useCallback(
+    (changes) => {
+      const next = new URLSearchParams(params);
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null || value === undefined || (key === 'range' && value === DEFAULT_RANGE)) next.delete(key);
+        else next.set(key, value);
       }
+      setParams(next, { replace: true });
     },
-    maintainAspectRatio: false,
-  };
+    [params, setParams],
+  );
 
-  // Render loading state
-  if (loading && !metrics) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex justify-center items-center h-64">
-          <div className="text-gray-500">Loading metrics data...</div>
+  const linkFor = useCallback(
+    (id) => {
+      const next = new URLSearchParams(params);
+      if (id) next.set('proxy', id);
+      else next.delete('proxy');
+      const text = next.toString();
+      return { search: text ? `?${text}` : '' };
+    },
+    [params],
+  );
+
+  const scope = useMemo(() => scopeOf(traffic, proxyId), [traffic, proxyId]);
+  const rows = useMemo(() => proxyRows(traffic), [traffic]);
+  const unknownProxy = Boolean(proxyId && traffic && !scope);
+  const shown = scope ?? scopeOf(traffic, null);
+
+  const noData = !metrics && !traffic;
+
+  const header = (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Caddy metrics</h1>
+          <p role="status" className="mt-1 text-sm text-gray-700">
+            {refreshing
+              ? 'Updating…'
+              : loadedAt
+                ? `Updated ${clockTime(loadedAt)}, ${ageText(loadedAt, now)}`
+                : loadedOnce ? 'Not updated yet' : 'Loading…'}
+          </p>
         </div>
-      </div>
-    );
-  }
-
-  // Render error state
-  if (error && !metrics) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4">
-          <div className="flex">
-            <div className="shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Caddy Metrics Dashboard</h1>
-        <div className="flex items-center space-x-4">
-          <div className="text-sm text-gray-500">
-            Auto-refresh: 
-            <select 
-              value={refreshInterval}
-              onChange={(e) => setRefreshInterval(Number(e.target.value))}
-              className="ml-2 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+        <div className="flex items-end gap-3">
+          <div>
+            <label htmlFor="refresh-interval" className="block text-sm font-medium text-gray-800">Auto-refresh every</label>
+            <select
+              id="refresh-interval"
+              value={interval}
+              onChange={(e) => chooseInterval(Number(e.target.value))}
+              className="mt-1 block min-h-11 rounded-md border border-edge bg-white px-3 text-sm text-gray-900"
             >
-              <option value={10}>10s</option>
-              <option value={30}>30s</option>
-              <option value={60}>1m</option>
-              <option value={300}>5m</option>
+              {INTERVALS.map((i) => (
+                <option key={i.value} value={i.value}>{i.label}</option>
+              ))}
             </select>
           </div>
           <button
-            onClick={() => {
-              fetchMetrics();
-              fetchHistoricalMetrics();
-            }}
-            className="px-3 py-1 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="min-h-11 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            Refresh Now
+            Refresh now
           </button>
         </div>
       </div>
-      
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`${
-              activeTab === 'overview'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div>
+          <label htmlFor="proxy-scope" className="block text-sm font-medium text-gray-800">Proxy</label>
+          <select
+            id="proxy-scope"
+            value={scope?.id ?? ''}
+            onChange={(e) => update({ proxy: e.target.value || null })}
+            className="mt-1 block min-h-11 w-full min-w-[14rem] rounded-md border border-edge bg-white px-3 text-sm text-gray-900 sm:w-auto"
           >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('http')}
-            className={`${
-              activeTab === 'http'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-          >
-            HTTP Metrics
-          </button>
-          <button
-            onClick={() => setActiveTab('system')}
-            className={`${
-              activeTab === 'system'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-          >
-            System Metrics
-          </button>
-          <button
-            onClick={() => setActiveTab('tls')}
-            className={`${
-              activeTab === 'tls'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-          >
-            TLS Metrics
-          </button>
-        </nav>
+            <option value="">All proxies</option>
+            {(traffic?.proxies || []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            {traffic?.other && <option value={OTHER_ID}>Other hosts</option>}
+          </select>
+        </div>
+        <fieldset>
+          <legend className="block text-sm font-medium text-gray-800">Period</legend>
+          <div className="mt-1 inline-flex overflow-hidden rounded-md border border-edge bg-white">
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                aria-pressed={r.value === range}
+                onClick={() => update({ range: r.value })}
+                className={`min-h-11 border-l border-edge px-3 text-sm first:border-l-0 ${
+                  r.value === range ? 'bg-indigo-600 font-medium text-white' : 'text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
       </div>
-      
-      {/* Overview Tab */}
-      {activeTab === 'overview' && (
-        <div>
-          {/* Last updated timestamp */}
-          <div className="text-sm text-gray-500 mb-6">
-            Last updated: {metrics ? new Date(metrics.timestamp).toLocaleString() : 'N/A'}
-          </div>
-          
-          {/* Stats cards */}
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-            {/* Total Requests */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <div className="flex items-center">
-                  <div className="shrink-0 bg-indigo-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Total Requests
-                      </dt>
-                      <dd className="flex items-baseline">
-                        <div className="text-2xl font-semibold text-gray-900">
-                          {metrics?.http?.requestsTotal?.toLocaleString() || 0}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Memory Usage */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <div className="flex items-center">
-                  <div className="shrink-0 bg-green-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Memory Usage
-                      </dt>
-                      <dd className="flex items-baseline">
-                        <div className="text-2xl font-semibold text-gray-900">
-                          {formatBytes(metrics?.system?.memoryBytes || 0)}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Goroutines */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <div className="flex items-center">
-                  <div className="shrink-0 bg-yellow-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        Goroutines
-                      </dt>
-                      <dd className="flex items-baseline">
-                        <div className="text-2xl font-semibold text-gray-900">
-                          {metrics?.system?.goroutines?.toLocaleString() || 0}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* TLS Handshakes */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <div className="flex items-center">
-                  <div className="shrink-0 bg-purple-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        TLS Handshakes
-                      </dt>
-                      <dd className="flex items-baseline">
-                        <div className="text-2xl font-semibold text-gray-900">
-                          {metrics?.tls?.handshakesTotal?.toLocaleString() || 0}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Charts */}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 mb-6">
-            {/* HTTP Status Codes */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                  HTTP Status Codes
-                </h3>
-                <div className="h-64">
-                  <Doughnut 
-                    data={prepareHttpStatusData()} 
-                    options={doughnutChartOptions} 
-                  />
-                </div>
-              </div>
-            </div>
-            
-            {/* Historical Requests */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                  Request History
-                </h3>
-                <div className="h-64">
-                  <Line 
-                    data={prepareHistoricalRequestsData()} 
-                    options={lineChartOptions} 
-                  />
-                </div>
-              </div>
-            </div>
-            
-            {/* Memory Usage History */}
-            <div className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                  Memory Usage History
-                </h3>
-                <div className="h-64">
-                  <Line 
-                    data={prepareMemoryUsageData()} 
-                    options={lineChartOptions} 
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+    </div>
+  );
+
+  if (!loadedOnce) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {header}
+        <p className="mt-10 text-sm text-gray-700">Loading metrics…</p>
+      </div>
+    );
+  }
+
+  if (noData) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {header}
+        <div role="alert" className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+          <p>{errors.metrics || errors.traffic}</p>
+          <p className="mt-1">
+            Check that the CaddyManager backend and Caddy are running, then try again. This page retries on its own every{' '}
+            {intervalLabel(interval)}.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Only a failed refresh of figures that are on screen is "old data"; a section that never loaded has its own message
+  const stale = (metrics && errors.metrics) || (traffic && errors.traffic) || null;
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
+      {header}
+
+      {stale && (
+        <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          Some figures are from {clockTime(loadedAt)} or earlier. The last refresh failed: {stale.replace(/\.?$/, '.')} Retrying in at most{' '}
+          {intervalLabel(interval)}.
         </div>
       )}
-      
-      {/* HTTP Metrics Tab */}
-      {activeTab === 'http' && (
+
+      <section aria-labelledby="traffic-title" className="space-y-6">
         <div>
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                HTTP Request Metrics
-              </h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Detailed information about HTTP requests processed by Caddy.
-              </p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-              <dl className="sm:divide-y sm:divide-gray-200">
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Total Requests</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.http?.requestsTotal?.toLocaleString() || 0}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Average Request Duration</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {(metrics?.http?.avgRequestDuration || 0).toFixed(6)} seconds
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">2xx Responses</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.http?.responseStatus?.['2xx']?.toLocaleString() || 0}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">3xx Responses</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.http?.responseStatus?.['3xx']?.toLocaleString() || 0}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">4xx Responses</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.http?.responseStatus?.['4xx']?.toLocaleString() || 0}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">5xx Responses</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.http?.responseStatus?.['5xx']?.toLocaleString() || 0}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
+          {scope?.id ? (
+            <>
+              <Link to={linkFor(null)} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
+                Back to all proxies
+              </Link>
+              <h2 id="traffic-title" className="text-xl font-semibold text-gray-900">{scope.name}</h2>
+              {scope.domains.length > 0 && (
+                <p className="mt-1 break-words font-mono text-sm text-gray-700">{scope.domains.join(', ')}</p>
+              )}
+            </>
+          ) : (
+            <h2 id="traffic-title" className="text-xl font-semibold text-gray-900">Traffic</h2>
+          )}
         </div>
-      )}
-      
-      {/* System Metrics Tab */}
-      {activeTab === 'system' && (
+
+        {unknownProxy && (
+          <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            That proxy no longer exists, so all proxies are shown.
+          </p>
+        )}
+
+        {errors.traffic && !traffic && (
+          <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">{errors.traffic}</p>
+        )}
+
+        {traffic && !traffic.available && (
+          <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-800">
+            There is no access log yet. These charts are built from Caddy&apos;s access log, which appears once Caddy has served its first request.
+          </p>
+        )}
+
+        {traffic && traffic.available && !traffic.coversWindow && (
+          <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-800">
+            The access log does not reach back this far, so the start of the charts is empty.
+          </p>
+        )}
+
+        {traffic && shown && traffic.available && (
+          <TrafficSection
+            traffic={traffic}
+            summary={shown.summary}
+            alerts={alerts}
+            showAlertProxy={!shown.id}
+            afterRequests={shown.id ? null : <ProxyTable rows={rows} linkFor={linkFor} />}
+          />
+        )}
+      </section>
+
+      <HistorySection token={token} proxyId={proxyId} scopeName={scope?.name ?? 'All proxies'} />
+
+      <LiveSection token={token} />
+
+      <UpstreamsSection token={token} />
+
+      <CertificatesSection token={token} />
+
+      <section aria-labelledby="server-title" className="space-y-6">
         <div>
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                System Resource Metrics
-              </h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Information about system resources used by Caddy.
-              </p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-              <dl className="sm:divide-y sm:divide-gray-200">
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">CPU Usage</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.system?.cpuSeconds?.toFixed(2) || 0} seconds
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Memory Usage</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {formatBytes(metrics?.system?.memoryBytes || 0)}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Goroutines</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.system?.goroutines?.toLocaleString() || 0}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-          
-          {/* Memory Usage Chart */}
-          <div className="bg-white overflow-hidden shadow rounded-lg mb-6">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                Memory Usage History
-              </h3>
-              <div className="h-80">
-                <Line 
-                  data={prepareMemoryUsageData()} 
-                  options={lineChartOptions} 
-                />
-              </div>
-            </div>
-          </div>
+          <h2 id="server-title" className="text-xl font-semibold text-gray-900">Caddy server</h2>
+          <p className="mt-1 text-sm text-gray-600">The Caddy process itself, from its own metrics.</p>
         </div>
-      )}
-      
-      {/* TLS Metrics Tab */}
-      {activeTab === 'tls' && (
-        <div>
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                TLS Metrics
-              </h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Information about TLS connections and certificates.
-              </p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-              <dl className="sm:divide-y sm:divide-gray-200">
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">TLS Handshakes</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.tls?.handshakesTotal?.toLocaleString() || 0}
-                  </dd>
-                </div>
-                <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Certificates</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {metrics?.tls?.certificatesTotal?.toLocaleString() || 0}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-        </div>
-      )}
+        {errors.metrics && !metrics ? (
+          <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">{errors.metrics}</p>
+        ) : (
+          <CaddyServerSection metrics={metrics} history={history} historyError={errors.history} />
+        )}
+      </section>
     </div>
   );
 };

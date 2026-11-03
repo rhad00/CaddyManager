@@ -16,6 +16,8 @@ import { AlertRule } from './alertRule';
 import { NotificationChannel } from './notificationChannel';
 import { ApiKey } from './apiKey';
 import { ConfigLock } from './configLock';
+import { TrafficRollup } from './trafficRollup';
+import { AlertEvent } from './alertEvent';
 
 // Define associations after all models are loaded
 const setupAssociations = () => {
@@ -73,6 +75,8 @@ export {
   CertificateAuthority,
   AuditLog,
   Metric,
+  TrafficRollup,
+  AlertEvent,
   DiscoveredService,
   GitRepository,
   ConfigChange,

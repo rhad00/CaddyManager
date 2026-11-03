@@ -49,7 +49,7 @@ const splitDial = (dial: string): { host: string; port: number } => {
 };
 
 /** @returns whether a TCP connection could be opened */
-function canConnect(dial: string, timeoutMs: number): Promise<boolean> {
+export function canConnect(dial: string, timeoutMs: number): Promise<boolean> {
   const { host, port } = splitDial(dial);
   return new Promise((resolve) => {
     const socket = net.connect({ host, port });

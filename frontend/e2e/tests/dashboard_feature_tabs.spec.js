@@ -100,7 +100,7 @@ test('dashboard feature tabs smoke journey', async ({ page, baseURL }) => {
   const pageAssertions = [
     { path: ['Routing'], link: 'Templates', heading: 'Service Templates' },
     { path: ['Operations'], link: 'Backup and restore', heading: 'Backup & Restore' },
-    { path: ['Monitoring'], link: 'Metrics', heading: 'Caddy Metrics Dashboard' },
+    { path: ['Monitoring'], link: 'Metrics', heading: 'Caddy metrics' },
     { path: ['Monitoring'], link: 'Audit log', heading: 'Audit Logs' },
     { path: ['Routing'], link: 'Docker discovery', heading: 'Discovered Services' },
     { path: ['Operations'], link: 'Git and GitOps', heading: 'Git Integration & GitOps' },
