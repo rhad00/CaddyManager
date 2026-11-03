@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { get, del } from '../utils/api';
+import { get, post, del } from '../utils/api';
 
 const ProxyList = ({ onEdit, onCreate }) => {
   const [proxies, setProxies] = useState([]);
@@ -54,6 +54,12 @@ const ProxyList = ({ onEdit, onCreate }) => {
           Let's Encrypt
         </span>
       );
+    } else if (sslType === 'cloudflare') {
+      return (
+        <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
+          Cloudflare DNS
+        </span>
+      );
     } else if (sslType === 'custom') {
       return (
         <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
@@ -92,13 +98,8 @@ const ProxyList = ({ onEdit, onCreate }) => {
   const handleRecheckTls = async (proxyId) => {
     try {
       setLoading(true);
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/proxies/${proxyId}/recheck-tls`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // The shared helper sends the CSRF token the API requires on every POST
+      const response = await post(`/proxies/${proxyId}/recheck-tls`, {}, token, csrfToken);
 
       if (!response.ok) {
         throw new Error('Failed to recheck TLS');

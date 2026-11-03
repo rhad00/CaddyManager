@@ -53,13 +53,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
     if (!proxy) return;
     setTlsChecking(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/proxies/${proxy.id}/recheck-tls`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // The shared helper sends the CSRF token the API requires on every POST
+      const response = await post(`/proxies/${proxy.id}/recheck-tls`, {}, token, csrfToken);
 
       if (!response.ok) throw new Error('Failed to recheck TLS');
 
