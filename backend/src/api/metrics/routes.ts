@@ -4,6 +4,8 @@ import { authMiddleware, roleMiddleware } from '../../middleware/auth';
 import { Proxy } from '../../models/proxy';
 import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../../services/trafficAnalytics';
 
+import { readLiveReport, type LiveReport } from '../../services/liveTraffic';
+
 export const router = express.Router();
 
 /**
@@ -237,6 +239,38 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get traffic analytics error:', error);
     return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
+  }
+});
+
+/**
+ * @swagger
+ * /metrics/live:
+ *   get:
+ *     summary: Requests of the last five minutes, from the end of the access log
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Live report, in five second steps, with the newest requests (paths only)
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+const LIVE_CACHE_MS = 2000;
+let liveCache: { at: number; report: Promise<LiveReport> } | null = null;
+
+router.get('/live', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    if (!liveCache || Date.now() - liveCache.at > LIVE_CACHE_MS) {
+      const report = readLiveReport();
+      liveCache = { at: Date.now(), report };
+      report.catch(() => { liveCache = null; });
+    }
+    return res.status(200).json({ success: true, live: await liveCache.report });
+  } catch (error) {
+    console.error('Get live traffic error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading the live traffic' });
   }
 });
 
