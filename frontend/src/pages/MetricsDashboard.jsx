@@ -5,6 +5,7 @@ import { get, apiError, describeError } from '../utils/api';
 import TrafficSection from '../components/metrics/TrafficSection';
 import ProxyTable from '../components/metrics/ProxyTable';
 import LiveSection from '../components/metrics/LiveSection';
+import UpstreamsSection from '../components/metrics/UpstreamsSection';
 import CertificatesSection from '../components/metrics/CertificatesSection';
 import CaddyServerSection from '../components/metrics/CaddyServerSection';
 import { ageText, clockTime } from '../utils/metricsModel';
@@ -308,6 +309,8 @@ const MetricsDashboard = () => {
       </section>
 
       <LiveSection token={token} />
+
+      <UpstreamsSection token={token} />
 
       <CertificatesSection token={token} />
 

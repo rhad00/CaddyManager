@@ -6,6 +6,7 @@ import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../
 
 import { readLiveReport, type LiveReport } from '../../services/liveTraffic';
 import { certificateTimeline } from '../../services/certificateTimeline';
+import { buildUpstreamHealth, fetchCaddyUpstreams, type UpstreamHealthReport } from '../../services/upstreamHealth';
 
 export const router = express.Router();
 
@@ -240,6 +241,45 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get traffic analytics error:', error);
     return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
+  }
+});
+
+/**
+ * @swagger
+ * /metrics/upstreams:
+ *   get:
+ *     summary: Health of every upstream of the active proxies
+ *     description: A TCP connect from CaddyManager joined with the in-flight requests and failures Caddy reports. Cached for 10 seconds.
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: One row per proxy and upstream address, worst first
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+const UPSTREAM_CACHE_MS = 10_000;
+let upstreamCache: { at: number; report: Promise<UpstreamHealthReport> } | null = null;
+
+router.get('/upstreams', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    if (!upstreamCache || Date.now() - upstreamCache.at > UPSTREAM_CACHE_MS) {
+      const report = (async () => {
+        const proxies = await Proxy.findAll({
+          where: { status: 'active' },
+          attributes: ['id', 'name', 'upstream_url', 'load_balancing', 'path_routing'],
+        });
+        return buildUpstreamHealth(proxies, await fetchCaddyUpstreams());
+      })();
+      upstreamCache = { at: Date.now(), report };
+      report.catch(() => { upstreamCache = null; });
+    }
+    return res.status(200).json({ success: true, upstreams: await upstreamCache.report });
+  } catch (error) {
+    console.error('Get upstream health error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while checking the upstreams' });
   }
 });
 
