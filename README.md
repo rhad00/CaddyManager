@@ -363,7 +363,7 @@ Example header configurations:
 
 ### Configuration Persistence
 - Configurations are stored in both the database and Caddy
-- Automatic backup system maintains config_backups/caddy_config_backup.json which can be mounted as local folder in docker or in a volume
+- Automatic backup system maintains config_backups/caddy_config_backup.json, a recovery copy kept in a volume by the bundled compose files. The database is the source of truth: at startup, and within 30 seconds of Caddy restarting, the routes are rebuilt from it, so a Caddy restart (for example `docker compose up -d` after editing `.env`) briefly answers 503 until the routes are back
 - Configuration is rebuilt from database on service restart
 - Handles both HTTP and HTTPS proxies with proper SSL termination (ACME Let's Encrypt without user intervention)
 
@@ -606,7 +606,7 @@ All backend environment variables can be set in `.env` files or passed directly 
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
 | `CADDY_SERVER_NAME` | `srv0` | Name of the Caddy HTTP server that CaddyManager manages | No |
-| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup is kept (mount it as a volume) | No |
+| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup (a recovery copy, never loaded back automatically) is kept; the bundled compose files mount `/app/config_backups` as a volume | No |
 | `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
 | `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Who Caddy believes about the visitor's address. Behind a proxy on the same Docker/private network set `private_ranges`; behind Cloudflare set its published ranges (ready to paste in `.env.template`). Without it every visitor behind that proxy shares one rate-limit bucket | No |

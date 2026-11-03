@@ -66,6 +66,7 @@ services:
       - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
+      - backend_config_backups:/app/config_backups
       # Docker auto-discovery (ENABLE_DOCKER_DISCOVERY=true) needs the Docker socket. It gives the
       # backend control over Docker, so it is off by default; uncomment only if you use discovery:
       # - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -100,3 +101,5 @@ volumes:
     name: caddymanager_backend_metrics
   backend_backups:
     name: caddymanager_backend_backups
+  backend_config_backups:
+    name: caddymanager_backend_config_backups

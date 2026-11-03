@@ -91,6 +91,7 @@ services:
       - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
+      - backend_config_backups:/app/config_backups
     logging:
       driver: "json-file"
       options:
@@ -151,3 +152,5 @@ volumes:
     name: caddymanager_prod_backend_metrics
   backend_backups:
     name: caddymanager_prod_backend_backups
+  backend_config_backups:
+    name: caddymanager_prod_backend_config_backups

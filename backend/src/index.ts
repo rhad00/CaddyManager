@@ -47,7 +47,10 @@ const runLeaderTasks = async (): Promise<void> => {
   metricsService.scheduleMetricsSnapshots(60);
 
   // Synchronize proxy route indices
-  await caddyService.initializeConfig({ forceRebuild: migrations.rebuildCaddyConfig === true });
+  await caddyService.initializeConfig();
+
+  // Caddy keeps its routes in memory only: put them back whenever it restarts
+  caddyService.startReconcileLoop(30);
 
   // Initialize Docker discovery service if enabled
   if (process.env.ENABLE_DOCKER_DISCOVERY === 'true') {

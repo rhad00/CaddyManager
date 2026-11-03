@@ -1,8 +1,8 @@
 /**
  * The bundled Caddyfile ships a catch-all "No routes configured yet" route. Caddy runs routes in
  * order and that one has no host match, so a proxy route added after it never receives a request
- * (every request answers 503). The placeholder must stay last: proxies are inserted before it, and
- * a stored config that has it first is rebuilt from the database at startup.
+ * (every request answers 503). The placeholder must stay last: proxies are inserted before it.
+ * (A config that already has it first is repaired by the rebuild from the database at startup.)
  */
 const axios = require('axios');
 
@@ -20,7 +20,6 @@ jest.mock('../../src/models', () => ({
   sequelize: {},
 }));
 
-const fs = require('fs');
 const { Proxy } = require('../../src/models');
 const { caddyService } = require('../../src/services/caddyService');
 
@@ -88,49 +87,5 @@ describe('addProxy and the catch-all placeholder route', () => {
 
     await expect(caddyService.addProxy(proxy)).rejects.toThrow(/db down/);
     expect(axios.delete.mock.calls[0][0]).toMatch(/\/routes\/0$/);
-  });
-});
-
-describe('initializeConfig with a stored config whose placeholder shadows proxy routes', () => {
-  let loadConfig;
-  let rebuild;
-
-  beforeEach(() => {
-    loadConfig = jest.spyOn(caddyService, 'loadConfig').mockResolvedValue(undefined);
-    rebuild = jest.spyOn(caddyService, 'rebuildConfigFromDatabase').mockResolvedValue(undefined);
-    fs.promises.access.mockResolvedValue(undefined);
-    Proxy.findAll.mockResolvedValue([{ id: 'p1' }]);
-  });
-  afterEach(() => jest.restoreAllMocks());
-
-  const stored = (routes) => fs.promises.readFile.mockResolvedValue(JSON.stringify(configWith(routes)));
-
-  test('rebuilds from the database when the placeholder comes before a proxy route', async () => {
-    stored([placeholder(), hostRoute('s3.example.com')]);
-    await caddyService.initializeConfig();
-    expect(rebuild).toHaveBeenCalledTimes(1);
-    expect(loadConfig).not.toHaveBeenCalled();
-  });
-
-  test('loads the stored config as it is when the placeholder is last', async () => {
-    stored([hostRoute('s3.example.com'), placeholder()]);
-    await caddyService.initializeConfig();
-    expect(loadConfig).toHaveBeenCalledTimes(1);
-    expect(rebuild).not.toHaveBeenCalled();
-  });
-
-  test('loads the stored config as it is when it only holds the placeholder', async () => {
-    stored([placeholder()]);
-    await caddyService.initializeConfig();
-    expect(loadConfig).toHaveBeenCalledTimes(1);
-    expect(rebuild).not.toHaveBeenCalled();
-  });
-
-  test('with no proxies in the database there is nothing to rebuild', async () => {
-    Proxy.findAll.mockResolvedValue([]);
-    stored([placeholder(), hostRoute('s3.example.com')]);
-    await caddyService.initializeConfig();
-    expect(rebuild).not.toHaveBeenCalled();
-    expect(loadConfig).toHaveBeenCalledTimes(1);
   });
 });

@@ -58,6 +58,7 @@ services:
       - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
+      - backend_config_backups:/app/config_backups
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - caddy_net
@@ -91,3 +92,5 @@ volumes:
     name: caddymanager_backend_metrics
   backend_backups:
     name: caddymanager_backend_backups
+  backend_config_backups:
+    name: caddymanager_backend_config_backups
