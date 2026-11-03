@@ -74,6 +74,22 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.body.traffic.available).toBe(false);
 });
 
+test('live: the last five minutes, newest first, without query strings', async () => {
+  const withQuery = JSON.stringify({
+    ts: now() - 3, level: 'info', logger: 'http.log.access', status: 502, duration: 0.5, size: 1,
+    request: { host: 'cloud.example.com', method: 'POST', uri: '/api?token=secret', remote_ip: '203.0.113.1' },
+  });
+  fs.writeFileSync(logFile, [line(120, 'cloud.example.com', 200), withQuery].join('\n'));
+
+  const res = await request(app).get('/api/metrics/live');
+
+  expect(res.status).toBe(200);
+  expect(res.body.live.total).toBe(2);
+  expect(res.body.live.series.requests).toHaveLength(60);
+  expect(res.body.live.recent[0]).toMatchObject({ path: '/api', status: 502, method: 'POST' });
+  expect(JSON.stringify(res.body)).not.toContain('secret');
+});
+
 test('a proxy scope returns the detailed breakdowns for that proxy and the total only', async () => {
   fs.writeFileSync(logFile, [line(60, 'cloud.example.com', 200), line(20, 'scanner.example.org', 404)].join('\n'));
   const proxy = await Proxy.findOne({ where: { name: 'Cloud' } });
