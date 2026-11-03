@@ -81,10 +81,48 @@ export const STATUS_SERIES = [
   { key: 'serverError', cls: '5xx', label: 'Server error', color: '#dc2626' },
 ];
 
-export function stackedBarOptions(format) {
+/**
+ * A dashed vertical line and a small diamond at the top for each step an alert fired in.
+ * Steps come from `options.plugins.alertMarkers.indexes`; the list under the chart names them.
+ */
+export const alertMarkerPlugin = {
+  id: 'alertMarkers',
+  afterDatasetsDraw(chart, _args, opts) {
+    const indexes = opts?.indexes;
+    if (!Array.isArray(indexes) || indexes.length === 0) return;
+    const { ctx, chartArea, scales } = chart;
+    if (!scales.x || !chartArea) return;
+    ctx.save();
+    ctx.strokeStyle = CHART_COLORS.ink;
+    ctx.fillStyle = CHART_COLORS.ink;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    for (const index of indexes) {
+      const x = scales.x.getPixelForValue(index);
+      if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top + 6);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top);
+      ctx.lineTo(x + 4, chartArea.top + 5);
+      ctx.lineTo(x, chartArea.top + 10);
+      ctx.lineTo(x - 4, chartArea.top + 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.setLineDash([4, 3]);
+    }
+    ctx.restore();
+  },
+};
+
+export function stackedBarOptions(format, markerIndexes = []) {
   const base = lineOptions(format);
   return {
     ...base,
+    plugins: { ...base.plugins, alertMarkers: { indexes: markerIndexes } },
     scales: {
       x: { ...base.scales.x, stacked: true },
       y: { ...base.scales.y, stacked: true },

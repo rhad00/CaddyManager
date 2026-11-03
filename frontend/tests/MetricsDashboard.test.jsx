@@ -107,6 +107,7 @@ const serve = (over = {}) => {
         },
       })
     }
+    if (path.startsWith('/metrics/alerts')) return replies.alerts ?? ok({ events: [] })
     if (path.startsWith('/metrics/live')) return ok({ live: null })
     if (path.startsWith('/metrics/history?')) return ok({ history: null })
     if (path.startsWith('/metrics/upstreams')) return ok({ upstreams: null })
@@ -175,6 +176,22 @@ describe('traffic, per proxy', () => {
       expect(screen.getByRole('region', { name })).toBeInTheDocument()
     }
     expect(screen.getByText('news.example.net')).toBeInTheDocument()
+  })
+
+  test('lists the alerts that fired in the period, and a failed alert load changes nothing else', async () => {
+    const firedAt = new Date(Date.UTC(2026, 10, 3, 11)).toISOString()
+    serve({ alerts: ok({ events: [{ id: 'e1', firedAt, ruleName: 'Errors', conditionType: 'error_rate', proxyId: 'p1', proxyName: 'Grafana', summary: '12% of requests returned 5xx' }] }) })
+    const { unmount } = renderPage()
+    const list = await screen.findByRole('region', { name: 'Alerts in this period' })
+    expect(within(list).getByText('Error rate')).toBeInTheDocument()
+    expect(within(list).getByText(/Grafana/)).toBeInTheDocument()
+    expect(within(list).getByText('12% of requests returned 5xx')).toBeInTheDocument()
+    unmount()
+
+    serve({ alerts: fail(500, 'db down') })
+    renderPage()
+    expect(await screen.findByRole('region', { name: 'Figures' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Alerts in this period' })).not.toBeInTheDocument()
   })
 
   test('says that blocked requests are counted from status codes', async () => {

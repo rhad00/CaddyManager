@@ -1,6 +1,8 @@
 import React, { useId, useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
-import { STATUS_SERIES, stackedBarOptions } from './chartTheme';
+import { STATUS_SERIES, stackedBarOptions, alertMarkerPlugin } from './chartTheme';
+const PLUGINS = [alertMarkerPlugin];
+const NO_MARKERS = [];
 import { formatCount } from '../../utils/metricsModel';
 
 const countFormat = (v) => formatCount(Math.round(v));
@@ -9,9 +11,9 @@ const countFormat = (v) => formatCount(Math.round(v));
  * Requests over time, stacked by status class. The legend carries the totals, so each class
  * is told by its name and count, not by colour alone.
  */
-export default function RequestsChart({ summary, labels, bucketSeconds, unavailable }) {
+export default function RequestsChart({ summary, labels, bucketSeconds, unavailable, markers = NO_MARKERS }) {
   const headingId = useId();
-  const options = useMemo(() => stackedBarOptions(countFormat), []);
+  const options = useMemo(() => stackedBarOptions(countFormat, markers.map((m) => m.index)), [markers]);
   const data = useMemo(
     () => ({
       labels: labels.map((l) => (l.split(' ').length === 3 ? [l.split(' ').slice(0, 2).join(' '), l.split(' ')[2]] : l)),
@@ -33,7 +35,7 @@ export default function RequestsChart({ summary, labels, bucketSeconds, unavaila
   const bucketText = bucketSeconds >= 3600 ? `${bucketSeconds / 3600} h` : `${bucketSeconds / 60} min`;
   const description = `Requests over time, in ${bucketText} steps: ${formatCount(summary.requests)} in total, ${STATUS_SERIES.map(
     ({ cls, label }) => `${formatCount(summary.status[cls])} ${label.toLowerCase()}`,
-  ).join(', ')}. Busiest step ${formatCount(peak)} requests.`;
+  ).join(', ')}. Busiest step ${formatCount(peak)} requests.${markers.length ? ` ${markers.length} ${markers.length === 1 ? 'step' : 'steps'} with an alert, marked with a dashed line.` : ''}`;
 
   let body;
   if (unavailable) body = <p role="alert" className="text-sm text-red-800">{unavailable}</p>;
@@ -41,7 +43,7 @@ export default function RequestsChart({ summary, labels, bucketSeconds, unavaila
   else {
     body = (
       <div className="h-64">
-        <Bar data={data} options={options} role="img" aria-label={description} />
+        <Bar data={data} options={options} plugins={PLUGINS} role="img" aria-label={description} />
       </div>
     );
   }
