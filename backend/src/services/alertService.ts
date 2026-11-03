@@ -103,6 +103,7 @@ export async function runAlertChecks(): Promise<void> {
         const subject = buildSubject(rule, proxy);
         const body = buildBody(rule, proxy, triggered);
 
+        await recordAlertEvent(rule, proxy, triggered);
         await dispatchNotifications(rule, subject, body, NC);
         notifiedAt.set(key, new Date().toISOString());
 
@@ -110,6 +111,7 @@ export async function runAlertChecks(): Promise<void> {
         await rule.update({ last_triggered_at: new Date() });
       }
     }
+    await require('./alertEvents').pruneAlertEvents();
   } catch (err) {
     console.error('[AlertService] runAlertChecks error:', err instanceof Error ? err.message : err);
   }
@@ -209,6 +211,34 @@ const DETAIL_TEXT: Record<string, (details: never) => string> = {
   error_rate: (d: Extract<AlertDetails, { rate: string }>) => `${d.rate}% of requests (${d.errors} of ${d.total}) returned a 5xx error in the last ${d.windowMinutes} minutes.`,
   no_traffic: (d: Extract<AlertDetails, { minutes: number }>) => `No requests in the last ${d.minutes} minutes.`,
 };
+
+/** What a rule found, in one sentence */
+export function describeDetails(conditionType: string, details: AlertDetails): string {
+  const describe = DETAIL_TEXT[conditionType];
+  return describe ? describe(details as never) : conditionType;
+}
+
+/** Keep a record of the firing for the metrics charts; a failure here must not stop the notification */
+async function recordAlertEvent(
+  rule: Pick<AlertRule, 'id' | 'name' | 'condition_type'>,
+  proxy: Pick<Proxy, 'id' | 'name'>,
+  details: AlertDetails,
+): Promise<void> {
+  try {
+    const { AlertEvent } = require('../models/alertEvent') as typeof import('../models/alertEvent');
+    await AlertEvent.create({
+      fired_at: new Date(),
+      rule_id: rule.id,
+      rule_name: rule.name,
+      condition_type: rule.condition_type,
+      proxy_id: proxy.id,
+      proxy_name: proxy.name,
+      summary: describeDetails(rule.condition_type, details),
+    });
+  } catch (err) {
+    console.error('[AlertService] Could not record the alert event:', err instanceof Error ? err.message : err);
+  }
+}
 
 function buildBody(rule: Pick<AlertRule, 'condition_type' | 'name'>, proxy: Proxy, details: AlertDetails): string {
   const domains = Array.isArray(proxy.domains) ? proxy.domains.join(', ') : proxy.domains;

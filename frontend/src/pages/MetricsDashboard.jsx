@@ -10,6 +10,7 @@ import UpstreamsSection from '../components/metrics/UpstreamsSection';
 import CertificatesSection from '../components/metrics/CertificatesSection';
 import CaddyServerSection from '../components/metrics/CaddyServerSection';
 import { ageText, clockTime } from '../utils/metricsModel';
+import { daysForRange } from '../utils/alertModel';
 import { RANGES, DEFAULT_RANGE, OTHER_ID, isRange, scopeOf, proxyRows } from '../utils/trafficModel';
 
 const INTERVALS = [
@@ -46,6 +47,7 @@ const MetricsDashboard = () => {
   const [metrics, setMetrics] = useState(null);
   const [history, setHistory] = useState([]);
   const [traffic, setTraffic] = useState(null);
+  const [alerts, setAlerts] = useState([]);
   const [errors, setErrors] = useState({ metrics: null, history: null, traffic: null });
   const [refreshing, setRefreshing] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -85,6 +87,16 @@ const MetricsDashboard = () => {
     } catch (err) {
       console.error('Error fetching traffic:', err);
       next.traffic = describeError(err, 'load the traffic');
+    }
+
+    try {
+      // Markers are an extra: without them the charts are still right
+      const only = proxyId && proxyId !== OTHER_ID ? `&proxy=${encodeURIComponent(proxyId)}` : '';
+      const data = proxyId === OTHER_ID ? { events: [] } : await load(`/metrics/alerts?days=${daysForRange(range)}${only}`, token, 'load the alerts');
+      setAlerts(Array.isArray(data.events) ? data.events : []);
+    } catch (err) {
+      console.error('Error fetching alert events:', err);
+      setAlerts([]);
     }
 
     setErrors(next);
@@ -304,6 +316,8 @@ const MetricsDashboard = () => {
           <TrafficSection
             traffic={traffic}
             summary={shown.summary}
+            alerts={alerts}
+            showAlertProxy={!shown.id}
             afterRequests={shown.id ? null : <ProxyTable rows={rows} linkFor={linkFor} />}
           />
         )}

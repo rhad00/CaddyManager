@@ -74,6 +74,25 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.body.traffic.available).toBe(false);
 });
 
+test('alerts: recent events, newest first, narrowed by proxy, with a message for a bad period', async () => {
+  const { AlertEvent } = require('../../src/models');
+  const proxy = await Proxy.findOne({ where: { name: 'Cloud' } });
+  const ev = (minutesAgo, over = {}) => ({
+    fired_at: new Date(Date.now() - minutesAgo * 60_000), rule_id: 'r1', rule_name: 'Errors', condition_type: 'error_rate',
+    proxy_id: proxy.id, proxy_name: 'Cloud', summary: '12% of requests returned 5xx', ...over,
+  });
+  await AlertEvent.bulkCreate([ev(60), ev(10), ev(5, { proxy_id: 'other-proxy', proxy_name: 'Other' }), ev(60 * 24 * 40)]);
+
+  const all = await request(app).get('/api/metrics/alerts?days=7');
+  expect(all.body.events).toHaveLength(3);
+  expect(all.body.events[0].proxyName).toBe('Other');
+  expect(all.body.events[0]).toMatchObject({ ruleName: 'Errors', conditionType: 'error_rate' });
+
+  const one = await request(app).get(`/api/metrics/alerts?days=7&proxy=${proxy.id}`);
+  expect(one.body.events).toHaveLength(2);
+  expect((await request(app).get('/api/metrics/alerts?days=5')).status).toBe(400);
+});
+
 test('history: daily points, a clear message for a bad range, prototype names are not ranges', async () => {
   const { TrafficRollup } = require('../../src/models');
   const hour = Math.floor(now() / 3600) * 3600 - 3600;

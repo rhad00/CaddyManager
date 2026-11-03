@@ -4,6 +4,7 @@ import RequestsChart from './RequestsChart';
 import StatusBreakdown from './StatusBreakdown';
 import TopList from './TopList';
 import Heatmap from './Heatmap';
+import AlertsList from './AlertsList';
 import { SlowPaths, ErrorPaths } from './PathTables';
 import { Stat } from './Stat';
 import { formatBytes, formatCount, formatDuration, formatPercent } from '../../utils/metricsModel';
@@ -16,6 +17,7 @@ import {
   changeText,
   pointsChange,
 } from '../../utils/trafficModel';
+import { alertMarkers, inWindow } from '../../utils/alertModel';
 
 const perSecond = (v) => `${formatBytes(v)}/s`;
 const plainBytes = (v) => formatBytes(v);
@@ -27,8 +29,10 @@ const KIND_NAMES = { browser: 'Browsers', bot: 'Bots and scanners', tool: 'Tools
 const named = (items, names) => items.map((i) => ({ ...i, key: names[i.key] ?? i.key }));
 const capitalised = (items) => items.map((i) => ({ ...i, key: i.key.charAt(0).toUpperCase() + i.key.slice(1) }));
 
+const NO_ALERTS = [];
+
 /** The charts, figures and rankings of one scope: all proxies, one proxy or the other hosts */
-export default function TrafficSection({ traffic, summary, afterRequests }) {
+export default function TrafficSection({ traffic, summary, afterRequests, alerts = NO_ALERTS, showAlertProxy = false }) {
   const { range } = traffic;
   const detail = summary.detail;
   const labels = useMemo(() => bucketLabels(traffic), [traffic]);
@@ -41,6 +45,9 @@ export default function TrafficSection({ traffic, summary, afterRequests }) {
   const previous = summary.previous;
   const share = errorShare(summary);
   const previousShare = previous ? errorShare({ status: { '2xx': previous.requests - previous.errors5xx, '5xx': previous.errors5xx } }) : null;
+  const count = summary.series.requests.length;
+  const markers = useMemo(() => alertMarkers(alerts, { from: traffic.from, bucketSeconds: traffic.bucketSeconds, count }), [alerts, traffic.from, traffic.bucketSeconds, count]);
+  const windowAlerts = useMemo(() => inWindow(alerts, traffic), [alerts, traffic]);
   const browserRequests = detail?.clientKinds.find((k) => k.key === 'browser')?.count ?? 0;
 
   return (
@@ -73,7 +80,9 @@ export default function TrafficSection({ traffic, summary, afterRequests }) {
         )}
       </section>
 
-      <RequestsChart summary={summary} labels={labels} bucketSeconds={traffic.bucketSeconds} />
+      <RequestsChart summary={summary} labels={labels} bucketSeconds={traffic.bucketSeconds} markers={markers} />
+
+      <AlertsList events={windowAlerts} showProxy={showAlertProxy} />
 
       {afterRequests}
 

@@ -5,6 +5,7 @@ import { Proxy } from '../../models/proxy';
 import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../../services/trafficAnalytics';
 
 import { readLiveReport, type LiveReport } from '../../services/liveTraffic';
+import { recentAlertEvents } from '../../services/alertEvents';
 import { isHistoryRange, readHistory } from '../../services/trafficRollup';
 import { certificateTimeline } from '../../services/certificateTimeline';
 import { buildUpstreamHealth, fetchCaddyUpstreams, type UpstreamHealthReport } from '../../services/upstreamHealth';
@@ -242,6 +243,50 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get traffic analytics error:', error);
     return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
+  }
+});
+
+/**
+ * @swagger
+ * /metrics/alerts:
+ *   get:
+ *     summary: Times alert rules fired, newest first
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           enum: [1, 7, 30, 90]
+ *           default: 7
+ *       - in: query
+ *         name: proxy
+ *         description: Only events of this proxy id
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Up to 200 events
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/alerts', authMiddleware, async (req: Request, res: Response) => {
+  const days = req.query.days === undefined ? 7 : Number(req.query.days);
+  if (![1, 7, 30, 90].includes(days)) {
+    return res.status(400).json({ success: false, message: 'The days must be 1, 7, 30 or 90.' });
+  }
+  try {
+    const proxy = typeof req.query.proxy === 'string' && req.query.proxy ? req.query.proxy : null;
+    const events = await recentAlertEvents(Date.now() - days * 86_400_000, proxy);
+    return res.status(200).json({ success: true, events });
+  } catch (error) {
+    console.error('Get alert events error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading the alert events' });
   }
 });
 
