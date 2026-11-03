@@ -533,7 +533,7 @@ export class CaddyService {
     this.reconcileOutage = false;
 
     try {
-      const active = await Proxy.count({ where: { status: { [Op.or]: ['active', null] } } });
+      const active = await Proxy.count({ where: { status: 'active' } });
       if (active === 0) return 'skipped';
 
       console.log(`Caddy lost its routes (restarted?), rebuilding ${active} proxies from the database...`);
