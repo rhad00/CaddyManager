@@ -9,6 +9,7 @@ import { dockerDiscoveryService } from './services/dockerDiscoveryService';
 import { gitService } from './services/gitService';
 import { startAlertScheduler } from './services/alertService';
 import { certificateService } from './services/certificateService';
+import { scheduleTrafficRollups } from './services/trafficRollup';
 import { isLeader } from './utils/clusterRole';
 import { startServer } from './app';
 
@@ -45,6 +46,9 @@ const runLeaderTasks = async (): Promise<void> => {
 
   // Initialize metrics snapshots (every hour)
   metricsService.scheduleMetricsSnapshots(60);
+
+  // Keep hourly traffic totals beyond what the access log retains
+  scheduleTrafficRollups(60);
 
   // Synchronize proxy route indices
   await caddyService.initializeConfig();

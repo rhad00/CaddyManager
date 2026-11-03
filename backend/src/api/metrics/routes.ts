@@ -5,6 +5,7 @@ import { Proxy } from '../../models/proxy';
 import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../../services/trafficAnalytics';
 
 import { readLiveReport, type LiveReport } from '../../services/liveTraffic';
+import { isHistoryRange, readHistory } from '../../services/trafficRollup';
 import { certificateTimeline } from '../../services/certificateTimeline';
 import { buildUpstreamHealth, fetchCaddyUpstreams, type UpstreamHealthReport } from '../../services/upstreamHealth';
 
@@ -241,6 +242,53 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get traffic analytics error:', error);
     return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
+  }
+});
+
+/**
+ * @swagger
+ * /metrics/history:
+ *   get:
+ *     summary: Daily traffic for the last 30 or 90 days, kept beyond the access log
+ *     description: Built from hourly rollups. Days are UTC days. `coveredFrom` is the first hour with stored data; earlier days are unknown, not empty.
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         schema:
+ *           type: string
+ *           enum: [30d, 90d]
+ *           default: 30d
+ *       - in: query
+ *         name: proxy
+ *         description: A proxy id, or "other"; all traffic when omitted.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Daily series
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/history', authMiddleware, async (req: Request, res: Response) => {
+  const range = req.query.range === undefined ? '30d' : req.query.range;
+  if (!isHistoryRange(range)) {
+    return res.status(400).json({ success: false, message: 'The range must be 30d or 90d.' });
+  }
+  try {
+    const asked = typeof req.query.proxy === 'string' ? req.query.proxy : null;
+    let scope: string | null = null;
+    if (asked === OTHER_ID) scope = OTHER_ID;
+    else if (asked !== null && (await Proxy.count({ where: { id: asked } })) > 0) scope = asked;
+    return res.status(200).json({ success: true, history: await readHistory(range, scope) });
+  } catch (error) {
+    console.error('Get traffic history error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading the traffic history' });
   }
 });
 

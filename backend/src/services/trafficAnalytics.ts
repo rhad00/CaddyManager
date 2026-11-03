@@ -341,7 +341,7 @@ const domainsOf = (proxy: ProxyLike): string[] =>
   (Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains]).filter(Boolean).map(normalizeHost);
 
 /** Which proxy serves a host: an exact domain first, then the longest wildcard that covers it */
-function proxyMatcher(proxies: ProxyLike[]): (host: string) => number {
+export function proxyMatcher(proxies: ProxyLike[]): (host: string) => number {
   const exact = new Map<string, number>();
   const wildcards: Array<{ suffix: string; index: number }> = [];
   proxies.forEach((proxy, index) => {

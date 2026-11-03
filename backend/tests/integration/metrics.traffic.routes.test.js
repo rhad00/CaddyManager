@@ -74,6 +74,23 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.body.traffic.available).toBe(false);
 });
 
+test('history: daily points, a clear message for a bad range, prototype names are not ranges', async () => {
+  const { TrafficRollup } = require('../../src/models');
+  const hour = Math.floor(now() / 3600) * 3600 - 3600;
+  await TrafficRollup.create({ hour_ts: hour, scope_id: 'total', requests: 7, status_2xx: 7, bytes: 70, duration_sum_ms: 70, duration_count: 7 });
+
+  const res = await request(app).get('/api/metrics/history?range=30d');
+  expect(res.status).toBe(200);
+  expect(res.body.history.series.requests).toHaveLength(30);
+  expect(res.body.history.totals.requests).toBe(7);
+  expect(res.body.history.coveredFrom).toBe(hour);
+
+  expect((await request(app).get('/api/metrics/history?range=1y')).body.message).toMatch(/30d or 90d/);
+  expect((await request(app).get('/api/metrics/history?range=toString')).status).toBe(400);
+  const unknown = await request(app).get('/api/metrics/history?proxy=nope');
+  expect(unknown.body.history.scope).toBeNull();
+});
+
 test('upstreams: probes the active proxies and keeps working without the Caddy admin API', async () => {
   const res = await request(app).get('/api/metrics/upstreams');
 

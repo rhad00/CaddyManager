@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { get, apiError, describeError } from '../utils/api';
 import TrafficSection from '../components/metrics/TrafficSection';
 import ProxyTable from '../components/metrics/ProxyTable';
+import HistorySection from '../components/metrics/HistorySection';
 import LiveSection from '../components/metrics/LiveSection';
 import UpstreamsSection from '../components/metrics/UpstreamsSection';
 import CertificatesSection from '../components/metrics/CertificatesSection';
@@ -307,6 +308,8 @@ const MetricsDashboard = () => {
           />
         )}
       </section>
+
+      <HistorySection token={token} proxyId={proxyId} scopeName={scope?.name ?? 'All proxies'} />
 
       <LiveSection token={token} />
 
