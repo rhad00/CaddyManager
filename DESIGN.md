@@ -11,7 +11,7 @@ colors:
   gateway-teal-deep: "#0b564f"
   gateway-teal-tint: "#e8f6f3"
   hairline: "#e0e5e9"
-  slate-muted: "#66737f"
+  slate-muted: "#5f6c78"
   slate-text: "#36414c"
 typography:
   display:
@@ -127,7 +127,7 @@ A cool, ink-tinted neutral palette with one teal accent. Neutrals lean slightly 
 - **Surface** (#ffffff): cards, the top bar, inputs.
 - **Hairline** (#e0e5e9): every border and divider, and the ring on cards.
 - **Field edge** (#7d8995): the border of inputs, selects and textareas only.
-- **Slate Text** (#36414c) and **Slate Muted** (#66737f): body text on light surfaces and secondary text such as helper lines and breadcrumbs.
+- **Slate Text** (#36414c) and **Slate Muted** (#5f6c78): body text on light surfaces and secondary text such as helper lines and breadcrumbs.
 - Status colours (green, red, amber, blue) keep their Tailwind defaults and appear only as small pills and alert panels.
 
 ### Named Rules

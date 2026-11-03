@@ -32,13 +32,13 @@
         "role": "neutral",
         "displayName": "Ink",
         "canonical": "#16212b",
-        "tonalRamp": ["#0d151c", "#16212b", "#232d37", "#36414c", "#4b5762", "#66737f", "#93a0ab", "#c9d1d8"]
+        "tonalRamp": ["#0d151c", "#16212b", "#232d37", "#36414c", "#4b5762", "#5f6c78", "#93a0ab", "#c9d1d8"]
       },
       "ink-soft": {
         "role": "neutral",
         "displayName": "Ink Soft",
         "canonical": "#1d2a36",
-        "tonalRamp": ["#0d151c", "#16212b", "#1d2a36", "#232d37", "#36414c", "#4b5762", "#66737f", "#93a0ab"]
+        "tonalRamp": ["#0d151c", "#16212b", "#1d2a36", "#232d37", "#36414c", "#4b5762", "#5f6c78", "#93a0ab"]
       },
       "fog": {
         "role": "neutral",
@@ -56,25 +56,25 @@
         "role": "neutral",
         "displayName": "Hairline",
         "canonical": "#e0e5e9",
-        "tonalRamp": ["#66737f", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#f4f6f7", "#f7f9fa", "#ffffff"]
+        "tonalRamp": ["#5f6c78", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#f4f6f7", "#f7f9fa", "#ffffff"]
       },
       "field-edge": {
         "role": "neutral",
         "displayName": "Field edge",
         "canonical": "#7d8995",
-        "tonalRamp": ["#4b5762", "#66737f", "#7d8995", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#ffffff"]
+        "tonalRamp": ["#4b5762", "#5f6c78", "#7d8995", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#ffffff"]
       },
       "slate-muted": {
         "role": "neutral",
         "displayName": "Slate Muted",
-        "canonical": "#66737f",
-        "tonalRamp": ["#232d37", "#36414c", "#4b5762", "#66737f", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3"]
+        "canonical": "#5f6c78",
+        "tonalRamp": ["#232d37", "#36414c", "#4b5762", "#5f6c78", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3"]
       },
       "slate-text": {
         "role": "neutral",
         "displayName": "Slate Text",
         "canonical": "#36414c",
-        "tonalRamp": ["#0d151c", "#16212b", "#232d37", "#36414c", "#4b5762", "#66737f", "#93a0ab", "#c9d1d8"]
+        "tonalRamp": ["#0d151c", "#16212b", "#232d37", "#36414c", "#4b5762", "#5f6c78", "#93a0ab", "#c9d1d8"]
       }
     },
     "typographyMeta": {
@@ -131,7 +131,7 @@
       "refersTo": "card",
       "description": "A sheet on the fog page; edged by a hairline ring.",
       "html": "<section class=\"ds-card\"><h3 class=\"ds-card-title\">Grafana</h3><p class=\"ds-card-meta\">Upstream <code class=\"ds-code\">http://10.0.0.5:3000</code></p></section>",
-      "css": ".ds-card { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 0 0 1px rgb(22 33 43 / 0.06), 0 1px 2px rgb(22 33 43 / 0.04); font-family: 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-card-title { margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; color: #16212b; } .ds-card-meta { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: #66737f; } .ds-code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; background: #eef1f3; color: #36414c; padding: 2px 6px; border-radius: 4px; }"
+      "css": ".ds-card { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 0 0 1px rgb(22 33 43 / 0.06), 0 1px 2px rgb(22 33 43 / 0.04); font-family: 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-card-title { margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; color: #16212b; } .ds-card-meta { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: #5f6c78; } .ds-code { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; background: #eef1f3; color: #36414c; padding: 2px 6px; border-radius: 4px; }"
     },
     {
       "name": "Route Trace Menu",
@@ -139,7 +139,7 @@
       "refersTo": "nav-rail",
       "description": "The signature: a submenu drawn as a line, the current page as a lit node on it.",
       "html": "<nav class=\"ds-rail\"><button class=\"ds-group\"><span>Routing</span><svg class=\"ds-chev\" viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 6l6 6-6 6\"/></svg></button><ul class=\"ds-line\"><li class=\"ds-item ds-current\"><span class=\"ds-node\"></span>Proxies</li><li class=\"ds-item\"><span class=\"ds-node\"></span>Templates</li><li class=\"ds-item\"><span class=\"ds-node\"></span>Docker discovery</li></ul></nav>",
-      "css": ".ds-rail { background: #16212b; width: 260px; padding: 12px; border-radius: 10px; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-group { display: flex; width: 100%; align-items: center; justify-content: space-between; background: none; border: 0; color: #fff; font: 600 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; padding: 8px 12px; border-radius: 8px; cursor: pointer; } .ds-group:hover { background: rgb(255 255 255 / 0.05); } .ds-chev { transform: rotate(90deg); color: #66737f; } .ds-line { list-style: none; margin: 4px 0 0 21px; padding: 0; border-left: 1px solid rgb(79 209 181 / 0.25); } .ds-item { position: relative; padding: 6px 12px 6px 16px; color: #c9d1d8; border-radius: 8px; cursor: pointer; } .ds-item:hover { background: rgb(255 255 255 / 0.05); color: #fff; } .ds-node { position: absolute; left: 0; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #4b5762; transform: translate(-50%, -50%); } .ds-current { background: rgb(255 255 255 / 0.1); color: #fff; font-weight: 500; } .ds-current .ds-node { background: #4fd1b5; box-shadow: 0 0 0 4px rgb(79 209 181 / 0.2); }"
+      "css": ".ds-rail { background: #16212b; width: 260px; padding: 12px; border-radius: 10px; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-group { display: flex; width: 100%; align-items: center; justify-content: space-between; background: none; border: 0; color: #fff; font: 600 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; padding: 8px 12px; border-radius: 8px; cursor: pointer; } .ds-group:hover { background: rgb(255 255 255 / 0.05); } .ds-chev { transform: rotate(90deg); color: #5f6c78; } .ds-line { list-style: none; margin: 4px 0 0 21px; padding: 0; border-left: 1px solid rgb(79 209 181 / 0.25); } .ds-item { position: relative; padding: 6px 12px 6px 16px; color: #c9d1d8; border-radius: 8px; cursor: pointer; } .ds-item:hover { background: rgb(255 255 255 / 0.05); color: #fff; } .ds-node { position: absolute; left: 0; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #4b5762; transform: translate(-50%, -50%); } .ds-current { background: rgb(255 255 255 / 0.1); color: #fff; font-weight: 500; } .ds-current .ds-node { background: #4fd1b5; box-shadow: 0 0 0 4px rgb(79 209 181 / 0.2); }"
     },
     {
       "name": "Breadcrumb",
@@ -147,7 +147,7 @@
       "refersTo": "top-bar",
       "description": "The menu path in the top bar; the last step is the page you are on.",
       "html": "<ol class=\"ds-crumbs\"><li>Settings</li><li class=\"ds-sep\">&rsaquo;</li><li>My account</li><li class=\"ds-sep\">&rsaquo;</li><li class=\"ds-here\" aria-current=\"page\">API keys</li></ol>",
-      "css": ".ds-crumbs { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 16px; height: 56px; background: #fff; border-bottom: 1px solid #e0e5e9; list-style: none; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; color: #66737f; } .ds-sep { color: #c9d1d8; } .ds-here { color: #16212b; font-weight: 500; }"
+      "css": ".ds-crumbs { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0 16px; height: 56px; background: #fff; border-bottom: 1px solid #e0e5e9; list-style: none; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; color: #5f6c78; } .ds-sep { color: #c9d1d8; } .ds-here { color: #16212b; font-weight: 500; }"
     },
     {
       "name": "Status Pill",
@@ -163,7 +163,7 @@
       "refersTo": "input",
       "description": "A form option the chosen template cannot work with: disabled, with the reason beneath.",
       "html": "<div class=\"ds-opt\"><input type=\"checkbox\" disabled><div><div class=\"ds-opt-label\">Enable compression</div><div class=\"ds-opt-help\">Compress responses using gzip/zstd</div><div class=\"ds-opt-why\">Unavailable with this template: compression changes the body (ETag) and the Content-Length of HEAD responses, which breaks S3 SDK checksums.</div></div></div>",
-      "css": ".ds-opt { display: flex; gap: 12px; align-items: flex-start; max-width: 420px; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-opt input { margin-top: 3px; width: 16px; height: 16px; cursor: not-allowed; opacity: 0.7; } .ds-opt-label { font-weight: 500; color: #36414c; } .ds-opt-help { color: #66737f; } .ds-opt-why { color: #b45309; margin-top: 2px; }"
+      "css": ".ds-opt { display: flex; gap: 12px; align-items: flex-start; max-width: 420px; font: 400 14px/20px 'IBM Plex Sans Variable', system-ui, sans-serif; } .ds-opt input { margin-top: 3px; width: 16px; height: 16px; cursor: not-allowed; opacity: 0.7; } .ds-opt-label { font-weight: 500; color: #36414c; } .ds-opt-help { color: #5f6c78; } .ds-opt-why { color: #b45309; margin-top: 2px; }"
     }
   ],
   "narrative": {
