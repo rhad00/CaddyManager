@@ -5,6 +5,7 @@ import { Proxy } from '../../models/proxy';
 import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../../services/trafficAnalytics';
 
 import { readLiveReport, type LiveReport } from '../../services/liveTraffic';
+import { certificateTimeline } from '../../services/certificateTimeline';
 
 export const router = express.Router();
 
@@ -239,6 +240,34 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get traffic analytics error:', error);
     return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
+  }
+});
+
+/**
+ * @swagger
+ * /metrics/certificates:
+ *   get:
+ *     summary: When each proxy domain's certificate ends, soonest first
+ *     description: Built from the stored TLS check of each proxy (taken when it is saved or rechecked), so every row carries the time of that check.
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: One row per domain
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/certificates', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    const proxies = await Proxy.findAll({
+      attributes: ['id', 'name', 'domains', 'ssl_type', 'tls_status', 'tls_checked_at'],
+    });
+    return res.status(200).json({ success: true, certificates: certificateTimeline(proxies) });
+  } catch (error) {
+    console.error('Get certificate timeline error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading the certificates' });
   }
 });
 
