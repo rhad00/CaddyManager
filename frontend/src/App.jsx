@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -8,6 +8,7 @@ import PasswordResetRequest from './pages/PasswordResetRequest';
 import PasswordResetForm from './pages/PasswordResetForm';
 import ToastProvider from './components/ToastProvider';
 import ErrorBoundary from './components/ErrorBoundary';
+import { APP_TITLE } from './utils/version';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -25,6 +26,11 @@ const ProtectedRoute = ({ children }) => {
 };
 
 const App = () => {
+  // Every page (login and password reset included) names the app and the version it runs
+  useEffect(() => {
+    document.title = APP_TITLE;
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

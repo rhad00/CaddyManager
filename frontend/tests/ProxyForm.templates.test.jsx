@@ -29,7 +29,7 @@ const grafana = { id: 't-gr', name: 'Grafana', description: 'G', headers: [], mi
 describe('ProxyForm template constraints', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    global.fetch = vi.fn().mockResolvedValue(ok({ features: {} }))
+    globalThis.fetch = vi.fn().mockResolvedValue(ok({ features: {} }))
     get.mockImplementation(async (url) => {
       if (url === '/templates') return ok({ templates: [s3, grafana] })
       if (url === '/templates/t-s3') return ok({ template: s3 })
