@@ -4,12 +4,13 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Filler,
   Tooltip,
 } from 'chart.js';
 
 // Only what the history charts draw, so the bundle stays small
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip);
 
 // The design system's tokens (DESIGN.md): gateway teal for the one series, hairline for the grid
 export const CHART_COLORS = {
@@ -68,6 +69,25 @@ export function lineOptions(format, tickFormat = format) {
         border: { display: false },
         ticks: { callback: (value) => tickFormat(value), maxTicksLimit: 5 },
       },
+    },
+  };
+}
+
+/** Status classes, in stacking order. 2xx is the accent; the others only mark what went wrong or moved. */
+export const STATUS_SERIES = [
+  { key: 'ok', cls: '2xx', label: 'Success', color: CHART_COLORS.line },
+  { key: 'redirect', cls: '3xx', label: 'Redirect', color: '#93a0ab' },
+  { key: 'clientError', cls: '4xx', label: 'Client error', color: '#d97706' },
+  { key: 'serverError', cls: '5xx', label: 'Server error', color: '#dc2626' },
+];
+
+export function stackedBarOptions(format) {
+  const base = lineOptions(format);
+  return {
+    ...base,
+    scales: {
+      x: { ...base.scales.x, stacked: true },
+      y: { ...base.scales.y, stacked: true },
     },
   };
 }

@@ -1,21 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { get, apiError, describeError } from '../utils/api';
-import HistoryChart from '../components/metrics/HistoryChart';
-import StatusBreakdown from '../components/metrics/StatusBreakdown';
-import {
-  DASH,
-  formatBytes,
-  formatCount,
-  formatDuration,
-  formatPercent,
-  statusBreakdown,
-  verdict,
-  historySeries,
-  timeLabels,
-  ageText,
-  clockTime,
-} from '../utils/metricsModel';
+import TrafficSection from '../components/metrics/TrafficSection';
+import ProxyTable from '../components/metrics/ProxyTable';
+import CaddyServerSection from '../components/metrics/CaddyServerSection';
+import { ageText, clockTime } from '../utils/metricsModel';
+import { RANGES, DEFAULT_RANGE, OTHER_ID, isRange, scopeOf, proxyRows } from '../utils/trafficModel';
 
 const INTERVALS = [
   { value: 10, label: '10 seconds' },
@@ -34,40 +25,24 @@ const readInterval = () => {
   }
 };
 
-const TONE = {
-  ok: 'bg-green-100 text-green-900',
-  warn: 'bg-amber-100 text-amber-900',
-  bad: 'bg-red-100 text-red-900',
-  unknown: 'bg-gray-100 text-gray-800',
-};
+const intervalLabel = (seconds) => INTERVALS.find((i) => i.value === seconds)?.label;
 
-const perMinute = (v) => `${v.toFixed(v < 10 ? 1 : 0)} per min`;
-const mebibytes = (v) => `${v.toFixed(1)} MiB`;
-const plainTick = (v) => String(Number(v.toFixed(1)));
-
-const Stat = ({ label, value }) => (
-  <div className="min-w-0">
-    <dt className="text-sm text-gray-700">{label}</dt>
-    <dd className="mt-1 font-mono text-xl font-semibold tabular-nums text-gray-900">{value}</dd>
-  </div>
-);
-
-const Detail = ({ label, value, note }) => (
-  <div className="flex items-baseline justify-between gap-4 border-b border-gray-200 py-3 last:border-0">
-    <dt className="text-sm text-gray-700">
-      {label}
-      {note && <span className="block text-gray-600">{note}</span>}
-    </dt>
-    <dd className="shrink-0 font-mono text-sm tabular-nums text-gray-900">{value}</dd>
-  </div>
-);
+async function load(path, token, action) {
+  const response = await get(path, token);
+  if (!response.ok) throw await apiError(response, action);
+  return response.json();
+}
 
 const MetricsDashboard = () => {
   const { token } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const range = isRange(params.get('range')) ? params.get('range') : DEFAULT_RANGE;
+  const proxyId = params.get('proxy');
+
   const [metrics, setMetrics] = useState(null);
   const [history, setHistory] = useState([]);
-  const [error, setError] = useState(null);
-  const [historyError, setHistoryError] = useState(null);
+  const [traffic, setTraffic] = useState(null);
+  const [errors, setErrors] = useState({ metrics: null, history: null, traffic: null });
   const [refreshing, setRefreshing] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [loadedAt, setLoadedAt] = useState(null);
@@ -75,36 +50,44 @@ const MetricsDashboard = () => {
   const [now, setNow] = useState(Date.now());
   const inFlight = useRef(false);
 
-  // One refresh loads the current figures and the history, so the page never shows two ages
+  // One refresh loads Caddy's figures, its history and the traffic, so the page never shows two ages
   const refresh = useCallback(async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setRefreshing(true);
+    const next = { metrics: null, history: null, traffic: null };
+    let ok = false;
+
     try {
-      const response = await get('/metrics', token);
-      if (!response.ok) throw await apiError(response, 'load metrics');
-      const data = await response.json();
+      const data = await load('/metrics', token, 'load metrics');
       setMetrics(data.metrics ?? null);
-      setLoadedAt(Date.now());
-      setError(null);
+      ok = true;
     } catch (err) {
       console.error('Error fetching metrics:', err);
-      setError(describeError(err, 'load the metrics'));
+      next.metrics = describeError(err, 'load the metrics');
     }
     try {
-      const response = await get('/metrics/historical?limit=24', token);
-      if (!response.ok) throw await apiError(response, 'load the history');
-      const data = await response.json();
+      const data = await load('/metrics/historical?limit=24', token, 'load the history');
       setHistory(Array.isArray(data.metrics) ? data.metrics : []);
-      setHistoryError(null);
     } catch (err) {
       console.error('Error fetching historical metrics:', err);
-      setHistoryError(describeError(err, 'load the history'));
+      next.history = describeError(err, 'load the history');
     }
+    try {
+      const data = await load(`/metrics/traffic?range=${range}`, token, 'load the traffic');
+      setTraffic(data.traffic ?? null);
+      ok = true;
+    } catch (err) {
+      console.error('Error fetching traffic:', err);
+      next.traffic = describeError(err, 'load the traffic');
+    }
+
+    setErrors(next);
+    if (ok) setLoadedAt(Date.now());
     inFlight.current = false;
     setRefreshing(false);
     setLoadedOnce(true);
-  }, [token]);
+  }, [token, range]);
 
   useEffect(() => {
     refresh();
@@ -129,45 +112,108 @@ const MetricsDashboard = () => {
     }
   };
 
-  const points = useMemo(() => historySeries(history), [history]);
-  const labels = useMemo(() => timeLabels(points), [points]);
-  const rates = useMemo(() => points.map((p) => p.perMinute), [points]);
-  const memory = useMemo(() => points.map((p) => p.memoryMiB), [points]);
+  const update = useCallback(
+    (changes) => {
+      const next = new URLSearchParams(params);
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null || value === undefined || (key === 'range' && value === DEFAULT_RANGE)) next.delete(key);
+        else next.set(key, value);
+      }
+      setParams(next, { replace: true });
+    },
+    [params, setParams],
+  );
+
+  const linkFor = useCallback(
+    (id) => {
+      const next = new URLSearchParams(params);
+      if (id) next.set('proxy', id);
+      else next.delete('proxy');
+      const text = next.toString();
+      return { search: text ? `?${text}` : '' };
+    },
+    [params],
+  );
+
+  const scope = useMemo(() => scopeOf(traffic, proxyId), [traffic, proxyId]);
+  const rows = useMemo(() => proxyRows(traffic), [traffic]);
+  const unknownProxy = Boolean(proxyId && traffic && !scope);
+  const shown = scope ?? scopeOf(traffic, null);
+
+  const noData = !metrics && !traffic;
 
   const header = (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Caddy metrics</h1>
-        <p role="status" className="mt-1 text-sm text-gray-700">
-          {refreshing
-            ? 'Updating…'
-            : loadedAt
-              ? `Updated ${clockTime(loadedAt)}, ${ageText(loadedAt, now)}`
-              : loadedOnce ? 'Not updated yet' : 'Loading…'}
-        </p>
-      </div>
-      <div className="flex items-end gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <label htmlFor="refresh-interval" className="block text-sm font-medium text-gray-800">Auto-refresh every</label>
-          <select
-            id="refresh-interval"
-            value={interval}
-            onChange={(e) => chooseInterval(Number(e.target.value))}
-            className="mt-1 block min-h-11 rounded-md border border-edge bg-white px-3 text-sm text-gray-900"
+          <h1 className="text-2xl font-semibold text-gray-900">Caddy metrics</h1>
+          <p role="status" className="mt-1 text-sm text-gray-700">
+            {refreshing
+              ? 'Updating…'
+              : loadedAt
+                ? `Updated ${clockTime(loadedAt)}, ${ageText(loadedAt, now)}`
+                : loadedOnce ? 'Not updated yet' : 'Loading…'}
+          </p>
+        </div>
+        <div className="flex items-end gap-3">
+          <div>
+            <label htmlFor="refresh-interval" className="block text-sm font-medium text-gray-800">Auto-refresh every</label>
+            <select
+              id="refresh-interval"
+              value={interval}
+              onChange={(e) => chooseInterval(Number(e.target.value))}
+              className="mt-1 block min-h-11 rounded-md border border-edge bg-white px-3 text-sm text-gray-900"
+            >
+              {INTERVALS.map((i) => (
+                <option key={i.value} value={i.value}>{i.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="min-h-11 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {INTERVALS.map((i) => (
-              <option key={i.value} value={i.value}>{i.label}</option>
+            Refresh now
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div>
+          <label htmlFor="proxy-scope" className="block text-sm font-medium text-gray-800">Proxy</label>
+          <select
+            id="proxy-scope"
+            value={scope?.id ?? ''}
+            onChange={(e) => update({ proxy: e.target.value || null })}
+            className="mt-1 block min-h-11 w-full min-w-[14rem] rounded-md border border-edge bg-white px-3 text-sm text-gray-900 sm:w-auto"
+          >
+            <option value="">All proxies</option>
+            {(traffic?.proxies || []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
+            {traffic?.other && <option value={OTHER_ID}>Other hosts</option>}
           </select>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={refreshing}
-          className="min-h-11 rounded-md bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-        >
-          Refresh now
-        </button>
+        <fieldset>
+          <legend className="block text-sm font-medium text-gray-800">Period</legend>
+          <div className="mt-1 inline-flex overflow-hidden rounded-md border border-edge bg-white">
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                aria-pressed={r.value === range}
+                onClick={() => update({ range: r.value })}
+                className={`min-h-11 border-l border-edge px-3 text-sm first:border-l-0 ${
+                  r.value === range ? 'bg-indigo-600 font-medium text-white' : 'text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
       </div>
     </div>
   );
@@ -181,85 +227,93 @@ const MetricsDashboard = () => {
     );
   }
 
-  if (error && !metrics) {
+  if (noData) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         {header}
         <div role="alert" className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
-          <p>{error}</p>
+          <p>{errors.metrics || errors.traffic}</p>
           <p className="mt-1">
-            Check that Caddy is running and its admin API is reachable, then try again. This page retries on its own every{' '}
-            {INTERVALS.find((i) => i.value === interval)?.label}.
+            Check that the CaddyManager backend and Caddy are running, then try again. This page retries on its own every{' '}
+            {intervalLabel(interval)}.
           </p>
         </div>
       </div>
     );
   }
 
-  const v = verdict(metrics);
-  const status = statusBreakdown(metrics?.http?.responseStatus);
-  const errorShare = status.find((r) => r.cls === '5xx')?.share ?? null;
-  const http = metrics?.http;
-  const system = metrics?.system;
-  const tls = metrics?.tls;
+  // Only a failed refresh of figures that are on screen is "old data"; a section that never loaded has its own message
+  const stale = (metrics && errors.metrics) || (traffic && errors.traffic) || null;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       {header}
 
-      {error && (
+      {stale && (
         <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          Showing the figures from {clockTime(loadedAt)}. The last refresh failed: {error.replace(/\.?$/, '.')} Retrying in at most{' '}
-          {INTERVALS.find((i) => i.value === interval)?.label}.
+          Some figures are from {clockTime(loadedAt)} or earlier. The last refresh failed: {stale.replace(/\.?$/, '.')} Retrying in at most{' '}
+          {intervalLabel(interval)}.
         </div>
       )}
 
-      <section aria-labelledby="health-title" className="rounded-lg bg-white p-5 shadow-sm">
-        <h2 id="health-title" className="sr-only">Health</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className={`rounded-full px-3 py-1 text-sm font-medium ${TONE[v.tone]}`}>{v.label}</span>
-          <p className="text-base text-gray-900">{v.text}</p>
+      <section aria-labelledby="traffic-title" className="space-y-6">
+        <div>
+          {scope?.id ? (
+            <>
+              <Link to={linkFor(null)} className="inline-flex min-h-11 items-center text-sm font-medium text-indigo-700 hover:underline">
+                Back to all proxies
+              </Link>
+              <h2 id="traffic-title" className="text-xl font-semibold text-gray-900">{scope.name}</h2>
+              {scope.domains.length > 0 && (
+                <p className="mt-1 break-words font-mono text-sm text-gray-700">{scope.domains.join(', ')}</p>
+              )}
+            </>
+          ) : (
+            <h2 id="traffic-title" className="text-xl font-semibold text-gray-900">Traffic</h2>
+          )}
         </div>
-        <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-gray-200 pt-5 lg:grid-cols-4">
-          <Stat label="Server errors (5xx)" value={formatPercent(errorShare)} />
-          <Stat label="Average response time" value={formatDuration(http?.avgRequestDuration)} />
-          <Stat label="Certificates managed" value={formatCount(tls?.certificatesTotal)} />
-          <Stat label="Process memory" value={formatBytes(system?.memoryBytes)} />
-        </dl>
+
+        {unknownProxy && (
+          <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            That proxy no longer exists, so all proxies are shown.
+          </p>
+        )}
+
+        {errors.traffic && !traffic && (
+          <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">{errors.traffic}</p>
+        )}
+
+        {traffic && !traffic.available && (
+          <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-800">
+            There is no access log yet. These charts are built from Caddy&apos;s access log, which appears once Caddy has served its first request.
+          </p>
+        )}
+
+        {traffic && traffic.available && !traffic.coversWindow && (
+          <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-800">
+            The access log does not reach back this far, so the start of the charts is empty.
+          </p>
+        )}
+
+        {traffic && shown && traffic.available && (
+          <TrafficSection
+            traffic={traffic}
+            summary={shown.summary}
+            afterRequests={shown.id ? null : <ProxyTable rows={rows} linkFor={linkFor} />}
+          />
+        )}
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <HistoryChart
-          title="Requests per minute"
-          hint="Caddy is sampled about once an hour, so a chart needs two samples. Check back later."
-          labels={labels}
-          values={rates}
-          format={perMinute}
-          tickFormat={plainTick}
-          unavailable={historyError}
-        />
-        <HistoryChart
-          title="Process memory (MiB)"
-          hint="Caddy is sampled about once an hour. The first samples appear after the next one."
-          labels={labels}
-          values={memory}
-          format={mebibytes}
-          tickFormat={plainTick}
-          unavailable={historyError}
-        />
-      </div>
-
-      <StatusBreakdown responseStatus={http?.responseStatus} />
-
-      <section aria-labelledby="details-title" className="rounded-lg bg-white p-5 shadow-sm">
-        <h2 id="details-title" className="text-base font-semibold text-gray-900">Details</h2>
-        <p className="mt-1 text-sm text-gray-600">From Caddy&apos;s own metrics. Counts run since Caddy started.</p>
-        <dl className="mt-3">
-          <Detail label="Requests" value={formatCount(http?.requestsTotal)} />
-          <Detail label="CPU time" note="Cumulative seconds, not a percentage" value={system?.cpuSeconds == null ? DASH : `${system.cpuSeconds.toFixed(2)} s`} />
-          <Detail label="Concurrent tasks" note="Go routines inside Caddy" value={formatCount(system?.goroutines)} />
-          <Detail label="TLS handshakes" value={formatCount(tls?.handshakesTotal)} />
-        </dl>
+      <section aria-labelledby="server-title" className="space-y-6">
+        <div>
+          <h2 id="server-title" className="text-xl font-semibold text-gray-900">Caddy server</h2>
+          <p className="mt-1 text-sm text-gray-600">The Caddy process itself, from its own metrics.</p>
+        </div>
+        {errors.metrics && !metrics ? (
+          <p role="alert" className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">{errors.metrics}</p>
+        ) : (
+          <CaddyServerSection metrics={metrics} history={history} historyError={errors.history} />
+        )}
       </section>
     </div>
   );

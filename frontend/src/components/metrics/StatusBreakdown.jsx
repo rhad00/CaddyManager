@@ -1,16 +1,17 @@
 import React from 'react';
+import { STATUS_SERIES } from './chartTheme';
 import { statusBreakdown, formatCount, formatPercent, DASH } from '../../utils/metricsModel';
 
-const BAR = { '2xx': 'bg-green-600', '3xx': 'bg-blue-600', '4xx': 'bg-amber-600', '5xx': 'bg-red-600' };
+const COLOR = Object.fromEntries(STATUS_SERIES.map((s) => [s.cls, s.color]));
 const NAME = { '2xx': 'Success', '3xx': 'Redirect', '4xx': 'Client error', '5xx': 'Server error' };
 
 /** Responses by status class as a table: the numbers are text, the bar only repeats them */
-export default function StatusBreakdown({ responseStatus }) {
+export default function StatusBreakdown({ responseStatus, note = 'Counted since Caddy started.' }) {
   const rows = statusBreakdown(responseStatus);
   return (
     <section aria-labelledby="status-breakdown" className="rounded-lg bg-white p-5 shadow-sm">
-      <h2 id="status-breakdown" className="text-base font-semibold text-gray-900">Responses by status</h2>
-      <p className="mt-1 text-sm text-gray-600">Counted since Caddy started.</p>
+      <h3 id="status-breakdown" className="text-base font-semibold text-gray-900">Responses by status</h3>
+      <p className="mt-1 text-sm text-gray-600">{note}</p>
       <table className="mt-4 w-full text-sm">
         <thead>
           <tr className="border-b border-gray-200 text-left text-gray-700">
@@ -30,7 +31,7 @@ export default function StatusBreakdown({ responseStatus }) {
               <td className="py-3 pr-3 text-right font-mono text-gray-900">{share === null ? DASH : formatPercent(share)}</td>
               <td className="hidden py-3 sm:table-cell" aria-hidden="true">
                 <div className="h-2 rounded-full bg-gray-100">
-                  <div className={`h-2 rounded-full ${BAR[cls]}`} style={{ width: `${Math.max((share ?? 0) * 100, share ? 1 : 0)}%` }} />
+                  <div className="h-2 rounded-full" style={{ backgroundColor: COLOR[cls], width: `${Math.max((share ?? 0) * 100, share ? 1 : 0)}%` }} />
                 </div>
               </td>
             </tr>
