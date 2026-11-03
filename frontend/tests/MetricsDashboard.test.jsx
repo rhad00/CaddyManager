@@ -108,6 +108,7 @@ const serve = (over = {}) => {
       })
     }
     if (path.startsWith('/metrics/live')) return ok({ live: null })
+    if (path.startsWith('/metrics/upstreams')) return ok({ upstreams: null })
     if (path.startsWith('/metrics/certificates')) return ok({ certificates: [] })
     if (path.startsWith('/metrics/historical')) return replies.history
     return replies.metrics

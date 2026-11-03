@@ -74,6 +74,16 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.body.traffic.available).toBe(false);
 });
 
+test('upstreams: probes the active proxies and keeps working without the Caddy admin API', async () => {
+  const res = await request(app).get('/api/metrics/upstreams');
+
+  expect(res.status).toBe(200);
+  expect(res.body.upstreams.caddyAvailable).toBe(false);
+  expect(res.body.upstreams.rows).toHaveLength(1);
+  expect(res.body.upstreams.rows[0]).toMatchObject({ proxyName: 'Cloud', dial: 'cloud:80', inFlight: null });
+  expect(['up', 'down']).toContain(res.body.upstreams.rows[0].state);
+});
+
 test('certificates: one row per domain with the stored check', async () => {
   const proxy = await Proxy.findOne({ where: { name: 'Cloud' } });
   const validTo = new Date(Date.now() + 10 * 86_400_000).toISOString();
