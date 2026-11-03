@@ -7,6 +7,13 @@ import { logAction } from '../../services/auditService';
 import { currentUser } from '../../utils/requestUser';
 import { validateMiddlewares } from '../../utils/proxyMiddlewares';
 import { validateHeadersConfig, type ValidationResult } from '../../utils/proxyValidation';
+import { constraintsFor, forcedProxyValues } from '../../utils/templateConstraints';
+
+/** A template as the API returns it, with the proxy options it cannot work with */
+const withConstraints = (template: Template) => ({
+  ...(typeof template.toJSON === 'function' ? template.toJSON() : template),
+  constraints: constraintsFor(template.name),
+});
 
 // Headers and middlewares of a template end up on proxies and in Caddy's configuration
 const validateTemplateContent = ({ headers, middleware }: { headers?: unknown; middleware?: unknown }): ValidationResult => {
@@ -65,7 +72,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
       return res.status(200).json({
         success: true,
-        templates,
+        templates: templates.map(withConstraints),
         pagination: {
           total: count,
           page: pageNum,
@@ -79,7 +86,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     
     res.status(200).json({
       success: true,
-      templates
+      templates: templates.map(withConstraints)
     });
   } catch (error) {
     console.error('Get templates error:', error);
@@ -123,7 +130,7 @@ router.get('/:id', authMiddleware, async (req: Request<{ id: string }>, res: Res
     
     res.status(200).json({
       success: true,
-      template
+      template: withConstraints(template)
     });
   } catch (error) {
     console.error('Get template error:', error);
@@ -406,6 +413,12 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
       });
     }
     
+    // Options the template cannot work with are reset first, so the route Caddy gets is valid
+    const adjusted = constraintsFor(template.name)
+      .filter((c) => c.option === 'basic_auth' ? Boolean(proxy.basic_auth) : proxy[c.option] !== c.value)
+      .map((c) => c.option);
+    if (adjusted.length > 0) await proxy.update(forcedProxyValues(template.name));
+
     // Apply template to proxy
     const result = await caddyService.applyTemplate(proxy, template);
     
@@ -418,7 +431,8 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
       details: {
         templateName: template.name,
         proxyId: proxy.id,
-        proxyName: proxy.name
+        proxyName: proxy.name,
+        adjusted
       },
       status: 'success'
     }, req);
@@ -426,6 +440,7 @@ router.post('/:id/apply/:proxyId', [authMiddleware, roleMiddleware('admin')], as
     res.status(200).json({
       success: true,
       message: 'Template applied successfully',
+      adjusted,
       result
     });
   } catch (error) {

@@ -15,6 +15,8 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedTemplateDetails, setSelectedTemplateDetails] = useState(null);
+  // Options the selected template cannot work with: [{ option, reason }]
+  const [templateConstraints, setTemplateConstraints] = useState([]);
   const [configPreview, setConfigPreview] = useState(null);
   const [securityHeadersEnabled, setSecurityHeadersEnabled] = useState(false);
   const [rateLimitEnabled, setRateLimitEnabled] = useState(false);
@@ -165,6 +167,27 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
   const [savedProxyData, setSavedProxyData] = useState(null);
 
+  const lockReason = (option) => templateConstraints.find((c) => c.option === option)?.reason;
+
+  // Lock the options of a template and switch them off, so the form cannot send a combination
+  // the template does not work with
+  const applyTemplateConstraints = (constraints) => {
+    setTemplateConstraints(constraints);
+    for (const { option } of constraints) {
+      if (option === 'compression_enabled') setCompressionEnabled(false);
+      if (option === 'basic_auth') setBasicAuthEnabled(false);
+    }
+  };
+
+  const reportDns = (results) => {
+    for (const r of results || []) {
+      if (r.status === 'created') toast.success(`DNS: ${r.message}`);
+      else if (r.status === 'conflict' || r.status === 'failed' || r.status === 'no_zone') {
+        toast.error(`DNS ${r.domain}: ${r.message}`, { duration: 8000 });
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -244,6 +267,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
 
       const responseData = await response.json();
       setSavedProxyData(responseData);
+      reportDns(responseData.dns);
 
       // If a template was selected, apply it to the proxy
       if (selectedTemplate) {
@@ -375,6 +399,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
           {sslType === 'cloudflare' && (
             <div className="mt-2 text-sm text-gray-500">
               Cloudflare DNS challenge selected. Ensure the server has `CF_API_TOKEN` set so Caddy can use Cloudflare to complete ACME challenges.
+              The Cloudflare zone is detected from the domain and a missing A record pointing to this server is created when you save.
               {!features.cloudflare && (
                 <span className="block mt-1 text-yellow-600 font-medium">
                   Note: CF_API_TOKEN is not detected on the backend. Ensure it is set for the Caddy service.
@@ -410,8 +435,9 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                 id="compression_enabled"
                 type="checkbox"
                 checked={compressionEnabled}
+                disabled={Boolean(lockReason('compression_enabled'))}
                 onChange={(e) => setCompressionEnabled(e.target.checked)}
-                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
             <div className="ml-3 text-sm">
@@ -421,6 +447,9 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
               <p className="text-gray-500">
                 Compress responses using gzip/zstd
               </p>
+              {lockReason('compression_enabled') && (
+                <p className="text-amber-700">Unavailable with this template: {lockReason('compression_enabled')}</p>
+              )}
             </div>
           </div>
 
@@ -544,14 +573,18 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                 id="basic_auth_enabled"
                 type="checkbox"
                 checked={basicAuthEnabled}
+                disabled={Boolean(lockReason('basic_auth'))}
                 onChange={(e) => setBasicAuthEnabled(e.target.checked)}
-                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
             <div className="ml-3 text-sm flex-grow">
               <label htmlFor="basic_auth_enabled" className="font-medium text-gray-700">
                 Enable Basic Authentication
               </label>
+              {lockReason('basic_auth') && (
+                <p className="text-amber-700">Unavailable with this template: {lockReason('basic_auth')}</p>
+              )}
               {basicAuthEnabled && (
                 <div className="mt-2 space-y-3">
                   <div>
@@ -818,12 +851,14 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                       if (response.ok) {
                         const data = await response.json();
                         setSelectedTemplateDetails(data.template);
+                        applyTemplateConstraints(data.template.constraints || []);
                       }
                     } catch (error) {
                       console.error('Error fetching template details:', error);
                     }
                   } else {
                     setSelectedTemplateDetails(null);
+                    setTemplateConstraints([]);
                   }
                 }}
                 className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"

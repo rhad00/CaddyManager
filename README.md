@@ -609,6 +609,9 @@ All backend environment variables can be set in `.env` files or passed directly 
 | `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup (a recovery copy, never loaded back automatically) is kept; the bundled compose files mount `/app/config_backups` as a volume | No |
 | `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
+| `PUBLIC_IP` | detected via api.ipify.org | IPv4 address the automatic Cloudflare A records point to | No |
+| `CF_DNS_PROXIED` | `false` | Create the automatic A records with the Cloudflare proxy (orange cloud) on | No |
+| `CF_DNS_AUTO` | `true` | Set `false` to stop creating A records for `ssl_type: cloudflare` proxies | No |
 | `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Who Caddy believes about the visitor's address. Behind a proxy on the same Docker/private network set `private_ranges`; behind Cloudflare set its published ranges (ready to paste in `.env.template`). Without it every visitor behind that proxy shares one rate-limit bucket | No |
 | `UPSTREAM_ALLOW_PRIVATE` | `false` | Allow proxy upstreams on private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`), for example `https://10.0.0.5`. Off by default so a proxy cannot be aimed at your network by mistake. Loopback, link-local and cloud-metadata addresses stay blocked either way | No |
 | `CADDY_CLIENT_IP_HEADERS` | `X-Forwarded-For` | Headers a trusted proxy puts the visitor address in; for Cloudflare use `CF-Connecting-IP X-Forwarded-For` | No |
@@ -822,6 +825,7 @@ After setting up the API token:
 - If `CF_API_TOKEN` is present in the environment, the frontend will surface the Cloudflare option automatically
 - Treat `ssl_type: cloudflare` the same as `acme` for certificate issuance
 - The actual DNS challenge handling is performed by Caddy using the token you provide
+- Saving a `cloudflare` proxy also creates the missing A record of each domain: the zone is detected from the domain with the token (it needs `Zone:Read` and `DNS:Edit`), an existing record is never overwritten, and `POST /api/proxies/:id/sync-dns` does the same for an existing proxy
 - API Tokens are more secure than Global API Keys as they have scoped permissions and can be revoked independently
 
 ---
