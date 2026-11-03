@@ -74,7 +74,8 @@ const MetricsDashboard = () => {
       next.history = describeError(err, 'load the history');
     }
     try {
-      const data = await load(`/metrics/traffic?range=${range}`, token, 'load the traffic');
+      const scopeQuery = proxyId ? `&proxy=${encodeURIComponent(proxyId)}` : '';
+      const data = await load(`/metrics/traffic?range=${range}${scopeQuery}`, token, 'load the traffic');
       setTraffic(data.traffic ?? null);
       ok = true;
     } catch (err) {
@@ -87,7 +88,7 @@ const MetricsDashboard = () => {
     inFlight.current = false;
     setRefreshing(false);
     setLoadedOnce(true);
-  }, [token, range]);
+  }, [token, range, proxyId]);
 
   useEffect(() => {
     refresh();
