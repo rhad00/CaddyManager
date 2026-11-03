@@ -18,7 +18,7 @@ export interface TrafficSince {
 }
 
 /** "App.Example.com:443" -> "app.example.com" */
-const normalizeHost = (host: string): string => String(host).toLowerCase().replace(/:\d+$/, '');
+export const normalizeHost = (host: string): string => String(host).toLowerCase().replace(/:\d+$/, '');
 
 /**
  * Count requests and server errors (5xx) per host since `sinceTs`.

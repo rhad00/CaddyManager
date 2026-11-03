@@ -1,6 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import { metricsService } from '../../services/metricsService';
 import { authMiddleware, roleMiddleware } from '../../middleware/auth';
+import { Proxy } from '../../models/proxy';
+import { isRangeKey, readTrafficReport, type RangeKey, type TrafficReport } from '../../services/trafficAnalytics';
 
 export const router = express.Router();
 
@@ -169,6 +171,61 @@ router.get('/tls', authMiddleware, async (req: Request, res: Response) => {
       success: false, 
       message: 'Server error while retrieving TLS metrics' 
     });
+  }
+});
+
+/** The access log is read once per range every few seconds, however many pages poll it */
+const TRAFFIC_CACHE_MS = 15_000;
+const trafficCache = new Map<RangeKey, { at: number; report: Promise<TrafficReport> }>();
+
+/**
+ * @swagger
+ * /metrics/traffic:
+ *   get:
+ *     summary: Traffic analytics per proxy from the Caddy access log
+ *     description: Requests over time by status class, bandwidth, latency, top paths and clients, for every proxy and in total.
+ *     tags: [Metrics]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         schema:
+ *           type: string
+ *           enum: [1h, 6h, 24h, 7d]
+ *           default: 24h
+ *     responses:
+ *       200:
+ *         description: Traffic report
+ *       400:
+ *         $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/schemas/Error'
+ */
+router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
+  const range = req.query.range === undefined ? '24h' : req.query.range;
+  if (!isRangeKey(range)) {
+    return res.status(400).json({ success: false, message: 'The range must be 1h, 6h, 24h or 7d.' });
+  }
+
+  try {
+    let cached = trafficCache.get(range);
+    if (!cached || Date.now() - cached.at > TRAFFIC_CACHE_MS) {
+      const proxies = await Proxy.findAll({ attributes: ['id', 'name', 'domains', 'status'], order: [['name', 'ASC']] });
+      const report = readTrafficReport({
+        proxies: proxies.map((p) => ({ id: p.id, name: p.name, domains: p.domains, status: p.status })),
+        range,
+      });
+      cached = { at: Date.now(), report };
+      trafficCache.set(range, cached);
+      // A failed read must not be served from the cache for the next 15 seconds
+      report.catch(() => trafficCache.delete(range));
+    }
+    return res.status(200).json({ success: true, traffic: await cached.report });
+  } catch (error) {
+    console.error('Get traffic analytics error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading the traffic analytics' });
   }
 });
 
