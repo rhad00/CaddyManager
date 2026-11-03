@@ -44,6 +44,28 @@ const blockList = new net.BlockList();
 for (const [prefix, bits] of BLOCKED_IPV4_SUBNETS) blockList.addSubnet(prefix, bits, 'ipv4');
 for (const [prefix, bits] of BLOCKED_IPV6_SUBNETS) blockList.addSubnet(prefix, bits, 'ipv6');
 
+// Private ranges that the opt-ins (UPSTREAM_ALLOW_PRIVATE, ALERT_WEBHOOK_ALLOW_PRIVATE) may open
+// up. Loopback, link-local (cloud metadata) and the other reserved ranges are never in here.
+const PRIVATE_SUBNETS: Array<[prefix: string, bits: number, family: 'ipv4' | 'ipv6']> = [
+  ['10.0.0.0', 8, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
+  ['100.64.0.0', 10, 'ipv4'],
+  ['fc00::', 7, 'ipv6'],
+];
+
+const privateList = new net.BlockList();
+for (const [prefix, bits, family] of PRIVATE_SUBNETS) privateList.addSubnet(prefix, bits, family);
+
+/**
+ * @param host - IP literal (IPv6 without brackets); a host name is never "private" here
+ * @returns true when the address is in a range the opt-ins may allow
+ */
+export function isPrivateAddress(host: string): boolean {
+  const family = net.isIP(host);
+  return family !== 0 && privateList.check(host, family === 4 ? 'ipv4' : 'ipv6');
+}
+
 /**
  * @param host - hostname or IP literal (IPv6 without brackets)
  * @returns true when the host must not be used as an upstream
@@ -60,4 +82,18 @@ export function isRestrictedHost(host: string): boolean {
   if (family === 4) return blockList.check(name, 'ipv4');
   if (family === 6) return blockList.check(name, 'ipv6');
   return false;
+}
+
+/**
+ * Upstream check with the UPSTREAM_ALLOW_PRIVATE opt-in. A reverse proxy often fronts services
+ * on a LAN, so an admin can allow private ranges (10/8, 172.16/12, 192.168/16, ...). Loopback,
+ * link-local and cloud-metadata addresses stay blocked. The variable is read on every call.
+ *
+ * @param host - hostname or IP literal (IPv6 without brackets)
+ * @returns true when the host must not be used as an upstream
+ */
+export function isRestrictedUpstream(host: string): boolean {
+  if (!isRestrictedHost(host)) return false;
+  if (process.env.UPSTREAM_ALLOW_PRIVATE !== 'true') return true;
+  return !isPrivateAddress(String(host).toLowerCase().replace(/\.+$/, ''));
 }

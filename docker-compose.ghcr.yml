@@ -57,6 +57,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - UPSTREAM_ALLOW_PRIVATE=${UPSTREAM_ALLOW_PRIVATE:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - APP_URL=${APP_URL:-http://localhost:8080}
     volumes:
