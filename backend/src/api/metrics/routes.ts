@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import { metricsService } from '../../services/metricsService';
 import { authMiddleware, roleMiddleware } from '../../middleware/auth';
 import { Proxy } from '../../models/proxy';
-import { isRangeKey, readTrafficReport, type RangeKey, type TrafficReport } from '../../services/trafficAnalytics';
+import { isRangeKey, readTrafficReport, OTHER_ID, type TrafficReport } from '../../services/trafficAnalytics';
 
 export const router = express.Router();
 
@@ -176,7 +176,7 @@ router.get('/tls', authMiddleware, async (req: Request, res: Response) => {
 
 /** The access log is read once per range every few seconds, however many pages poll it */
 const TRAFFIC_CACHE_MS = 15_000;
-const trafficCache = new Map<RangeKey, { at: number; report: Promise<TrafficReport> }>();
+const trafficCache = new Map<string, { at: number; report: Promise<TrafficReport> }>();
 
 /**
  * @swagger
@@ -195,6 +195,11 @@ const trafficCache = new Map<RangeKey, { at: number; report: Promise<TrafficRepo
  *           type: string
  *           enum: [1h, 6h, 24h, 7d]
  *           default: 24h
+ *       - in: query
+ *         name: proxy
+ *         description: A proxy id, or "other" for hosts that belong to no proxy. That scope (and the total) gets the detailed breakdowns.
+ *         schema:
+ *           type: string
  *     responses:
  *       200:
  *         description: Traffic report
@@ -210,17 +215,23 @@ router.get('/traffic', authMiddleware, async (req: Request, res: Response) => {
   }
 
   try {
-    let cached = trafficCache.get(range);
+    const proxies = await Proxy.findAll({ attributes: ['id', 'name', 'domains', 'status'], order: [['name', 'ASC']] });
+    // Only a proxy that exists (or "other") is a scope: an arbitrary string must not fill the cache
+    const asked = typeof req.query.proxy === 'string' ? req.query.proxy : null;
+    const scope = asked !== null && (asked === OTHER_ID || proxies.some((p) => p.id === asked)) ? asked : null;
+    const cacheKey = `${range}:${scope ?? ''}`;
+
+    let cached = trafficCache.get(cacheKey);
     if (!cached || Date.now() - cached.at > TRAFFIC_CACHE_MS) {
-      const proxies = await Proxy.findAll({ attributes: ['id', 'name', 'domains', 'status'], order: [['name', 'ASC']] });
       const report = readTrafficReport({
         proxies: proxies.map((p) => ({ id: p.id, name: p.name, domains: p.domains, status: p.status })),
         range,
+        scope,
       });
       cached = { at: Date.now(), report };
-      trafficCache.set(range, cached);
+      trafficCache.set(cacheKey, cached);
       // A failed read must not be served from the cache for the next 15 seconds
-      report.catch(() => trafficCache.delete(range));
+      report.catch(() => trafficCache.delete(cacheKey));
     }
     return res.status(200).json({ success: true, traffic: await cached.report });
   } catch (error) {

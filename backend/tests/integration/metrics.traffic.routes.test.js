@@ -73,3 +73,19 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.status).toBe(200);
   expect(res.body.traffic.available).toBe(false);
 });
+
+test('a proxy scope returns the detailed breakdowns for that proxy and the total only', async () => {
+  fs.writeFileSync(logFile, [line(60, 'cloud.example.com', 200), line(20, 'scanner.example.org', 404)].join('\n'));
+  const proxy = await Proxy.findOne({ where: { name: 'Cloud' } });
+
+  const res = await request(app).get(`/api/metrics/traffic?range=1h&proxy=${proxy.id}`);
+  const cloud = res.body.traffic.proxies.find((p) => p.name === 'Cloud');
+  expect(res.body.traffic.scope).toBe(proxy.id);
+  expect(cloud.detail.topPaths[0].key).toBe('/a');
+  expect(res.body.traffic.totals.detail).toBeDefined();
+  expect(res.body.traffic.other.detail).toBeUndefined();
+
+  const unknown = await request(app).get('/api/metrics/traffic?range=1h&proxy=does-not-exist');
+  expect(unknown.body.traffic.scope).toBeNull();
+  expect(unknown.body.traffic.proxies.find((p) => p.name === 'Cloud').detail).toBeUndefined();
+});
