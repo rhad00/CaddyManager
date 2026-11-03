@@ -1,1 +1,104 @@
+@import '@fontsource-variable/ibm-plex-sans';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
 @import 'tailwindcss';
+
+/*
+ * Design tokens. The pages were written with Tailwind's `indigo` (accent) and `gray` (neutral)
+ * scales; redefining those scales here re-skins every page at once, so a page only needs its own
+ * markup changed when its layout does.
+ *
+ *   ink    the rail and the darkest text      fog    the page behind the cards
+ *   teal   the accent (the `indigo` scale)    trace  the route line and the current-page node
+ */
+@theme {
+  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --color-ink: #16212b;
+  --color-ink-soft: #1d2a36;
+  --color-fog: #f4f6f7;
+  --color-trace: #4fd1b5;
+
+  /* Neutrals, tinted toward the ink */
+  --color-gray-50: #f7f9fa;
+  --color-gray-100: #eef1f3;
+  --color-gray-200: #e0e5e9;
+  --color-gray-300: #c9d1d8;
+  --color-gray-400: #93a0ab;
+  --color-gray-500: #66737f;
+  --color-gray-600: #4b5762;
+  --color-gray-700: #36414c;
+  --color-gray-800: #232d37;
+  --color-gray-900: #16212b;
+  --color-gray-950: #0d151c;
+
+  /* Accent: gateway teal, under the name the pages already use */
+  --color-indigo-50: #e8f6f3;
+  --color-indigo-100: #c9ebe4;
+  --color-indigo-200: #9bd8cc;
+  --color-indigo-300: #62bfae;
+  --color-indigo-400: #31a18f;
+  --color-indigo-500: #178575;
+  --color-indigo-600: #0e6b63;
+  --color-indigo-700: #0b564f;
+  --color-indigo-800: #09433f;
+  --color-indigo-900: #073431;
+  --color-indigo-950: #032120;
+
+  /* Cards sit on a hairline instead of a drop shadow */
+  --shadow-xs: 0 0 0 1px rgb(22 33 43 / 0.06);
+  --shadow-sm: 0 0 0 1px rgb(22 33 43 / 0.06), 0 1px 2px rgb(22 33 43 / 0.04);
+  --shadow-md: 0 0 0 1px rgb(22 33 43 / 0.07), 0 4px 12px rgb(22 33 43 / 0.06);
+  --shadow-lg: 0 0 0 1px rgb(22 33 43 / 0.08), 0 12px 28px rgb(22 33 43 / 0.1);
+
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Tailwind 4 draws a bare `border` in currentColor (black); the pages expect the light grey of Tailwind 3 */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200);
+  }
+
+  body {
+    background-color: var(--color-fog);
+    color: var(--color-gray-900);
+    font-family: var(--font-sans);
+    font-feature-settings: 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Domains, upstreams, versions and keys are data: set them apart */
+  code,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-indigo-500);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

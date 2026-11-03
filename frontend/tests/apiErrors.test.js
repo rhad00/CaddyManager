@@ -79,7 +79,7 @@ describe('describeError / apiRequest', () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(apiRequest('/proxies')).rejects.toMatchObject({
       kind: 'network',
-      message: expect.stringMatching(/can't reach the CaddyManager API/i),
+      message: expect.stringMatching(/backend can't be reached/i),
     })
   })
 
@@ -93,7 +93,7 @@ describe('describeError / apiRequest', () => {
   test('describeError names the action for connection problems and keeps ApiError text', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
     const err = await apiRequest('/proxies').catch((e) => e)
-    expect(describeError(err, 'load proxies')).toMatch(/^Couldn't load proxies\. .*can't reach/i)
+    expect(describeError(err, 'load proxies')).toMatch(/^Couldn't load proxies\. .*can't be reached/i)
 
     const server = await apiError(response(400, { message: 'Bad name' }), 'save')
     expect(describeError(server, 'ignored')).toBe(server.message)

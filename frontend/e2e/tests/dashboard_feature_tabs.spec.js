@@ -90,23 +90,42 @@ test('dashboard feature tabs smoke journey', async ({ page, baseURL }) => {
 
   await expect(page.getByText('Proxy Management')).toBeVisible();
 
-  const tabAssertions = [
-    { tab: 'Templates', heading: 'Service Templates' },
-    { tab: 'Backup & Restore', heading: 'Backup & Restore' },
-    { tab: 'Metrics', heading: 'Caddy Metrics Dashboard' },
-    { tab: 'Audit Logs', heading: 'Audit Logs' },
-    { tab: 'Discovery', heading: 'Discovered Services' },
-    { tab: 'Git & GitOps', heading: 'Git Integration & GitOps' },
-    { tab: 'Access Logs', heading: 'Access Log Viewer' },
-    { tab: 'Alerts', heading: 'Alerting & Notifications' },
-    { tab: 'My Account', heading: 'My Account' },
-    { tab: 'Users', heading: 'User Management' },
+  // The menu is a tree: open the submenu (Settings > My account is two levels deep), then follow the link
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  const openSubmenu = async (name) => {
+    const button = nav.getByRole('button', { name, exact: true });
+    if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+  };
+
+  const pageAssertions = [
+    { path: ['Routing'], link: 'Templates', heading: 'Service Templates' },
+    { path: ['Operations'], link: 'Backup and restore', heading: 'Backup & Restore' },
+    { path: ['Monitoring'], link: 'Metrics', heading: 'Caddy Metrics Dashboard' },
+    { path: ['Monitoring'], link: 'Audit log', heading: 'Audit Logs' },
+    { path: ['Routing'], link: 'Docker discovery', heading: 'Discovered Services' },
+    { path: ['Operations'], link: 'Git and GitOps', heading: 'Git Integration & GitOps' },
+    { path: ['Monitoring'], link: 'Access logs', heading: 'Access Log Viewer' },
+    { path: ['Monitoring'], link: 'Alerts', heading: 'Alerting & Notifications' },
+    { path: ['Settings', 'My account'], link: 'API keys', heading: 'My Account' },
+    { path: ['Settings'], link: 'Users', heading: 'User Management' },
   ];
 
-  for (const { tab, heading } of tabAssertions) {
-    const tabButton = page.getByRole('tab', { name: tab, exact: true });
-    await tabButton.click();
-    await expect(tabButton).toHaveAttribute('aria-selected', 'true');
+  for (const { path, link, heading } of pageAssertions) {
+    for (const submenu of path) await openSubmenu(submenu);
+    const item = nav.getByRole('link', { name: link, exact: true });
+    await item.click();
+    await expect(item).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
+
+  // The hamburger folds the menu away and back
+  await page.getByRole('button', { name: 'Close navigation' }).click();
+  await expect(nav).toBeHidden();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await expect(nav).toBeVisible();
+
+  // The old address of the users page still works
+  await page.goto('/users');
+  await expect(page).toHaveURL(/\/settings\/users$/);
+  await expect(page.getByRole('heading', { name: 'User Management', exact: true })).toBeVisible();
 });

@@ -22,7 +22,7 @@ export class ApiError extends Error {
 }
 
 const NETWORK_MESSAGE =
-  "CaddyManager can't reach the CaddyManager API. Check that the backend is running and that this page can open " +
+  "The CaddyManager backend can't be reached. Check that it is running and that this page can open " +
   `${API_URL}, then try again.`;
 const TIMEOUT_MESSAGE =
   'The backend did not answer within 30 seconds. It may be busy or stuck; check its log, then try again.';

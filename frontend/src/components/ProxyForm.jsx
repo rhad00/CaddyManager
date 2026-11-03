@@ -443,7 +443,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                 checked={compressionEnabled}
                 disabled={Boolean(lockReason('compression_enabled'))}
                 onChange={(e) => setCompressionEnabled(e.target.checked)}
-                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:cursor-not-allowed disabled:bg-gray-200 disabled:opacity-70"
               />
             </div>
             <div className="ml-3 text-sm">
@@ -581,7 +581,7 @@ const ProxyForm = ({ proxy = null, onSave, onCancel }) => {
                 checked={basicAuthEnabled}
                 disabled={Boolean(lockReason('basic_auth'))}
                 onChange={(e) => setBasicAuthEnabled(e.target.checked)}
-                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded disabled:cursor-not-allowed disabled:bg-gray-200 disabled:opacity-70"
               />
             </div>
             <div className="ml-3 text-sm flex-grow">

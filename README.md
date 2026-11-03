@@ -145,6 +145,8 @@ docker run -d \
 
 | Feature | Description |
 |---------|-------------|
+| **Navigation** | A hamburger menu on the left folds the sidebar away (it opens over the page on phones). Submenus nest where there are sub-settings (Settings > My account > Two-factor authentication, API keys); every page has its own address, so links and bookmarks work. |
+| **Clear errors** | A failed action says what failed and what to do: a backend that is down, an expired session, a missing permission, a rate limit or a file that is too large each get their own message, and the reason Caddy or the server gave is kept. |
 | **User Management** | JWT + httpOnly cookie auth, role-based access (Admin/ReadOnly), brute-force protection, account lockout. |
 | **Two-Factor Authentication** | TOTP-based 2FA with QR code setup, backup codes, enforced per-user. |
 | **API Key Authentication** | Long-lived API keys with scoped permissions for CI/CD and automation. |
@@ -678,6 +680,14 @@ openssl rand -hex 32
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `VITE_API_URL` | `/api` | Backend API URL (use `/api` for Docker deployments as NGINX proxies to backend, `http://localhost:3000/api` for local dev without Docker) | No |
+
+Build-time argument of the frontend image (set when building, not when running):
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `APP_VERSION` | the nearest git tag, else the version in `package.json` | The version shown in the browser tab (`CaddyManager v0.6.0`), the menu and the footer. The release workflow passes the release tag to the frontend and backend images, so a pulled image shows its own tag. A build without a tag shows `dev`. Example: `docker build --build-arg APP_VERSION=v0.6.0 ./frontend` |
+
+The menu warns when the page and the backend report different versions (for example one image pulled at an older tag).
 
 ### Example Configurations
 
