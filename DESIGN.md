@@ -126,6 +126,7 @@ A cool, ink-tinted neutral palette with one teal accent. Neutrals lean slightly 
 - **Fog** (#f4f6f7): the page background behind cards.
 - **Surface** (#ffffff): cards, the top bar, inputs.
 - **Hairline** (#e0e5e9): every border and divider, and the ring on cards.
+- **Field edge** (#7d8995): the border of inputs, selects and textareas only.
 - **Slate Text** (#36414c) and **Slate Muted** (#66737f): body text on light surfaces and secondary text such as helper lines and breadcrumbs.
 - Status colours (green, red, amber, blue) keep their Tailwind defaults and appear only as small pills and alert panels.
 
@@ -174,7 +175,7 @@ Flat by default, with depth carried by tone and a hairline. The rail is darker t
 - **Overlay** (`0 0 0 1px rgb(22 33 43 / 0.08), 0 12px 28px rgb(22 33 43 / 0.1)`): dialogs.
 
 ### Named Rules
-**The Hairline Rule.** Every border is Hairline (#e0e5e9). Tailwind 4 would draw a bare `border` in black; a base rule in `index.css` resets it, so a border never needs its colour restated.
+**The Hairline Rule.** Every border is Hairline (#e0e5e9). Tailwind 4 would draw a bare `border` in black; a base rule in `index.css` resets it, so a border never needs its colour restated. The one exception is the edge of a form control: it uses Field edge (#7d8995, 3.5:1 on white, `border-edge`), because a control must be visible without its label (WCAG 1.4.11) and a hairline is 1.5:1.
 
 ## Shapes
 

@@ -58,6 +58,12 @@
         "canonical": "#e0e5e9",
         "tonalRamp": ["#66737f", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#f4f6f7", "#f7f9fa", "#ffffff"]
       },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Field edge",
+        "canonical": "#7d8995",
+        "tonalRamp": ["#4b5762", "#66737f", "#7d8995", "#93a0ab", "#c9d1d8", "#e0e5e9", "#eef1f3", "#ffffff"]
+      },
       "slate-muted": {
         "role": "neutral",
         "displayName": "Slate Muted",
