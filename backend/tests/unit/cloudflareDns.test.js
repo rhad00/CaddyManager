@@ -3,7 +3,7 @@ const axios = require('axios');
 const dns = require('../../src/services/cloudflareDnsService');
 
 const ok = (result) => Promise.resolve({ data: { success: true, result } });
-const IP = '203.0.113.7';
+const IP = '93.184.216.34';
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -40,24 +40,42 @@ describe('findZone', () => {
 describe('ensureARecord', () => {
   const zone = { id: 'z1', name: 'example.com' };
 
-  test('creates the record when missing, DNS-only by default', async () => {
+  test('creates the record when missing, with the orange cloud on for a public address', async () => {
     axios.get.mockImplementation(() => ok([]));
     axios.post.mockImplementation(() => ok({ id: 'r1' }));
     const r = await dns.ensureARecord(zone, 'app.example.com', IP);
     expect(r.status).toBe('created');
+    expect(r.proxied).toBe(true);
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining('/zones/z1/dns_records'),
-      { type: 'A', name: 'app.example.com', content: IP, ttl: 1, proxied: false },
+      { type: 'A', name: 'app.example.com', content: IP, ttl: 1, proxied: true },
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer tok' }) })
     );
   });
 
-  test('CF_DNS_PROXIED=true turns the Cloudflare proxy on', async () => {
-    process.env.CF_DNS_PROXIED = 'true';
+  test.each(['10.1.2.3', '192.168.1.20', '172.16.5.5', '100.64.0.9'])(
+    'a private target (%s) is DNS only: Cloudflare cannot proxy an internal address', async (ip) => {
+      axios.get.mockImplementation(() => ok([]));
+      axios.post.mockImplementation(() => ok({ id: 'r1' }));
+      const r = await dns.ensureARecord(zone, 'app.example.com', ip);
+      expect(r.proxied).toBe(false);
+      expect(axios.post.mock.calls[0][1].proxied).toBe(false);
+    });
+
+  test('CF_DNS_PROXIED=false opts out of the orange cloud for a public address', async () => {
+    process.env.CF_DNS_PROXIED = 'false';
     axios.get.mockImplementation(() => ok([]));
     axios.post.mockImplementation(() => ok({ id: 'r1' }));
     await dns.ensureARecord(zone, 'app.example.com', IP);
-    expect(axios.post.mock.calls[0][1].proxied).toBe(true);
+    expect(axios.post.mock.calls[0][1].proxied).toBe(false);
+  });
+
+  test('CF_DNS_PROXIED=true cannot force the orange cloud on a private address', async () => {
+    process.env.CF_DNS_PROXIED = 'true';
+    axios.get.mockImplementation(() => ok([]));
+    axios.post.mockImplementation(() => ok({ id: 'r1' }));
+    await dns.ensureARecord(zone, 'app.example.com', '10.0.0.5');
+    expect(axios.post.mock.calls[0][1].proxied).toBe(false);
   });
 
   test('is idempotent: an identical record is left alone', async () => {

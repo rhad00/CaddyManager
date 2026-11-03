@@ -7,11 +7,14 @@
  * is reported, never overwritten.
  *
  * Env: PUBLIC_IP (address of this server; detected through api.ipify.org when unset),
- *      CF_DNS_PROXIED=true (orange cloud; default DNS only), CF_DNS_AUTO=false (switch off).
+ *      CF_DNS_PROXIED=false (never use the orange cloud), CF_DNS_AUTO=false (switch off).
+ * The orange cloud is on by default, except when the record points to a private address
+ * (RFC1918, CGNAT, ...): Cloudflare cannot reach it, so such a record is DNS only.
  */
 import net from 'net';
 import axios from 'axios';
 import { errorMessage } from '../utils/errorMessage';
+import { isPrivateAddress, isRestrictedHost } from '../utils/ssrf';
 
 const API = 'https://api.cloudflare.com/client/v4';
 const IP_LOOKUP_URL = 'https://api.ipify.org';
@@ -27,6 +30,7 @@ export interface DnsResult {
   message?: string;
   zone?: string;
   content?: string;
+  proxied?: boolean;
 }
 
 interface CfRecord { id: string; type: string; content: string }
@@ -80,9 +84,16 @@ export async function findZone(domain: string): Promise<CloudflareZone | null> {
   return null;
 }
 
+/** Orange cloud: on for a public target, never for an internal one, and CF_DNS_PROXIED=false opts out */
+export function shouldProxy(ip: string): boolean {
+  if (isPrivateAddress(ip) || isRestrictedHost(ip)) return false;
+  return process.env.CF_DNS_PROXIED !== 'false';
+}
+
 /** Create the A record of `name` unless it exists already */
 export async function ensureARecord(zone: CloudflareZone, name: string, ip: string): Promise<DnsResult> {
-  const base = { domain: name, zone: zone.name, content: ip };
+  const proxied = shouldProxy(ip);
+  const base = { domain: name, zone: zone.name, content: ip, proxied };
   const listed = await axios.get(`${API}/zones/${zone.id}/dns_records`, requestConfig({ name }));
   const records = (listed.data.result as CfRecord[] | undefined) ?? [];
 
@@ -100,10 +111,10 @@ export async function ensureARecord(zone: CloudflareZone, name: string, ip: stri
 
   await axios.post(
     `${API}/zones/${zone.id}/dns_records`,
-    { type: 'A', name, content: ip, ttl: 1, proxied: process.env.CF_DNS_PROXIED === 'true' },
+    { type: 'A', name, content: ip, ttl: 1, proxied },
     requestConfig(),
   );
-  return { ...base, status: 'created', message: `A record ${name} -> ${ip} created` };
+  return { ...base, status: 'created', message: `A record ${name} -> ${ip} created${proxied ? ' (proxied)' : ' (DNS only)'}` };
 }
 
 const isIpOrLocal = (domain: string): boolean =>
