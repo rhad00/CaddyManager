@@ -36,6 +36,24 @@ interface CaddyRouteEntry {
   handle?: CaddyHandler[];
 }
 
+/**
+ * The bundled Caddyfile answers every request with "No routes configured yet" (503) until a proxy
+ * exists. It has no host match, so Caddy runs it before any route after it: it has to stay last.
+ */
+export function isPlaceholderRoute(route: CaddyRouteEntry): boolean {
+  return !route.match && JSON.stringify(route.handle ?? []).includes('"body":"No routes configured yet');
+}
+
+/** A placeholder that comes before other routes, so those routes never see a request */
+function hasShadowingPlaceholder(config: CaddyJsonConfig): boolean {
+  const servers = Object.values(config.apps?.http?.servers ?? {});
+  return servers.some(server => {
+    const routes = server.routes ?? [];
+    const at = routes.findIndex(isPlaceholderRoute);
+    return at !== -1 && at < routes.length - 1;
+  });
+}
+
 interface CaddyServer {
   listen: string[];
   routes: CaddyRouteEntry[];
@@ -314,9 +332,15 @@ export class CaddyService {
         const configData = await fs.readFile(this.configBackupFile, 'utf8');
         const config = JSON.parse(configData) as CaddyConfig;
 
-        // Apply the configuration to Caddy
-        await this.loadConfig(config);
-        console.log('Configuration loaded from backup file');
+        if (hasShadowingPlaceholder(config) && (await Proxy.findAll({ attributes: ['id'] })).length > 0) {
+          // Written when proxies were added behind the placeholder: they never received a request
+          console.log('Saved config has the placeholder route before proxy routes, rebuilding configuration from the database...');
+          await this.rebuildConfigFromDatabase();
+        } else {
+          // Apply the configuration to Caddy
+          await this.loadConfig(config);
+          console.log('Configuration loaded from backup file');
+        }
       } else {
         // No backup file exists, check if we have proxies in the database
         console.log('No backup file found, checking database for proxies...');
@@ -612,17 +636,17 @@ export class CaddyService {
       // Create the route for this proxy
       const route = this.createRouteFromProxy(proxy);
 
-      // POST appends; the config mutex keeps the index stable until we are done
-      newRouteIndex = existingRoutes.length;
-      await axios.post(
-        this.getServerRoutesApiPath(),
-        route,
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      // Insert before the trailing placeholder so it stays the last route (PUT on an array index
+      // inserts); otherwise POST appends. The config mutex keeps the index stable until we are done.
+      const placeholderAt = existingRoutes.findIndex(isPlaceholderRoute);
+      const beforePlaceholder = placeholderAt !== -1 && placeholderAt === existingRoutes.length - 1;
+      newRouteIndex = beforePlaceholder ? placeholderAt : existingRoutes.length;
+      const requestConfig = { headers: { 'Content-Type': 'application/json' } };
+      if (beforePlaceholder) {
+        await axios.put(`${this.getServerRoutesApiPath()}/${newRouteIndex}`, route, requestConfig);
+      } else {
+        await axios.post(this.getServerRoutesApiPath(), route, requestConfig);
+      }
       routePosted = true;
 
       // Update the proxy with its route index
