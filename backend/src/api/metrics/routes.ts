@@ -329,7 +329,11 @@ router.get('/history', authMiddleware, async (req: Request, res: Response) => {
     const asked = typeof req.query.proxy === 'string' ? req.query.proxy : null;
     let scope: string | null = null;
     if (asked === OTHER_ID) scope = OTHER_ID;
-    else if (asked !== null && (await Proxy.count({ where: { id: asked } })) > 0) scope = asked;
+    else if (asked !== null) {
+      // Compared here, not in SQL: an id that is not a UUID must be "unknown", not a database error
+      const ids = (await Proxy.findAll({ attributes: ['id'] })).map((p) => p.id);
+      if (ids.includes(asked)) scope = asked;
+    }
     return res.status(200).json({ success: true, history: await readHistory(range, scope) });
   } catch (error) {
     console.error('Get traffic history error:', error);
