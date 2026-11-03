@@ -19,6 +19,18 @@ export interface LogEntry {
   user_agent?: string;
   duration?: number;
   size?: number;
+  /** "HTTP/1.1", "HTTP/2.0" or "HTTP/3.0" */
+  proto?: string;
+  /** Numeric TLS version as logged (772 is TLS 1.3); absent for plain HTTP */
+  tls_version?: number;
+  /** Numeric cipher suite as logged (4865 is TLS_AES_128_GCM_SHA256) */
+  tls_cipher?: number;
+  /** The client behind trusted proxies; the peer address when there is none */
+  client_ip?: string;
+  referer?: string;
+  content_type?: string;
+  /** Request body bytes received */
+  bytes_read?: number;
   /** Raw entry for anything else */
   raw: Record<string, unknown>;
 }
@@ -60,6 +72,13 @@ export function parseLine(line: string): LogEntry | null {
       user_agent: entry.request?.headers?.['User-Agent']?.[0],
       duration: entry.duration,
       size: entry.size,
+      proto: entry.request?.proto,
+      tls_version: typeof entry.request?.tls?.version === 'number' ? entry.request.tls.version : undefined,
+      tls_cipher: typeof entry.request?.tls?.cipher_suite === 'number' ? entry.request.tls.cipher_suite : undefined,
+      client_ip: entry.request?.client_ip || entry.request?.remote_ip,
+      referer: entry.request?.headers?.Referer?.[0],
+      content_type: entry.resp_headers?.['Content-Type']?.[0],
+      bytes_read: typeof entry.bytes_read === 'number' ? entry.bytes_read : undefined,
       // Raw entry for anything else
       raw: entry,
     };
