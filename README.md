@@ -361,7 +361,8 @@ Example header configurations:
 
 - **Monitoring & Observability**
   - System metrics snapshots (stored every 60 min)
-  - Metrics dashboard with charts, and **traffic analytics per proxy** built from Caddy's access log: requests over time by status class, bandwidth, response time, top paths and clients, for 1 hour to 7 days (`GET /api/metrics/traffic?range=24h`)
+  - Metrics dashboard with charts, and **traffic analytics per proxy** built from Caddy's access log: requests over time by status class, bandwidth, response time, top paths and clients, for 1 hour to 7 days (`GET /api/metrics/traffic?range=24h`), with visitors, change against the previous period, browsers, systems, referrers, HTTP/TLS versions, content types, slowest and failing paths, and blocked requests (counted from status codes 401, 403 and 429)
+  - Also on the metrics page: a live view of the last 5 minutes (`/api/metrics/live`), a certificate timeline (`/api/metrics/certificates`), upstream health (`/api/metrics/upstreams`), 30/90-day history from hourly rollups that outlive the access log (`/api/metrics/history`), and alert markers on the requests chart (`/api/metrics/alerts`)
   - Full audit log for all admin actions
   - Interactive **OpenAPI / Swagger UI** ✨ at `/api/docs`
   - *(Planned: WAF integration — CrowdSec / ModSecurity)*
