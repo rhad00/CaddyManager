@@ -16,6 +16,21 @@ describe('prepareBasicAuth', () => {
       .resolves.toEqual({ enabled: false, username: 'admin' });
   });
 
+  // The proxy form sends basic_auth: null when the checkbox is off (every proxy without basic auth)
+  test('null with no existing basic auth leaves it unset', async () => {
+    await expect(prepareBasicAuth(null, null)).resolves.toBeUndefined();
+    await expect(prepareBasicAuth(null, undefined)).resolves.toBeUndefined();
+  });
+
+  test('null turns existing basic auth off, keeping the username and dropping credentials', async () => {
+    const existing = { enabled: true, username: 'admin', hashed_password: 'hash' };
+    await expect(prepareBasicAuth(null, existing)).resolves.toEqual({ enabled: false, username: 'admin' });
+  });
+
+  test('null on an already-disabled record stays disabled', async () => {
+    await expect(prepareBasicAuth(null, { enabled: false })).resolves.toEqual({ enabled: false });
+  });
+
   test('hashes a new password with bcrypt and never stores the plaintext', async () => {
     const stored = await prepareBasicAuth({ enabled: true, username: 'admin', password: 'correct horse' }, null);
     expect(stored).toEqual({ enabled: true, username: 'admin', hashed_password: expect.any(String) });
@@ -43,6 +58,8 @@ describe('prepareBasicAuth', () => {
     [{ enabled: true, username: 'admin', password: 'x'.repeat(73) }, 'at most 72'],
     [{ enabled: true, username: 'admin' }, 'password is required'],
     ['yes', 'object'],
+    [['admin'], 'object'],
+    [42, 'object'],
   ])('rejects %o', async (input, message) => {
     await expect(prepareBasicAuth(input, null)).rejects.toThrow(message);
   });
