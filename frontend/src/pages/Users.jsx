@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/api';
+import api, { apiError, describeError } from '../utils/api';
 import UserForm from '../components/UserForm';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -16,11 +16,11 @@ const Users = () => {
     setLoading(true);
     try {
       const res = await api.get('/users', token);
+      if (!res.ok) throw await apiError(res, 'load users');
       const data = await res.json();
-      if (res.ok) setUsers(data.users || []);
-      else toast.error(data.message || 'Failed to load users');
-    } catch {
-      toast.error('Failed to load users');
+      setUsers(data.users || []);
+    } catch (err) {
+      toast.error(describeError(err, 'load users'));
     } finally {
       setLoading(false);
     }
@@ -34,15 +34,12 @@ const Users = () => {
   const handleCreate = async (user) => {
     try {
       const res = await api.post('/users', user, token, csrfToken);
+      if (!res.ok) throw await apiError(res, 'create the user');
       const data = await res.json();
-      if (res.ok) {
-        setUsers(prev => [data.user, ...prev]);
-        toast.success('User created');
-      } else {
-        toast.error(data.message || 'Failed to create user');
-      }
-    } catch {
-      toast.error('Failed to create user');
+      setUsers(prev => [data.user, ...prev]);
+      toast.success('User created');
+    } catch (err) {
+      toast.error(describeError(err, 'create the user'));
     }
   };
 
@@ -54,15 +51,11 @@ const Users = () => {
   const handleDelete = async (id) => {
     try {
       const res = await api.del(`/users/${id}`, token, csrfToken);
-      if (res.ok) {
-        setUsers(prev => prev.filter(u => u.id !== id));
-        toast.success('User deleted');
-      } else {
-        const data = await res.json();
-        toast.error(data.message || 'Failed to delete user');
-      }
-    } catch {
-      toast.error('Failed to delete user');
+      if (!res.ok) throw await apiError(res, 'delete the user');
+      setUsers(prev => prev.filter(u => u.id !== id));
+      toast.success('User deleted');
+    } catch (err) {
+      toast.error(describeError(err, 'delete the user'));
     } finally {
       setConfirmOpen(false);
       setTargetUserToDelete(null);
@@ -72,30 +65,22 @@ const Users = () => {
   const handleRoleChange = async (user, newRole) => {
     try {
       const res = await api.put(`/users/${user.id}`, { role: newRole }, token, csrfToken);
-      const data = await res.json();
-      if (res.ok) {
-        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole } : u));
-        toast.success(`Role changed to ${newRole}`);
-      } else {
-        toast.error(data.message || 'Failed to change role');
-      }
-    } catch {
-      toast.error('Failed to change role');
+      if (!res.ok) throw await apiError(res, 'change the role');
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole } : u));
+      toast.success(`Role changed to ${newRole}`);
+    } catch (err) {
+      toast.error(describeError(err, 'change the role'));
     }
   };
 
   const handleUnlock = async (user) => {
     try {
       const res = await api.put(`/users/${user.id}`, { status: 'active' }, token, csrfToken);
-      const data = await res.json();
-      if (res.ok) {
-        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'active' } : u));
-        toast.success(`Account unlocked for ${user.email}`);
-      } else {
-        toast.error(data.message || 'Failed to unlock account');
-      }
-    } catch {
-      toast.error('Failed to unlock account');
+      if (!res.ok) throw await apiError(res, 'unlock the account');
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'active' } : u));
+      toast.success(`Account unlocked for ${user.email}`);
+    } catch (err) {
+      toast.error(describeError(err, 'unlock the account'));
     }
   };
 

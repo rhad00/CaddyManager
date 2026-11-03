@@ -1,6 +1,8 @@
 /**
- * Startup: the saved Caddy config is loaded as it is, unless a migration changed how routes are
- * generated (the S3 repair): then the routes are rebuilt from the database.
+ * Startup: with proxies in the database the routes are always rebuilt from it, on top of the
+ * config Caddy is running now. The saved backup file is a disaster-recovery copy and is not
+ * loaded back: it would put back settings that were baked in when it was written (trusted
+ * proxies, client IP headers) over the current .env, and Caddy would ignore edits to them.
  */
 jest.mock('axios');
 jest.mock('../../src/models', () => ({
@@ -28,32 +30,46 @@ const { caddyService } = require('../../src/services/caddyService');
 describe('initializeConfig', () => {
   let loadConfig;
   let rebuild;
+  let getConfig;
+  let backup;
 
   beforeEach(() => {
     loadConfig = jest.spyOn(caddyService, 'loadConfig').mockResolvedValue(undefined);
     rebuild = jest.spyOn(caddyService, 'rebuildConfigFromDatabase').mockResolvedValue(undefined);
-    fs.promises.access.mockResolvedValue(undefined);
+    getConfig = jest.spyOn(caddyService, 'getConfig').mockResolvedValue({ apps: { http: { servers: {} } } });
+    backup = jest.spyOn(caddyService, 'backupCurrentConfig').mockResolvedValue(undefined);
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    fs.promises.access.mockResolvedValue(undefined); // a saved backup exists
     fs.promises.readFile.mockResolvedValue('{"apps":{}}');
     Proxy.findAll.mockResolvedValue([{ id: 'p1' }]);
   });
   afterEach(() => jest.restoreAllMocks());
 
-  test('loads the saved config when there is one', async () => {
+  test('rebuilds from the database when there are proxies, even if a saved config exists', async () => {
     await caddyService.initializeConfig();
-    expect(loadConfig).toHaveBeenCalledWith({ apps: {} });
-    expect(rebuild).not.toHaveBeenCalled();
-  });
 
-  test('rebuilds from the database instead when a migration asks for it', async () => {
-    await caddyService.initializeConfig({ forceRebuild: true });
     expect(rebuild).toHaveBeenCalledTimes(1);
+    expect(fs.promises.readFile).not.toHaveBeenCalled();
     expect(loadConfig).not.toHaveBeenCalled();
   });
 
-  test('a forced rebuild with no proxies falls back to the saved config', async () => {
+  test('rebuilds when there is no saved config either', async () => {
+    fs.promises.access.mockRejectedValue(new Error('ENOENT'));
+
+    await caddyService.initializeConfig();
+
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
+  test('with no proxies it loads the running config once, so Caddy carries the marker, and backs it up', async () => {
     Proxy.findAll.mockResolvedValue([]);
-    await caddyService.initializeConfig({ forceRebuild: true });
+
+    await caddyService.initializeConfig();
+
     expect(rebuild).not.toHaveBeenCalled();
-    expect(loadConfig).toHaveBeenCalled();
+    expect(fs.promises.readFile).not.toHaveBeenCalled();
+    expect(getConfig).toHaveBeenCalledTimes(1);
+    expect(loadConfig).toHaveBeenCalledWith({ apps: { http: { servers: {} } } });
+    expect(backup).toHaveBeenCalledTimes(1);
   });
 });

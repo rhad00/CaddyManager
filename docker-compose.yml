@@ -27,6 +27,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        - APP_VERSION=${APP_VERSION:-}
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
@@ -48,6 +50,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@caddymanager.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - UPSTREAM_ALLOW_PRIVATE=${UPSTREAM_ALLOW_PRIVATE:-false}
       - ENABLE_DOCKER_DISCOVERY=${ENABLE_DOCKER_DISCOVERY:-false}
       - DOCKER_LABEL_PREFIX=${DOCKER_LABEL_PREFIX:-caddymanager}
       - AUTO_REMOVE_STOPPED=${AUTO_REMOVE_STOPPED:-false}
@@ -57,6 +60,7 @@ services:
       - caddy_access_logs:/var/log/caddy:ro
       - backend_metrics:/app/metrics
       - backend_backups:/app/backups
+      - backend_config_backups:/app/config_backups
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - caddy_net
@@ -66,6 +70,7 @@ services:
       context: ./frontend
       args:
         - VITE_API_URL=${VITE_API_URL:-/api}
+        - APP_VERSION=${APP_VERSION:-}
     restart: unless-stopped
     ports:
       - "8080:80"
@@ -90,3 +95,5 @@ volumes:
     name: caddymanager_backend_metrics
   backend_backups:
     name: caddymanager_backend_backups
+  backend_config_backups:
+    name: caddymanager_backend_config_backups

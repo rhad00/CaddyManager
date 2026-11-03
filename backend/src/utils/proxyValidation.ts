@@ -3,7 +3,7 @@
  * proxies (GitOps sync, backup restore), so imported data meets the same rules.
  */
 import { parseUpstream, upstreamHostname } from './upstream';
-import { isRestrictedHost } from './ssrf';
+import { isRestrictedUpstream } from './ssrf';
 import { validateMiddlewares, type ValidationResult } from './proxyMiddlewares';
 import { errorMessage } from './errorMessage';
 
@@ -74,8 +74,9 @@ export const validateUpstreamUrl = (url: unknown): ValidationResult => {
     return invalid(errorMessage(error));
   }
 
-  // Block loopback, link-local, private ranges, and cloud metadata endpoints (SSRF prevention)
-  if (isRestrictedHost(hostname)) {
+  // Block loopback, link-local, private ranges, and cloud metadata endpoints (SSRF prevention).
+  // UPSTREAM_ALLOW_PRIVATE=true opens the private ranges only.
+  if (isRestrictedUpstream(hostname)) {
     return invalid('Upstream URL points to a restricted address');
   }
 

@@ -7,6 +7,10 @@ FROM node:24-alpine AS builder
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=${VITE_API_URL}
 
+# The release tag, shown in the page title and the sidebar. A Docker build has no .git to read it from.
+ARG APP_VERSION=
+ENV APP_VERSION=${APP_VERSION}
+
 WORKDIR /app
 
 # Copy package files

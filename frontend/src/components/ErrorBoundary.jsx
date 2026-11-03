@@ -1,4 +1,5 @@
 import React from 'react';
+import { APP_VERSION } from '../utils/version';
 
 /**
  * Error boundary that catches unhandled React rendering errors and
@@ -27,9 +28,16 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-100">
           <div className="bg-white shadow-md rounded-lg p-8 max-w-lg w-full text-center">
-            <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-            <p className="text-gray-600 mb-6">
-              An unexpected error occurred. You can try reloading the page or returning to the dashboard.
+            <h1 className="text-2xl font-semibold text-red-700 mb-4">Something went wrong</h1>
+            <p className="text-gray-600 mb-4">
+              This page stopped working because of a bug, not because of anything you did. Retry with the
+              first button; if the problem comes back, reload the page or leave for the dashboard.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              When you report it, include this:{' '}
+              <code className="break-words">
+                {this.state.error?.message || 'unknown error'} ({APP_VERSION})
+              </code>
             </p>
             <div className="flex justify-center gap-4">
               <button

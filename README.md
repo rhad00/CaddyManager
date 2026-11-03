@@ -98,6 +98,7 @@ Deploying complex apps like **Authelia**, **Keycloak**, or **Nextcloud**? Forget
 
 CaddyManager includes **battle-tested templates** for these services. Just select "Authelia" from the dropdown, and we apply the perfect configuration automatically.
 *   **Supported Templates:** Authelia, Keycloak, Amazon S3 (MinIO/Ceph), Nextcloud, Cloudflare Tunnel, Grafana, Kibana.
+*   **Safe by construction:** options a template cannot work with are greyed out in the form (with the reason) and reset on the server, so you never end up with a combination of unknown behaviour. For example, Amazon S3 locks compression and basic auth off.
 
 ### 🔒 Zero-Config Cloudflare DNS Challenges
 Want wildcard certificates or need to secure internal services without opening port 80?
@@ -106,6 +107,8 @@ Just provide your **Cloudflare API Token**. CaddyManager automatically configure
 *   No plugins to install.
 *   No scripts to run.
 *   **It just works.**
+
+**The DNS record too.** Saving a proxy with the Cloudflare SSL type also creates its **A record**: CaddyManager finds the zone of the domain through your token, so there is no trip to the Cloudflare dashboard. The orange cloud is turned on automatically, except for records that point to a private address (`10/8`, `172.16/12`, `192.168/16`), which stay DNS only because Cloudflare cannot reach them.
 
 ### 🛡️ Enterprise-Grade Security
 Security shouldn't be optional. Enable industry-standard security headers with a single toggle:
@@ -142,6 +145,8 @@ docker run -d \
 
 | Feature | Description |
 |---------|-------------|
+| **Navigation** | A hamburger menu on the left folds the sidebar away (it opens over the page on phones). Submenus nest where there are sub-settings (Settings > My account > Two-factor authentication, API keys); every page has its own address, so links and bookmarks work. |
+| **Clear errors** | A failed action says what failed and what to do: a backend that is down, an expired session, a missing permission, a rate limit or a file that is too large each get their own message, and the reason Caddy or the server gave is kept. |
 | **User Management** | JWT + httpOnly cookie auth, role-based access (Admin/ReadOnly), brute-force protection, account lockout. |
 | **Two-Factor Authentication** | TOTP-based 2FA with QR code setup, backup codes, enforced per-user. |
 | **API Key Authentication** | Long-lived API keys with scoped permissions for CI/CD and automation. |
@@ -189,6 +194,18 @@ Each template includes:
 - Predefined headers for proper service functionality
 - Middleware configurations (if required)
 - Specific routing rules
+
+Some templates cannot work with every proxy option. The proxy form greys these options out when the template is
+selected and shows why, and applying the template through the API resets them (the response lists them in `adjusted`).
+`GET /api/templates` and `GET /api/templates/:id` return them as `constraints` (`[{ option, value, reason }]`).
+
+| Template | Locked off | Why |
+|----------|------------|-----|
+| Amazon S3 | Compression | Changes the ETag and the `Content-Length` of HEAD responses, which breaks S3 SDK checksums |
+| Amazon S3 | Basic authentication | Uses the `Authorization` header, which carries the SigV4 signature of every S3 request |
+
+The other bundled templates only add request headers, a redirect or a rate limit, so they work with every option.
+Custom templates have no constraints.
 
 Templates can be applied to proxies to automatically configure:
 - Request/response headers
@@ -311,6 +328,7 @@ Example header configurations:
   - **Custom Template Creator** ✨ — visual builder with per-row headers, preset dropdown, and middleware JSON editor
   - Create, edit, and delete templates from the UI (admin-only)
   - Applying a template that Caddy refuses leaves the proxy as it was
+  - Options a template cannot work with (Amazon S3: compression, basic auth) are locked in the form and reset on apply, see [Template System](#template-system)
   - *(Planned: import/export templates as portable JSON files)*
 
 - **Docker Auto-Discovery** ✨
@@ -363,7 +381,7 @@ Example header configurations:
 
 ### Configuration Persistence
 - Configurations are stored in both the database and Caddy
-- Automatic backup system maintains config_backups/caddy_config_backup.json which can be mounted as local folder in docker or in a volume
+- Automatic backup system maintains config_backups/caddy_config_backup.json, a recovery copy kept in a volume by the bundled compose files. The database is the source of truth: at startup, and within 30 seconds of Caddy restarting, the routes are rebuilt from it, so a Caddy restart (for example `docker compose up -d` after editing `.env`) briefly answers 503 until the routes are back
 - Configuration is rebuilt from database on service restart
 - Handles both HTTP and HTTPS proxies with proper SSL termination (ACME Let's Encrypt without user intervention)
 
@@ -606,10 +624,14 @@ All backend environment variables can be set in `.env` files or passed directly 
 |----------|---------|-------------|----------|
 | `CADDY_API_URL` | `http://caddy:2019` | Caddy Admin API endpoint | No |
 | `CADDY_SERVER_NAME` | `srv0` | Name of the Caddy HTTP server that CaddyManager manages | No |
-| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup is kept (mount it as a volume) | No |
+| `CONFIG_BACKUP_DIR` | `./config_backups` | Where the Caddy config backup (a recovery copy, never loaded back automatically) is kept; the bundled compose files mount `/app/config_backups` as a volume | No |
 | `CADDY_ACCESS_LOG` | `/app/logs/access.log` (compose: `/var/log/caddy/access.log`) | Path to the Caddy JSON access log. Caddy writes it and the backend reads it, so the path must be on a volume shared by both containers (the compose files use `caddy_access_logs`) | No |
 | `CF_API_TOKEN` | - | Cloudflare API Token for DNS-01 challenge support | No |
+| `PUBLIC_IP` | detected via api.ipify.org | IPv4 address the automatic Cloudflare A records point to | No |
+| `CF_DNS_PROXIED` | auto | The automatic A records get the Cloudflare proxy (orange cloud) when they point to a public address, and are DNS only for private ones (`10/8`, `172.16/12`, `192.168/16`, ...). Set `false` to never use the orange cloud | No |
+| `CF_DNS_AUTO` | `true` | Set `false` to stop creating A records for `ssl_type: cloudflare` proxies | No |
 | `CADDY_TRUSTED_PROXIES` | `127.0.0.1/32` | Who Caddy believes about the visitor's address. Behind a proxy on the same Docker/private network set `private_ranges`; behind Cloudflare set its published ranges (ready to paste in `.env.template`). Without it every visitor behind that proxy shares one rate-limit bucket | No |
+| `UPSTREAM_ALLOW_PRIVATE` | `false` | Allow proxy upstreams on private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`), for example `https://10.0.0.5`. Off by default so a proxy cannot be aimed at your network by mistake. Loopback, link-local and cloud-metadata addresses stay blocked either way | No |
 | `CADDY_CLIENT_IP_HEADERS` | `X-Forwarded-For` | Headers a trusted proxy puts the visitor address in; for Cloudflare use `CF-Connecting-IP X-Forwarded-For` | No |
 
 #### Docker Auto-Discovery Configuration
@@ -658,6 +680,14 @@ openssl rand -hex 32
 | Variable | Default | Description | Required |
 |----------|---------|-------------|----------|
 | `VITE_API_URL` | `/api` | Backend API URL (use `/api` for Docker deployments as NGINX proxies to backend, `http://localhost:3000/api` for local dev without Docker) | No |
+
+Build-time argument of the frontend image (set when building, not when running):
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `APP_VERSION` | the nearest git tag, else the version in `package.json` | The version shown in the browser tab (`CaddyManager v0.6.0`), the menu and the footer. The release workflow passes the release tag to the frontend and backend images, so a pulled image shows its own tag. A build without a tag shows `dev`. Example: `docker build --build-arg APP_VERSION=v0.6.0 ./frontend` |
+
+The menu warns when the page and the backend report different versions (for example one image pulled at an older tag).
 
 ### Example Configurations
 
@@ -789,6 +819,36 @@ CF_API_TOKEN=your_40_character_api_token_here
 docker-compose restart caddy backend
 ```
 
+#### Automatic DNS records
+
+You do not have to create the A record in Cloudflare. When you save (create or update) a proxy whose SSL type is
+**Let's Encrypt via Cloudflare DNS**, CaddyManager:
+
+1. finds the zone of each domain with your token (the longest suffix of the domain that is one of your zones, so
+   `app.sub.example.com` finds `example.com`; a `*.` wildcard is looked up by its base domain);
+2. creates an **A record** pointing to this server, unless the name already has a record;
+3. shows the result as a message in the form (created, already there, or why not).
+
+Rules:
+
+- **Which address:** `PUBLIC_IP` when set, otherwise the public IPv4 of this server, detected through `api.ipify.org`
+  and cached. Set `PUBLIC_IP` if the server is behind NAT or the detection is not reachable.
+- **Orange cloud (Cloudflare proxy):** on automatically when the address is public. When the record points to a private
+  address (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`, loopback), it is **DNS only**: Cloudflare cannot
+  reach an internal address, so these names resolve for your network only. `CF_DNS_PROXIED=false` turns the orange
+  cloud off for every record. It cannot force it on for a private address.
+- **Nothing is overwritten:** a name that already has a record (A, CNAME, ...) with another address is reported as a
+  conflict and left as it is. An identical record is left alone, so saving again is harmless, and an existing record
+  keeps its orange cloud setting.
+- **Saving never fails because of DNS:** a missing zone, a token without permission or an unreachable API is reported
+  in the message and the proxy is saved anyway.
+- **Existing proxies:** `POST /api/proxies/:id/sync-dns` creates the missing records of a proxy that was saved before
+  (admin only); it returns the same per-domain results as the `dns` field of the create and update responses.
+- **Switch it off:** `CF_DNS_AUTO=false`. Proxies with other SSL types never get automatic records.
+
+The token needs **Zone - Zone - Read** and **Zone - DNS - Edit** on the zones you use (see step 1). A token limited to
+other zones reports "No Cloudflare zone for this domain is visible to the API token".
+
 #### Verification
 
 After setting up the API token:
@@ -821,6 +881,7 @@ After setting up the API token:
 - If `CF_API_TOKEN` is present in the environment, the frontend will surface the Cloudflare option automatically
 - Treat `ssl_type: cloudflare` the same as `acme` for certificate issuance
 - The actual DNS challenge handling is performed by Caddy using the token you provide
+- Saving a `cloudflare` proxy also creates the missing A record of each domain, see [Automatic DNS records](#automatic-dns-records)
 - API Tokens are more secure than Global API Keys as they have scoped permissions and can be revoked independently
 
 ---
@@ -840,7 +901,9 @@ CaddyManager keeps requests intact:
 - Header rules of the form `X: {http.request.header.X}` are never emitted (they would set an empty header when the
   client did not send one, which RadosGW rejects, for example an empty `Content-MD5`).
 - Compression is skipped for HEAD requests and for signed or presigned requests, so ETags and `Content-Length` stay
-  true.
+  true. Selecting the Amazon S3 template also switches **compression** and **basic authentication** off and greys
+  them out in the form: the first changes the body and `Content-Length` S3 clients verify, the second takes over the
+  `Authorization` header that carries the SigV4 signature.
 - Path-style (`https://s3.example.com/bucket/key`) and virtual-hosted style (`bucket.s3.example.com`, use a wildcard
   domain such as `*.s3.example.com`) both work. Large uploads, multipart, `aws-chunked` streaming and
   `Expect: 100-continue` are covered by the end-to-end tests.

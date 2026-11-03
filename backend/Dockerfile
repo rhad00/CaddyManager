@@ -14,6 +14,10 @@ RUN npm run build
 # --- Run -------------------------------------------------------------------------
 FROM node:24-slim
 
+# The release tag, reported by GET /api/system/info (appVersion falls back to package.json)
+ARG APP_VERSION=
+ENV APP_VERSION=${APP_VERSION}
+
 # openssl CLI is used to generate self-signed certificates (certificateService);
 # git + ca-certificates for GitOps (simple-git runs the git binary, over https)
 RUN apt-get update \

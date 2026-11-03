@@ -45,7 +45,13 @@ export async function prepareBasicAuth(
   existing?: BasicAuth | null,
 ): Promise<BasicAuth | undefined> {
   if (input === undefined) return undefined;
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+  // null means "no basic auth" (the proxy form sends it when the checkbox is off), the same
+  // reading proxy imports give it: turn off what is there, otherwise leave it unset
+  if (input === null) {
+    if (!existing) return undefined;
+    return existing.username ? { enabled: false, username: existing.username } : { enabled: false };
+  }
+  if (typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('basic_auth must be an object');
   }
   const request = input as Record<string, unknown>;

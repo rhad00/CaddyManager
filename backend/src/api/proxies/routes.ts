@@ -14,6 +14,14 @@ import { GitRepository, User } from '../../models';
 import type { CreationAttributes, Sequelize, Transaction } from 'sequelize';
 import { prepareBasicAuth, redactBasicAuth, type BasicAuth } from '../../utils/basicAuth';
 import { PROXY_ALLOWED_FIELDS, validateProxyInput } from '../../utils/proxyValidation';
+import { ensureRecordsForDomains, type DnsResult } from '../../services/cloudflareDnsService';
+
+/** A/records for the domains of a Cloudflare proxy (undefined for other proxies); never throws */
+const syncDnsRecords = async (proxy: Proxy): Promise<DnsResult[] | undefined> => {
+  if (proxy.ssl_type !== 'cloudflare') return undefined;
+  const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains as unknown as string];
+  return ensureRecordsForDomains(domains);
+};
 
 type PlainProxy = { basic_auth?: BasicAuth | null; [field: string]: unknown };
 
@@ -34,6 +42,23 @@ const startTransaction = (): Promise<Transaction> => (Proxy.sequelize as Sequeli
 
 export const router = express.Router();
 
+
+/**
+ * @route POST /api/proxies/:id/sync-dns
+ * @desc Create the missing Cloudflare A records of a proxy's domains (zone found through CF_API_TOKEN)
+ * @access Private
+ */
+router.post('/:id/sync-dns', [authMiddleware, roleMiddleware('admin')], async (req: Request<{ id: string }>, res: Response) => {
+  try {
+    const proxy = await Proxy.findByPk(req.params.id);
+    if (!proxy) return res.status(404).json({ success: false, message: 'Proxy not found' });
+    const domains = Array.isArray(proxy.domains) ? proxy.domains : [proxy.domains as unknown as string];
+    res.status(200).json({ success: true, dns: await ensureRecordsForDomains(domains) });
+  } catch (error) {
+    console.error('Sync DNS error:', errorMessage(error));
+    res.status(500).json({ success: false, message: 'Server error while syncing DNS records' });
+  }
+});
 
 /**
  * @route POST /api/proxies/:id/recheck-tls
@@ -243,17 +268,22 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
 
     // Find all proxies and check for per-domain overlaps
     const existingProxies = await Proxy.findAll();
-    const domainConflict = existingProxies.some(proxy => {
-      const domains = proxy.domains as string[] | string; // older rows may hold a single string
-      const proxyDomains = Array.isArray(domains) ? domains : [domains];
-      return newDomains.some(d => proxyDomains.includes(d));
-    });
+    let conflict: { domain: string; proxyName: string } | null = null;
+    for (const existing of existingProxies) {
+      const domains = existing.domains as string[] | string; // older rows may hold a single string
+      const existingDomains = Array.isArray(domains) ? domains : [domains];
+      const shared = newDomains.find(d => existingDomains.includes(d));
+      if (shared) {
+        conflict = { domain: shared, proxyName: existing.name };
+        break;
+      }
+    }
 
-    if (domainConflict) {
+    if (conflict) {
       await transaction.rollback();
       return res.status(400).json({
         success: false,
-        message: 'A proxy with this name and domains already exists'
+        message: `The domain ${conflict.domain} is already used by the proxy "${conflict.proxyName}". Remove it from one of the two proxies.`
       });
     }
 
@@ -381,7 +411,8 @@ router.post('/', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermissi
       message: 'Proxy created successfully',
       proxy: serializeProxy(reloadedProxy),
       caddy: caddyResult,
-      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
+      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null,
+      dns: await syncDnsRecords(reloadedProxy)
     });
   } catch (error) {
     // Roll back unless the error happened after the commit
@@ -558,7 +589,8 @@ router.put('/:id', [authMiddleware, roleMiddleware('admin'), requireApiKeyPermis
       message: 'Proxy updated successfully',
       proxy: serializeProxy(reloadedProxy),
       caddy: caddyResult,
-      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null
+      tlsStatus: caddyResult ? caddyResult.tlsStatus || null : null,
+      dns: await syncDnsRecords(reloadedProxy)
     });
   } catch (error) {
     // Roll back unless the error happened after the commit

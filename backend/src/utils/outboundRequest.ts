@@ -14,7 +14,7 @@
 import dns from 'dns';
 import net from 'net';
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
-import { isRestrictedHost } from './ssrf';
+import { isRestrictedHost, isPrivateAddress } from './ssrf';
 
 const TIMEOUT_MS = 10000;
 
@@ -24,19 +24,6 @@ export class OutboundUrlError extends Error {
     this.name = 'OutboundUrlError';
   }
 }
-
-// Private ranges that ALERT_WEBHOOK_ALLOW_PRIVATE may open up
-const PRIVATE = new net.BlockList();
-PRIVATE.addSubnet('10.0.0.0', 8, 'ipv4');
-PRIVATE.addSubnet('172.16.0.0', 12, 'ipv4');
-PRIVATE.addSubnet('192.168.0.0', 16, 'ipv4');
-PRIVATE.addSubnet('100.64.0.0', 10, 'ipv4');
-PRIVATE.addSubnet('fc00::', 7, 'ipv6');
-
-const isPrivateAddress = (host: string): boolean => {
-  const family = net.isIP(host);
-  return family !== 0 && PRIVATE.check(host, family === 4 ? 'ipv4' : 'ipv6');
-};
 
 /** @param host - name or IP literal (no brackets) */
 function isBlockedDestination(host: string): boolean {

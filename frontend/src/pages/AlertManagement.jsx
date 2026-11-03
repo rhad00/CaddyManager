@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { readJson, apiError, describeError } from '../utils/api';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -50,11 +51,10 @@ function ChannelForm({ initial, onSave, onCancel }) {
         headers: { 'x-csrf-token': csrfToken },
         body: JSON.stringify({ name, type, config: parsedConfig, enabled }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
+      await readJson(res, 'save the channel');
       toast.success(initial ? 'Channel updated' : 'Channel created');
       onSave();
-    } catch (err) { toast.error(err.message); } finally { setSaving(false); }
+    } catch (err) { toast.error(describeError(err, 'save the channel')); } finally { setSaving(false); }
   };
 
   const configPlaceholders = {
@@ -136,11 +136,10 @@ function RuleForm({ initial, channels, proxies, onSave, onCancel }) {
           cooldown_minutes: parseInt(cooldown), enabled,
         }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message);
+      await readJson(res, 'save the rule');
       toast.success(initial ? 'Rule updated' : 'Rule created');
       onSave();
-    } catch (err) { toast.error(err.message); } finally { setSaving(false); }
+    } catch (err) { toast.error(describeError(err, 'save the rule')); } finally { setSaving(false); }
   };
 
   return (
@@ -236,6 +235,7 @@ export default function AlertManagement() {
   const deleteChannel = async (id) => {
     if (!confirm('Delete this channel?')) return;
     const res = await apiFetch(`/alerts/channels/${id}`, token, { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+    if (!res.ok) return toast.error((await apiError(res, 'delete the channel')).message);
     const d = await res.json();
     if (d.success) { toast.success('Channel deleted'); load(); } else toast.error(d.message);
   };
@@ -243,12 +243,14 @@ export default function AlertManagement() {
   const deleteRule = async (id) => {
     if (!confirm('Delete this alert rule?')) return;
     const res = await apiFetch(`/alerts/rules/${id}`, token, { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+    if (!res.ok) return toast.error((await apiError(res, 'delete the rule')).message);
     const d = await res.json();
     if (d.success) { toast.success('Rule deleted'); load(); } else toast.error(d.message);
   };
 
   const testChannel = async (id) => {
     const res = await apiFetch(`/alerts/channels/${id}/test`, token, { method: 'POST', headers: { 'x-csrf-token': csrfToken } });
+    if (!res.ok) return toast.error((await apiError(res, 'send the test notification')).message);
     const d = await res.json();
     if (d.success) toast.success('Test notification sent'); else toast.error(d.message);
   };
@@ -256,6 +258,7 @@ export default function AlertManagement() {
   const runNow = async () => {
     setRunning(true);
     const res = await apiFetch('/alerts/run', token, { method: 'POST', headers: { 'x-csrf-token': csrfToken } });
+    if (!res.ok) return toast.error((await apiError(res, 'run the alert checks')).message);
     const d = await res.json();
     setRunning(false);
     if (d.success) toast.success('Alert checks completed'); else toast.error(d.message);

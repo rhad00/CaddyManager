@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get, post, put, del } from '../utils/api';
+import { get, post, put, del, apiError, describeError } from '../utils/api';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -49,7 +49,7 @@ const CertificateManagement = () => {
       const response = await get('/certificates', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch certificates');
+        throw await apiError(response, 'load certificates');
       }
 
       const data = await response.json();
@@ -57,7 +57,7 @@ const CertificateManagement = () => {
       setError(null);
     } catch (error) {
       console.error('Error fetching certificates:', error);
-      setError('Failed to load certificates. Please try again later.');
+      setError(describeError(error, 'load certificates'));
     } finally {
       setLoading(false);
     }
@@ -70,7 +70,7 @@ const CertificateManagement = () => {
       const response = await get('/certificates/cas', token);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch certificate authorities');
+        throw await apiError(response, 'load certificate authorities');
       }
 
       const data = await response.json();
@@ -78,7 +78,7 @@ const CertificateManagement = () => {
       setError(null);
     } catch (error) {
       console.error('Error fetching CAs:', error);
-      setError('Failed to load certificate authorities. Please try again later.');
+      setError(describeError(error, 'load certificate authorities'));
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ const CertificateManagement = () => {
       const response = await del(`certificates/${id}`, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to delete certificate');
+        throw await apiError(response, 'delete the certificate');
       }
 
       // Refresh certificates
@@ -123,7 +123,7 @@ const CertificateManagement = () => {
       }
     } catch (error) {
       console.error('Error deleting certificate:', error);
-      setError('Failed to delete certificate. Please try again later.');
+      setError(describeError(error, 'delete the certificate'));
     }
   };
 
@@ -133,7 +133,7 @@ const CertificateManagement = () => {
       const response = await del(`/certificates/cas/${id}`, token, csrfToken);
 
       if (!response.ok) {
-        throw new Error('Failed to delete certificate authority');
+        throw await apiError(response, 'delete the certificate authority');
       }
 
       // Refresh CAs
@@ -145,7 +145,7 @@ const CertificateManagement = () => {
       }
     } catch (error) {
       console.error('Error deleting CA:', error);
-      setError('Failed to delete certificate authority. Please try again later.');
+      setError(describeError(error, 'delete the certificate authority'));
     }
   };
 
@@ -171,14 +171,14 @@ const CertificateManagement = () => {
       const response = await post(`/certificates/${id}/renew`, {}, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to renew certificate');
+        throw await apiError(response, 'renew the certificate');
       }
       
       // Refresh certificates
       fetchCertificates();
     } catch (error) {
       console.error('Error renewing certificate:', error);
-      setError('Failed to renew certificate. Please try again later.');
+      setError(describeError(error, 'renew the certificate'));
     }
   };
 
@@ -188,14 +188,14 @@ const CertificateManagement = () => {
       const response = await put(`/certificates/cas/${id}/trust`, { trusted }, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to update CA trust status');
+        throw await apiError(response, 'update the CA trust status');
       }
       
       // Refresh CAs
       fetchCAs();
     } catch (error) {
       console.error('Error updating CA trust:', error);
-      setError('Failed to update CA trust status. Please try again later.');
+      setError(describeError(error, 'update the CA trust status'));
     }
   };
 
@@ -218,7 +218,7 @@ const CertificateManagement = () => {
       const response = await post('/certificates/upload', formData, token, csrfToken, true);
       
       if (!response.ok) {
-        throw new Error('Failed to upload certificate');
+        throw await apiError(response, 'upload the certificate');
       }
       
       // Reset form and hide it
@@ -234,7 +234,7 @@ const CertificateManagement = () => {
       fetchCertificates();
     } catch (error) {
       console.error('Error uploading certificate:', error);
-      setError('Failed to upload certificate. Please try again later.');
+      setError(describeError(error, 'upload the certificate'));
     }
   };
 
@@ -251,7 +251,7 @@ const CertificateManagement = () => {
       const response = await post('/certificates/generate', generateForm, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to generate certificate');
+        throw await apiError(response, 'generate the certificate');
       }
       
       // Reset form and hide it
@@ -266,7 +266,7 @@ const CertificateManagement = () => {
       fetchCertificates();
     } catch (error) {
       console.error('Error generating certificate:', error);
-      setError('Failed to generate certificate. Please try again later.');
+      setError(describeError(error, 'generate the certificate'));
     }
   };
 
@@ -311,7 +311,7 @@ const CertificateManagement = () => {
       const response = await post('/certificates/cas', formData, token, csrfToken, true);
       
       if (!response.ok) {
-        throw new Error('Failed to add certificate authority');
+        throw await apiError(response, 'add the certificate authority');
       }
       
       // Reset form and hide it
@@ -329,7 +329,7 @@ const CertificateManagement = () => {
       fetchCAs();
     } catch (error) {
       console.error('Error adding CA:', error);
-      setError('Failed to add certificate authority. Please try again later.');
+      setError(describeError(error, 'add the certificate authority'));
     }
   };
 

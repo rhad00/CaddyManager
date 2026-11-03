@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get, post, del } from '../utils/api';
+import { get, post, del, apiError, describeError } from '../utils/api';
 
 const BackupManagement = () => {
   const [backups, setBackups] = useState([]);
@@ -16,14 +16,14 @@ const BackupManagement = () => {
       const response = await get('/backups', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch backups');
+        throw await apiError(response, 'load backups');
       }
       
       const data = await response.json();
       setBackups(data.backups || []);
     } catch (error) {
       console.error('Error fetching backups:', error);
-      setError('Failed to load backups. Please try again later.');
+      setError(describeError(error, 'load backups'));
     } finally {
       setLoading(false);
     }
@@ -42,14 +42,14 @@ const BackupManagement = () => {
       const response = await post('/backups', {}, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to create backup');
+        throw await apiError(response, 'create the backup');
       }
       
       setActionMessage('Backup created successfully');
       fetchBackups();
     } catch (error) {
       console.error('Error creating backup:', error);
-      setError('Failed to create backup. Please try again later.');
+      setError(describeError(error, 'create the backup'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -61,7 +61,7 @@ const BackupManagement = () => {
       const response = await get(`/backups/${backupId}`, token);
       
       if (!response.ok) {
-        throw new Error('Failed to download backup');
+        throw await apiError(response, 'download the backup');
       }
       
       const blob = await response.blob();
@@ -75,7 +75,7 @@ const BackupManagement = () => {
       document.body.removeChild(downloadLink);
     } catch (error) {
       console.error('Error downloading backup:', error);
-      setError('Failed to download backup. Please try again later.');
+      setError(describeError(error, 'download the backup'));
     }
   };
 
@@ -91,13 +91,13 @@ const BackupManagement = () => {
       const response = await post(`/api/backups/${backupId}/restore`, {}, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to restore backup');
+        throw await apiError(response, 'restore the backup');
       }
       
       setActionMessage('Backup restored successfully');
     } catch (error) {
       console.error('Error restoring backup:', error);
-      setError('Failed to restore backup. Please try again later.');
+      setError(describeError(error, 'restore the backup'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);
@@ -116,14 +116,14 @@ const BackupManagement = () => {
       const response = await del(`/api/backups/${backupId}`, token, csrfToken);
       
       if (!response.ok) {
-        throw new Error('Failed to delete backup');
+        throw await apiError(response, 'delete the backup');
       }
       
       setActionMessage('Backup deleted successfully');
       fetchBackups();
     } catch (error) {
       console.error('Error deleting backup:', error);
-      setError('Failed to delete backup. Please try again later.');
+      setError(describeError(error, 'delete the backup'));
     } finally {
       setActionInProgress(false);
       setTimeout(() => setActionMessage(null), 3000);

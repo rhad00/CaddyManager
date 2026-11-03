@@ -211,9 +211,11 @@ so `git log --grep "(0.5)"` finds the change for any entry.
   path-route paths and upstreams.
 - UI placeholder updated to `http://app:8080, https://api or app:3000`.
 - Existing proxies get correct `dial` values on the next config rebuild or update.
-- Open question (not changed): the SSRF guard rejects private ranges such as
-  `10.0.0.0/8` and `192.168.0.0/16`, which are common upstreams for a self-hosted
-  reverse proxy. Docker service names are unaffected.
+- The SSRF guard rejects private ranges such as `10.0.0.0/8` and `192.168.0.0/16`, which are
+  common upstreams for a self-hosted reverse proxy. Docker service names are unaffected.
+  Resolved later: the opt-in `UPSTREAM_ALLOW_PRIVATE=true` (default off) opens the private
+  ranges only; loopback, link-local and cloud metadata stay blocked. It shares the
+  private-range list with `ALERT_WEBHOOK_ALLOW_PRIVATE` (`isPrivateAddress` in `utils/ssrf`).
 - Tests: new `tests/unit/upstream.test.js` (19 cases); contract case flipped from
   `test.failing` to `test`, plus a new case for URL-form load-balancing and path-routing
   upstreams with https.

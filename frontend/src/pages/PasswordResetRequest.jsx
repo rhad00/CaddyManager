@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { post } from '../utils/api';
+import { post, apiError, describeError } from '../utils/api';
 
 const PasswordResetRequest = () => {
   const [email, setEmail] = useState('');
@@ -17,14 +17,13 @@ const PasswordResetRequest = () => {
       const response = await post('/auth/password-reset/request', { email }, null, null);
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to request password reset');
+        throw await apiError(response, 'request a password reset');
       }
 
       setSuccess(true);
     } catch (err) {
       console.error('Password reset request error:', err);
-      setError(err.message || 'Failed to request password reset. Please try again.');
+      setError(describeError(err, 'request a password reset'));
     } finally {
       setLoading(false);
     }

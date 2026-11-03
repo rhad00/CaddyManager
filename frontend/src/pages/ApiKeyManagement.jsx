@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { readJson, apiError, describeError } from '../utils/api';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -51,19 +52,19 @@ export default function ApiKeyManagement() {
         headers: { 'x-csrf-token': csrfToken },
         body: JSON.stringify({ name, permissions, expires_at: expiresAt || undefined }),
       });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      const d = await readJson(res, 'create the API key');
       setNewKey(d.raw_key);
       setShowForm(false);
       setName(''); setPermissions(['read']); setExpiresAt('');
       toast.success('API key created — copy it now, it won\'t be shown again!');
       load();
-    } catch (err) { toast.error(err.message); } finally { setCreating(false); }
+    } catch (err) { toast.error(describeError(err, 'create the API key')); } finally { setCreating(false); }
   };
 
   const revoke = async (id, keyName) => {
     if (!confirm(`Revoke key "${keyName}"? This cannot be undone.`)) return;
     const res = await apiFetch(`/keys/${id}`, token, { method: 'DELETE', headers: { 'x-csrf-token': csrfToken } });
+    if (!res.ok) return toast.error((await apiError(res, 'revoke the key')).message);
     const d = await res.json();
     if (d.success) { toast.success('Key revoked'); load(); } else toast.error(d.message);
   };
@@ -74,6 +75,7 @@ export default function ApiKeyManagement() {
       headers: { 'x-csrf-token': csrfToken },
       body: JSON.stringify({ enabled: !enabled }),
     });
+    if (!res.ok) return toast.error((await apiError(res, 'update the key')).message);
     const d = await res.json();
     if (d.success) load(); else toast.error(d.message);
   };

@@ -36,6 +36,38 @@ interface CaddyRouteEntry {
   handle?: CaddyHandler[];
 }
 
+/**
+ * The bundled Caddyfile answers every request with "No routes configured yet" (503) until a proxy
+ * exists. It has no host match, so Caddy runs it before any route after it: it has to stay last.
+ */
+export function isPlaceholderRoute(route: CaddyRouteEntry): boolean {
+  return !route.match && JSON.stringify(route.handle ?? []).includes('"body":"No routes configured yet');
+}
+
+/**
+ * Caddy's @id for the HTTP server in every config the backend loads. Caddy keeps its routes in
+ * memory only: after a restart it is back on the bundled Caddyfile, which has no such id, so
+ * `GET /id/caddymanager` answering 404 means the routes are gone and have to be rebuilt.
+ */
+export const MANAGED_SERVER_ID = 'caddymanager';
+
+/** @returns a copy of config whose HTTP server carries the marker (config itself is not modified) */
+function withManagedMarker(config: CaddyConfig, serverName: string): CaddyConfig {
+  const http = config.apps?.http as { servers?: Record<string, object> } | undefined;
+  const server = http?.servers?.[serverName];
+  if (!http || !server) return config;
+  return {
+    ...config,
+    apps: {
+      ...config.apps,
+      http: { ...http, servers: { ...http.servers, [serverName]: { ...server, '@id': MANAGED_SERVER_ID } } },
+    },
+  };
+}
+
+/** What the reconcile check did, for logs and tests */
+export type ReconcileOutcome = 'ok' | 'rebuilt' | 'skipped' | 'unreachable' | 'failed';
+
 interface CaddyServer {
   listen: string[];
   routes: CaddyRouteEntry[];
@@ -129,6 +161,8 @@ export class CaddyService {
   configBackupDir: string;
   configBackupFile: string;
   _configMutex: Mutex;
+  /** True while Caddy is unreachable, so reconcileCaddy logs an outage once */
+  reconcileOutage = false;
 
   constructor() {
     this.apiUrl = process.env.CADDY_API_URL || 'http://localhost:2019';
@@ -284,60 +318,30 @@ export class CaddyService {
 
   /**
    * Initialize Caddy configuration on startup
-   * This should be called when the application starts
-   * @param options.forceRebuild - regenerate every route from the database instead of loading the backup
+   * This should be called when the application starts.
+   *
+   * The database is the source of truth: with proxies in it, every route is rebuilt from it on
+   * top of the config Caddy runs now (so the Caddyfile and .env of this start apply). The saved
+   * backup file is only a disaster-recovery copy and is never loaded back, because it would put
+   * old server settings (trusted proxies, client IP headers) over the current ones.
    */
-  async initializeConfig(options: { forceRebuild?: boolean } = {}): Promise<void> {
+  async initializeConfig(): Promise<void> {
     try {
       // Ensure config backup directory exists before doing file operations
       await this.ensureConfigBackupDir();
       console.log('Initializing Caddy configuration...');
 
-      // Check if we have a saved configuration backup
-      let configExists = false;
-      try {
-        await fs.access(this.configBackupFile);
-        configExists = true;
-      } catch (error) {
-        // File doesn't exist, will use default config
-      }
+      const proxyCount = (await Proxy.findAll({ attributes: ['id'] })).length;
 
-      // A migration that changed how routes are generated must not be shadowed by the saved config
-      const rebuildNow = options.forceRebuild === true && configExists
-        && (await Proxy.findAll({ attributes: ['id'] })).length > 0;
-      if (rebuildNow) {
-        console.log('Route generation changed in a migration, rebuilding configuration from the database...');
+      if (proxyCount > 0) {
+        console.log(`Found ${proxyCount} proxies in database, rebuilding configuration...`);
         await this.rebuildConfigFromDatabase();
-      } else if (configExists) {
-        // Load configuration from backup file
-        console.log('Loading configuration from backup file...');
-        const configData = await fs.readFile(this.configBackupFile, 'utf8');
-        const config = JSON.parse(configData) as CaddyConfig;
-
-        // Apply the configuration to Caddy
-        await this.loadConfig(config);
-        console.log('Configuration loaded from backup file');
       } else {
-        // No backup file exists, check if we have proxies in the database
-        console.log('No backup file found, checking database for proxies...');
-        const proxies = await Proxy.findAll({
-          include: [
-            { model: Header, as: 'headers' },
-            { model: Middleware, as: 'middlewares' }
-          ]
-        });
-
-        if (proxies.length > 0) {
-          // We have proxies in the database, rebuild the configuration
-          console.log(`Found ${proxies.length} proxies in database, rebuilding configuration...`);
-          await this.rebuildConfigFromDatabase();
-        } else {
-          // No proxies in database, use default configuration
-          console.log('No proxies found in database, using default configuration');
-          // The default configuration is already loaded from the Caddyfile
-          // Just backup the current config for future reference
-          await this.backupCurrentConfig();
-        }
+        // Nothing to route yet. Load the running config once anyway: that puts the @id marker
+        // on the server, which reconcileCaddy relies on to tell a reset Caddy from a fresh one
+        console.log('No proxies found in database, using default configuration');
+        await this.loadConfig(await this.getConfig());
+        await this.backupCurrentConfig();
       }
 
       console.log('Caddy configuration initialization complete');
@@ -489,7 +493,10 @@ export class CaddyService {
    */
   async loadConfig(config: CaddyConfig): Promise<void> {
     try {
-      const fullConfig = withCustomCertificates(config, await this.loadCustomCertificates());
+      const fullConfig = withManagedMarker(
+        withCustomCertificates(config, await this.loadCustomCertificates()),
+        this.serverName,
+      );
       await axios.post(`${this.apiUrl}/load`, fullConfig, {
         headers: {
           'Content-Type': 'application/json'
@@ -499,6 +506,62 @@ export class CaddyService {
       console.error('Failed to load Caddy configuration:', errorMessage(error));
       throw new Error(`Failed to load configuration: ${errorMessage(error)}`);
     }
+  }
+
+  /**
+   * Rebuild the routes from the database when Caddy has been reset (restarted, recreated).
+   * Detected by the @id marker every loaded config carries, not by looking for missing routes:
+   * a proxy whose row is written just before its route is added would look "missing" too.
+   * @returns what was done
+   */
+  async reconcileCaddy(): Promise<ReconcileOutcome> {
+    try {
+      await axios.get(`${this.apiUrl}/id/${MANAGED_SERVER_ID}`);
+      this.reconcileOutage = false;
+      return 'ok';
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status !== 404) {
+        // Caddy is down or restarting: normal for a while, so say it once per outage
+        if (!this.reconcileOutage) {
+          console.warn(`Caddy is not answering on ${this.apiUrl}, routes are checked again when it is back:`, errorMessage(error));
+        }
+        this.reconcileOutage = true;
+        return 'unreachable';
+      }
+    }
+    this.reconcileOutage = false;
+
+    try {
+      const active = await Proxy.count({ where: { status: 'active' } });
+      if (active === 0) return 'skipped';
+
+      console.log(`Caddy lost its routes (restarted?), rebuilding ${active} proxies from the database...`);
+      await this.rebuildConfigFromDatabase();
+      return 'rebuilt';
+    } catch (error) {
+      console.error('Failed to rebuild the Caddy routes after a reset, will retry:', errorMessage(error));
+      return 'failed';
+    }
+  }
+
+  /**
+   * Check Caddy every `seconds` and rebuild its routes when it was reset. Run it on the leader
+   * only. The timer does not keep the process alive; a check never overlaps the previous one.
+   * Until the next check after a Caddy restart, requests get Caddy's placeholder 503.
+   */
+  startReconcileLoop(seconds = 30): NodeJS.Timeout {
+    let running = false;
+    const timer = setInterval(() => {
+      if (running) return;
+      running = true;
+      this.reconcileCaddy()
+        .catch((error) => console.error('Caddy reconcile check failed:', errorMessage(error)))
+        .finally(() => { running = false; });
+    }, seconds * 1000);
+    timer.unref();
+    console.log(`Caddy routes are checked every ${seconds} seconds`);
+    return timer;
   }
 
   /**
@@ -612,17 +675,17 @@ export class CaddyService {
       // Create the route for this proxy
       const route = this.createRouteFromProxy(proxy);
 
-      // POST appends; the config mutex keeps the index stable until we are done
-      newRouteIndex = existingRoutes.length;
-      await axios.post(
-        this.getServerRoutesApiPath(),
-        route,
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      // Insert before the trailing placeholder so it stays the last route (PUT on an array index
+      // inserts); otherwise POST appends. The config mutex keeps the index stable until we are done.
+      const placeholderAt = existingRoutes.findIndex(isPlaceholderRoute);
+      const beforePlaceholder = placeholderAt !== -1 && placeholderAt === existingRoutes.length - 1;
+      newRouteIndex = beforePlaceholder ? placeholderAt : existingRoutes.length;
+      const requestConfig = { headers: { 'Content-Type': 'application/json' } };
+      if (beforePlaceholder) {
+        await axios.put(`${this.getServerRoutesApiPath()}/${newRouteIndex}`, route, requestConfig);
+      } else {
+        await axios.post(this.getServerRoutesApiPath(), route, requestConfig);
+      }
       routePosted = true;
 
       // Update the proxy with its route index

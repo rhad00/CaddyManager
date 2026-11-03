@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { readJson, describeError } from '../utils/api';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -33,12 +34,11 @@ export default function TwoFactorSettings() {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/auth/2fa/setup`, { method: 'POST', headers: headers() });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      const d = await readJson(res, 'start two-factor setup');
       setQr(d.qr);
       setSecret(d.secret);
       setStep('setup');
-    } catch (err) { toast.error(err.message); } finally { setLoading(false); }
+    } catch (err) { toast.error(describeError(err, 'start two-factor setup')); } finally { setLoading(false); }
   };
 
   const confirmSetup = async (e) => {
@@ -48,14 +48,13 @@ export default function TwoFactorSettings() {
       const res = await fetch(`${API_URL}/auth/2fa/verify`, {
         method: 'POST', headers: headers(), body: JSON.stringify({ code }),
       });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      const d = await readJson(res, 'enable two-factor authentication');
       setBackupCodes(d.backup_codes);
       setCode('');
       setStep('backup');
       await loadStatus();
       toast.success('2FA enabled successfully');
-    } catch (err) { toast.error(err.message); } finally { setLoading(false); }
+    } catch (err) { toast.error(describeError(err, 'enable two-factor authentication')); } finally { setLoading(false); }
   };
 
   const startDisable = () => { setStep('disable'); setCode(''); };
@@ -67,13 +66,12 @@ export default function TwoFactorSettings() {
       const res = await fetch(`${API_URL}/auth/2fa/disable`, {
         method: 'POST', headers: headers(), body: JSON.stringify({ code }),
       });
-      const d = await res.json();
-      if (!d.success) throw new Error(d.message);
+      await readJson(res, 'disable two-factor authentication');
       setStep('idle');
       setCode('');
       await loadStatus();
       toast.success('2FA disabled');
-    } catch (err) { toast.error(err.message); } finally { setLoading(false); }
+    } catch (err) { toast.error(describeError(err, 'disable two-factor authentication')); } finally { setLoading(false); }
   };
 
   if (!status) return <p className="text-sm text-gray-500">Loading…</p>;

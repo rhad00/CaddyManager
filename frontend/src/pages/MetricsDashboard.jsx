@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { get } from '../utils/api';
+import { get, apiError, describeError } from '../utils/api';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -44,7 +44,7 @@ const MetricsDashboard = () => {
       const response = await get('/metrics', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch metrics');
+        throw await apiError(response, 'load metrics');
       }
       
       const data = await response.json();
@@ -52,7 +52,7 @@ const MetricsDashboard = () => {
       setError(null);
     } catch (error) {
       console.error('Error fetching metrics:', error);
-      setError('Failed to load metrics data. Please try again later.');
+      setError(describeError(error, 'load the metrics'));
     } finally {
       setLoading(false);
     }
@@ -64,7 +64,7 @@ const MetricsDashboard = () => {
       const response = await get('/metrics/historical?limit=24', token);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch historical metrics');
+        throw await apiError(response, 'load historical metrics');
       }
       
       const data = await response.json();
