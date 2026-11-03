@@ -74,6 +74,23 @@ test('says the log is unavailable when there is none', async () => {
   expect(res.body.traffic.available).toBe(false);
 });
 
+test('certificates: one row per domain with the stored check', async () => {
+  const proxy = await Proxy.findOne({ where: { name: 'Cloud' } });
+  const validTo = new Date(Date.now() + 10 * 86_400_000).toISOString();
+  await proxy.update({
+    tls_status: { ok: true, results: [{ domain: 'cloud.example.com', ok: true, issuer: 'Test CA', validTo }] },
+    tls_checked_at: new Date(),
+  });
+
+  const res = await request(app).get('/api/metrics/certificates');
+
+  expect(res.status).toBe(200);
+  expect(res.body.certificates).toHaveLength(1);
+  expect(res.body.certificates[0]).toMatchObject({ domain: 'cloud.example.com', state: 'valid', issuer: 'Test CA', proxyName: 'Cloud' });
+  expect(res.body.certificates[0].daysLeft).toBeGreaterThanOrEqual(9);
+  expect(res.body.certificates[0].checkedAt).toBeTruthy();
+});
+
 test('live: the last five minutes, newest first, without query strings', async () => {
   const withQuery = JSON.stringify({
     ts: now() - 3, level: 'info', logger: 'http.log.access', status: 502, duration: 0.5, size: 1,

@@ -5,6 +5,7 @@ import { get, apiError, describeError } from '../utils/api';
 import TrafficSection from '../components/metrics/TrafficSection';
 import ProxyTable from '../components/metrics/ProxyTable';
 import LiveSection from '../components/metrics/LiveSection';
+import CertificatesSection from '../components/metrics/CertificatesSection';
 import CaddyServerSection from '../components/metrics/CaddyServerSection';
 import { ageText, clockTime } from '../utils/metricsModel';
 import { RANGES, DEFAULT_RANGE, OTHER_ID, isRange, scopeOf, proxyRows } from '../utils/trafficModel';
@@ -307,6 +308,8 @@ const MetricsDashboard = () => {
       </section>
 
       <LiveSection token={token} />
+
+      <CertificatesSection token={token} />
 
       <section aria-labelledby="server-title" className="space-y-6">
         <div>
