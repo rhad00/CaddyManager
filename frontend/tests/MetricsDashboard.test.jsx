@@ -46,13 +46,30 @@ const summary = (requests, s5xx, extra = {}) => ({
   avgMs: 20,
   p50Ms: 10,
   p95Ms: 250,
-  topPaths: requests ? [{ key: '/login', count: requests }] : [],
-  topClients: requests ? [{ key: '198.51.100.4', count: requests }] : [],
   series: {
     requests: [...zeros(2), requests], ok: [...zeros(2), requests - s5xx], redirect: zeros(3),
     clientError: zeros(3), serverError: [0, 0, s5xx], bytes: [0, 0, requests * 1000], avgMs: [null, null, 20],
   },
   ...extra,
+})
+const detailFor = (requests) => ({
+  visitors: requests ? 42 : 0,
+  visitorsSeries: [0, 0, requests ? 42 : 0],
+  hourly: [], hourlyFrom: 0,
+  topPaths: requests ? [{ key: '/login', count: requests }] : [],
+  topClients: requests ? [{ key: '198.51.100.4', count: requests }] : [],
+  browsers: [{ key: 'Firefox', count: requests }],
+  systems: [{ key: 'Linux', count: requests }],
+  clientKinds: [{ key: 'browser', count: requests }],
+  devices: [{ key: 'desktop', count: requests }],
+  referrers: [{ key: 'news.example.net', count: 3 }],
+  protocols: [{ key: 'HTTP/2', count: requests }],
+  tls: [{ key: 'TLS 1.3', count: requests }],
+  ciphers: [{ key: 'TLS_AES_128_GCM_SHA256', count: requests }],
+  methods: [{ key: 'GET', count: requests }],
+  contentTypes: [{ key: 'HTML', count: requests }],
+  slowPaths: [], errorPaths: [],
+  blocked: { unauthorized: 4, forbidden: 3, rateLimited: 2 },
 })
 const traffic = {
   range: '24h',
@@ -78,7 +95,18 @@ const serve = (over = {}) => {
     ...over,
   }
   get.mockImplementation(async (path) => {
-    if (path.startsWith('/metrics/traffic')) return replies.traffic
+    if (path.startsWith('/metrics/traffic')) {
+      if ('traffic' in over) return replies.traffic
+      const scope = new URLSearchParams(path.split('?')[1]).get('proxy')
+      const withDetail = (s) => ({ ...s, detail: detailFor(s.requests), previous: { requests: 800, bytes: 1, avgMs: 20, errors5xx: 8, visitors: 21 } })
+      return ok({
+        traffic: {
+          ...traffic,
+          totals: withDetail(traffic.totals),
+          proxies: traffic.proxies.map((p) => (p.id === scope ? withDetail(p) : p)),
+        },
+      })
+    }
     if (path.startsWith('/metrics/historical')) return replies.history
     return replies.metrics
   })
@@ -132,6 +160,30 @@ describe('traffic, per proxy', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Grafana' })).toBeInTheDocument()
     expect(screen.getByText('/login')).toBeInTheDocument()
     expect(screen.getByText('198.51.100.4')).toBeInTheDocument()
+  })
+
+  test('shows visitors, the change on the period before and the breakdowns', async () => {
+    renderPage()
+    const figures = await screen.findByRole('region', { name: 'Figures' })
+    expect(within(figures).getByText('42')).toBeInTheDocument()
+    expect(within(figures).getByText('+100% vs previous 24 hours')).toBeInTheDocument()
+    for (const name of ['Browsers and clients', 'Operating systems', 'HTTP versions', 'TLS versions', 'Content types', 'Request methods']) {
+      expect(screen.getByRole('region', { name })).toBeInTheDocument()
+    }
+    expect(screen.getByText('news.example.net')).toBeInTheDocument()
+  })
+
+  test('says that blocked requests are counted from status codes', async () => {
+    renderPage()
+    const blocked = await screen.findByRole('region', { name: 'Blocked and limited requests' })
+    expect(within(blocked).getByText(/Counted from the status codes 401, 403 and 429/)).toBeInTheDocument()
+    expect(within(blocked).getByText('4')).toBeInTheDocument()
+  })
+
+  test('asks the server for the detail of the chosen proxy', async () => {
+    renderPage('/metrics?proxy=p1')
+    await screen.findByRole('heading', { level: 2, name: 'Grafana' })
+    expect(get.mock.calls.some(([path]) => path.includes('/metrics/traffic?range=24h&proxy=p1'))).toBe(true)
   })
 
   test('a removed proxy in the URL falls back to all proxies and says so', async () => {

@@ -1,6 +1,7 @@
 /* global describe, test, expect */
 import {
   isRange, scopeOf, errorShare, bucketLabels, bytesPerSecond, responseTimes, proxyRows, percentileText, OTHER_ID,
+  changeText, pointsChange, heatmap,
 } from '../src/utils/trafficModel'
 
 const summary = (requests, s5xx = 0, extra = {}) => ({
@@ -75,6 +76,63 @@ describe('proxyRows', () => {
   })
   test('is empty without a report', () => {
     expect(proxyRows(null)).toEqual([])
+  })
+})
+
+describe('changeText', () => {
+  test('says how much more or less than the period before', () => {
+    expect(changeText(120, 100, '24h')).toBe('+20% vs previous 24 hours')
+    expect(changeText(75, 100, '1h')).toBe('-25% vs previous 1 hour')
+    expect(changeText(100, 100, '7d')).toBe('No change vs previous 7 days')
+    expect(changeText(100.4, 100, '7d')).toBe('No change vs previous 7 days')
+  })
+  test('has nothing to say without a period before, or when it was empty', () => {
+    expect(changeText(5, null, '24h')).toBeNull()
+    expect(changeText(5, undefined, '24h')).toBeNull()
+    expect(changeText(0, 0, '24h')).toBe('No change vs previous 24 hours')
+    expect(changeText(5, 0, '24h')).toBe('None in the previous 24 hours')
+  })
+  test('large changes read as plain numbers', () => {
+    expect(changeText(1500, 100, '6h')).toBe('+1,400% vs previous 6 hours')
+  })
+})
+
+describe('pointsChange', () => {
+  test('compares two shares in percentage points', () => {
+    expect(pointsChange(0.05, 0.02, '24h')).toBe('+3.0 points vs previous 24 hours')
+    expect(pointsChange(0.01, 0.03, '24h')).toBe('-2.0 points vs previous 24 hours')
+    expect(pointsChange(null, 0.03, '24h')).toBeNull()
+    expect(pointsChange(0.03, null, '24h')).toBeNull()
+  })
+})
+
+describe('heatmap', () => {
+  const localHour = (y, m, d, h) => Math.floor(new Date(y, m, d, h).getTime() / 1000)
+
+  test('places each hour on its local day and hour', () => {
+    const from = localHour(2026, 10, 2, 22)
+    const grid = heatmap({ hourlyFrom: from, hourly: [5, 7, 3, 0] })
+    expect(grid.days).toHaveLength(2)
+    expect(grid.days[0].cells[22]).toMatchObject({ count: 5 })
+    expect(grid.days[0].cells[23]).toMatchObject({ count: 7 })
+    expect(grid.days[1].cells[0]).toMatchObject({ count: 3 })
+    expect(grid.max).toBe(7)
+    expect(grid.busiest).toMatchObject({ count: 7, hour: 23 })
+  })
+
+  test('hours outside the data are empty, not zero-filled with a fake count', () => {
+    const grid = heatmap({ hourlyFrom: localHour(2026, 10, 2, 22), hourly: [5] })
+    expect(grid.days[0].cells[3]).toBeNull()
+  })
+
+  test('with no traffic there is no busiest hour', () => {
+    const grid = heatmap({ hourlyFrom: localHour(2026, 10, 2, 10), hourly: [0, 0] })
+    expect(grid.max).toBe(0)
+    expect(grid.busiest).toBeNull()
+  })
+
+  test('is empty without data', () => {
+    expect(heatmap(null).days).toEqual([])
   })
 })
 

@@ -56,7 +56,7 @@ const TOOLS: Array<[RegExp, string]> = [
 
 function operatingSystem(ua: string): string {
   if (/windows nt|win64|win32/i.test(ua)) return 'Windows';
-  if (/iphone|ipad|ipod|cpu os|cfnetwork.*darwin/i.test(ua)) return 'iOS';
+  if (/iphone|ipad|ipod|cpu os/i.test(ua) || (/cfnetwork/i.test(ua) && /darwin/i.test(ua))) return 'iOS';
   if (/android/i.test(ua)) return 'Android';
   if (/cros/i.test(ua)) return 'ChromeOS';
   if (/mac os x|macintosh|darwin/i.test(ua)) return 'macOS';
@@ -70,7 +70,7 @@ function browserName(ua: string): string | null {
   if (/samsungbrowser/i.test(ua)) return 'Samsung Internet';
   if (/firefox\/|fxios/i.test(ua)) return 'Firefox';
   if (/(chrome|chromium|crios)\//i.test(ua)) return 'Chrome';
-  if (/version\/[\d.]+.*safari\//i.test(ua) || /safari\//i.test(ua)) return 'Safari';
+  if (/safari\//i.test(ua)) return 'Safari';
   if (/msie |trident\//i.test(ua)) return 'Internet Explorer';
   return null;
 }
@@ -82,7 +82,8 @@ function deviceOf(ua: string): Device {
 }
 
 export function classifyUserAgent(userAgent: string | undefined | null): UserAgentInfo {
-  const ua = String(userAgent ?? '').trim();
+  // The header is client-controlled: bound the work whatever a client sends
+  const ua = String(userAgent ?? '').slice(0, 512).trim();
   if (!ua) return { kind: 'unknown', name: 'No user agent', os: 'Other', device: null };
 
   for (const [pattern, name] of BOTS) {
