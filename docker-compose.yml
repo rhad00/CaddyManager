@@ -27,6 +27,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        - APP_VERSION=${APP_VERSION:-}
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
@@ -68,6 +70,7 @@ services:
       context: ./frontend
       args:
         - VITE_API_URL=${VITE_API_URL:-/api}
+        - APP_VERSION=${APP_VERSION:-}
     restart: unless-stopped
     ports:
       - "8080:80"
